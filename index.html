@@ -1,0 +1,1556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>openAut — AI-Driven Building Intelligence. Open Source.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #060a0c;
+    --surface: #0d1519;
+    --surface2: #111d22;
+    --border: rgba(0,220,130,0.15);
+    --green: #00dc82;
+    --green-dim: rgba(0,220,130,0.6);
+    --green-glow: rgba(0,220,130,0.08);
+    --cyan: #00c8e0;
+    --amber: #f5a623;
+    --text: #e2ede8;
+    --text-muted: #6b8a7a;
+    --text-dim: #3d5249;
+    --mono: 'Space Mono', monospace;
+    --display: 'Syne', sans-serif;
+    --body: 'Inter', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── NOISE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.4;
+  }
+
+  /* ── GRID LINES ── */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,220,130,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,220,130,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 1.2rem 4rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: rgba(6,10,12,0.85);
+    backdrop-filter: blur(12px);
+  }
+
+  .nav-logo {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--green);
+    letter-spacing: 0.05em;
+    text-decoration: none;
+  }
+
+  .nav-logo span { color: var(--text-muted); }
+
+  .nav-links {
+    display: flex;
+    gap: 2.5rem;
+    list-style: none;
+  }
+
+  .nav-links a {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--green); }
+
+  .nav-badge {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--bg);
+    background: var(--green);
+    padding: 0.3rem 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8rem 4rem 4rem;
+    overflow: hidden;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: -10%;
+    left: -10%;
+    width: 70%;
+    height: 70%;
+    background: radial-gradient(ellipse, rgba(0,220,130,0.06) 0%, transparent 65%);
+    pointer-events: none;
+  }
+
+  .hero-glow-2 {
+    position: absolute;
+    bottom: 0;
+    right: -5%;
+    width: 50%;
+    height: 60%;
+    background: radial-gradient(ellipse, rgba(0,200,224,0.04) 0%, transparent 65%);
+    pointer-events: none;
+  }
+
+  .hero-tag {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    opacity: 0;
+    animation: fadeUp 0.8s ease forwards 0.2s;
+  }
+
+  .hero-tag::before {
+    content: '';
+    display: block;
+    width: 32px;
+    height: 1px;
+    background: var(--green);
+  }
+
+  .hero-title {
+    font-family: var(--display);
+    font-size: clamp(3.5rem, 8vw, 7.5rem);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+    max-width: 14ch;
+    opacity: 0;
+    animation: fadeUp 0.8s ease forwards 0.4s;
+  }
+
+  .hero-title em {
+    font-style: normal;
+    color: var(--green);
+    position: relative;
+    display: inline-block;
+  }
+
+  .hero-title em::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    left: 0; right: 0;
+    height: 3px;
+    background: var(--green);
+    opacity: 0.4;
+  }
+
+  .hero-sub {
+    margin-top: 2.5rem;
+    font-size: 1.1rem;
+    font-weight: 300;
+    color: var(--text-muted);
+    max-width: 52ch;
+    line-height: 1.8;
+    opacity: 0;
+    animation: fadeUp 0.8s ease forwards 0.6s;
+  }
+
+  .hero-ctas {
+    margin-top: 3rem;
+    display: flex;
+    gap: 1.2rem;
+    align-items: center;
+    opacity: 0;
+    animation: fadeUp 0.8s ease forwards 0.8s;
+  }
+
+  .btn-primary {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--bg);
+    background: var(--green);
+    padding: 0.9rem 2.2rem;
+    text-decoration: none;
+    font-weight: 700;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.1);
+    transform: translateX(-100%);
+    transition: transform 0.3s;
+  }
+
+  .btn-primary:hover::after { transform: translateX(0); }
+
+  .btn-ghost {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 0.9rem 2.2rem;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .btn-ghost:hover {
+    color: var(--green);
+    border-color: var(--green-dim);
+  }
+
+  .hero-scroll {
+    position: absolute;
+    bottom: 2.5rem;
+    left: 4rem;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    opacity: 0;
+    animation: fadeUp 0.8s ease forwards 1.2s;
+  }
+
+  .hero-scroll::after {
+    content: '';
+    display: block;
+    width: 1px;
+    height: 40px;
+    background: linear-gradient(to bottom, var(--text-dim), transparent);
+    animation: scrollLine 1.5s ease-in-out infinite;
+  }
+
+  /* ── TICKER ── */
+  .ticker {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0.8rem 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .ticker-track {
+    display: flex;
+    gap: 0;
+    animation: ticker 25s linear infinite;
+    width: max-content;
+  }
+
+  .ticker-item {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0 3rem;
+    white-space: nowrap;
+    border-right: 1px solid var(--border);
+  }
+
+  .ticker-item.accent { color: var(--green); }
+
+  /* ── SECTION LAYOUT ── */
+  section {
+    padding: 7rem 4rem;
+    position: relative;
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--green);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .section-label::before {
+    content: attr(data-num);
+    color: var(--text-dim);
+    font-size: 0.6rem;
+  }
+
+  .section-title {
+    font-family: var(--display);
+    font-size: clamp(2rem, 4vw, 3.8rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    max-width: 20ch;
+  }
+
+  .section-title .accent { color: var(--green); }
+
+  /* ── PROBLEM SECTION ── */
+  .problem {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .problem-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+    margin-top: 4rem;
+    align-items: start;
+  }
+
+  .problem-text p {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    font-weight: 300;
+    margin-top: 1.5rem;
+    line-height: 1.9;
+  }
+
+  .problem-text p strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .pain-points {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .pain-point {
+    padding: 1.5rem 0;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 2.5rem 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .pain-point:first-child { border-top: 1px solid var(--border); }
+
+  .pain-num {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    padding-top: 0.15rem;
+  }
+
+  .pain-content h4 {
+    font-family: var(--display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+  }
+
+  .pain-content p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.6;
+  }
+
+  /* ── ARCHITECTURE / STORY SECTION ── */
+  .arch {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .arch-diagram {
+    margin-top: 4rem;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+
+  .arch-layer {
+    padding: 2.5rem 2rem;
+    border-right: 1px solid var(--border);
+    position: relative;
+    transition: background 0.3s;
+  }
+
+  .arch-layer:last-child { border-right: none; }
+
+  .arch-layer:hover { background: var(--green-glow); }
+
+  .arch-layer-num {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.2em;
+    margin-bottom: 1rem;
+  }
+
+  .arch-layer-name {
+    font-family: var(--display);
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 0.8rem;
+    letter-spacing: -0.01em;
+  }
+
+  .arch-layer-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.7;
+    margin-bottom: 1.5rem;
+  }
+
+  .arch-nodes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .arch-node {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: var(--surface2);
+    padding: 0.35rem 0.6rem;
+    border-left: 2px solid var(--border);
+    letter-spacing: 0.05em;
+  }
+
+  .arch-node.green {
+    color: var(--green);
+    border-left-color: var(--green);
+  }
+
+  .arch-node.cyan {
+    color: var(--cyan);
+    border-left-color: var(--cyan);
+  }
+
+  .arch-node.amber {
+    color: var(--amber);
+    border-left-color: var(--amber);
+  }
+
+  .arch-connector {
+    position: absolute;
+    top: 50%;
+    right: -1px;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    z-index: 2;
+  }
+
+  /* ── SPARK SECTION ── */
+  .spark-section {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .spark-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 6rem;
+    margin-top: 4rem;
+    align-items: center;
+  }
+
+  .spark-visual {
+    position: relative;
+    aspect-ratio: 1;
+    max-width: 420px;
+  }
+
+  .spark-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid;
+    animation: rotate linear infinite;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .spark-ring-1 {
+    width: 85%;
+    height: 85%;
+    border-color: rgba(0,220,130,0.2);
+    animation-duration: 30s;
+  }
+
+  .spark-ring-2 {
+    width: 65%;
+    height: 65%;
+    border-color: rgba(0,200,224,0.15);
+    animation-duration: 20s;
+    animation-direction: reverse;
+  }
+
+  .spark-ring-3 {
+    width: 45%;
+    height: 45%;
+    border-color: rgba(0,220,130,0.3);
+    animation-duration: 12s;
+  }
+
+  .spark-core {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 28%;
+    height: 28%;
+    background: radial-gradient(circle, rgba(0,220,130,0.3), rgba(0,220,130,0.05));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .spark-core-label {
+    font-family: var(--mono);
+    font-size: 0.55rem;
+    color: var(--green);
+    text-align: center;
+    letter-spacing: 0.05em;
+    line-height: 1.4;
+  }
+
+  .spark-dot {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    top: 50%;
+    transform-origin: 0 0;
+  }
+
+  .spark-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+
+  .spark-stat {
+    background: var(--surface);
+    padding: 1.2rem 1.5rem;
+  }
+
+  .spark-stat-val {
+    font-family: var(--display);
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: var(--green);
+    letter-spacing: -0.02em;
+  }
+
+  .spark-stat-label {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 0.2rem;
+  }
+
+  .spark-content p {
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.9;
+    margin-top: 1.5rem;
+  }
+
+  .spark-content p strong { color: var(--text); font-weight: 500; }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 2rem;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 0.35rem 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .chip.green { color: var(--green); border-color: rgba(0,220,130,0.3); }
+
+  /* ── OPEN SOURCE SECTION ── */
+  .oss {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .oss::before {
+    content: 'MIT';
+    position: absolute;
+    right: -2rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--display);
+    font-size: 20rem;
+    font-weight: 800;
+    color: rgba(0,220,130,0.03);
+    pointer-events: none;
+    letter-spacing: -0.05em;
+    white-space: nowrap;
+  }
+
+  .oss-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 4rem;
+  }
+
+  .oss-card {
+    background: var(--bg);
+    padding: 2.5rem;
+    position: relative;
+    transition: background 0.3s;
+  }
+
+  .oss-card:hover { background: var(--green-glow); }
+
+  .oss-card-icon {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+  }
+
+  .oss-card h3 {
+    font-family: var(--display);
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 0.8rem;
+    letter-spacing: -0.01em;
+  }
+
+  .oss-card p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.75;
+  }
+
+  .oss-card .tag {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--green);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    display: block;
+  }
+
+  /* ── LOU SECTION ── */
+  .lou {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lou-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6rem;
+    margin-top: 4rem;
+    align-items: start;
+  }
+
+  .lou-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  .lou-flow::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 28px;
+    bottom: 28px;
+    width: 1px;
+    background: linear-gradient(to bottom, var(--green), transparent);
+  }
+
+  .lou-step {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 1.2rem;
+    padding: 1.2rem 0;
+    align-items: start;
+  }
+
+  .lou-step-dot {
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--green);
+    background: var(--surface);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  .lou-step-content h4 {
+    font-family: var(--display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+  }
+
+  .lou-step-content p {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.65;
+  }
+
+  .lou-text p {
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.9;
+    margin-top: 1.5rem;
+  }
+
+  .lou-text p strong { color: var(--text); font-weight: 500; }
+
+  .lou-highlight {
+    margin-top: 2.5rem;
+    padding: 1.8rem;
+    border: 1px solid rgba(0,220,130,0.25);
+    background: rgba(0,220,130,0.04);
+    position: relative;
+  }
+
+  .lou-highlight::before {
+    content: '"';
+    position: absolute;
+    top: -0.5rem;
+    left: 1.5rem;
+    font-family: var(--display);
+    font-size: 3rem;
+    color: var(--green);
+    line-height: 1;
+    opacity: 0.5;
+  }
+
+  .lou-highlight p {
+    font-family: var(--display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.5;
+    margin: 0;
+    padding-top: 0.5rem;
+  }
+
+  /* ── PRINCIPLES SECTION ── */
+  .principles {
+    overflow: hidden;
+    position: relative;
+  }
+
+  .principles-list {
+    margin-top: 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .principle {
+    display: grid;
+    grid-template-columns: 4rem 1fr 1fr;
+    gap: 3rem;
+    padding: 2rem 0;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    transition: background 0.2s;
+    padding-left: 0;
+  }
+
+  .principle:first-child { border-top: 1px solid var(--border); }
+
+  .principle:hover { background: var(--green-glow); padding-left: 1rem; transition: padding 0.3s, background 0.3s; }
+
+  .principle-num {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .principle h3 {
+    font-family: var(--display);
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .principle p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    line-height: 1.7;
+  }
+
+  /* ── TERMINAL BLOCK ── */
+  .terminal {
+    margin: 4rem 0 0;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .terminal-header {
+    background: var(--surface2);
+    padding: 0.7rem 1.2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+
+  .terminal-title {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-left: 0.5rem;
+  }
+
+  .terminal-body {
+    padding: 1.8rem 2rem;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 2;
+    color: var(--text-muted);
+    max-height: 320px;
+    overflow: hidden;
+  }
+
+  .t-prompt { color: var(--green); }
+  .t-cmd { color: var(--text); }
+  .t-comment { color: var(--text-dim); }
+  .t-output { color: var(--cyan); }
+  .t-success { color: var(--green); }
+  .t-url { color: var(--amber); text-decoration: underline; }
+
+  /* ── CTA ── */
+  .cta {
+    text-align: center;
+    padding: 8rem 4rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(0,220,130,0.07) 0%, transparent 65%);
+    pointer-events: none;
+  }
+
+  .cta-label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--green);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+  }
+
+  .cta h2 {
+    font-family: var(--display);
+    font-size: clamp(2.5rem, 5vw, 5rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin-bottom: 1.5rem;
+  }
+
+  .cta p {
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-weight: 300;
+    max-width: 48ch;
+    margin: 0 auto 3rem;
+    line-height: 1.8;
+  }
+
+  .cta-btns {
+    display: flex;
+    gap: 1.2rem;
+    justify-content: center;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem 4rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--surface);
+  }
+
+  .footer-logo {
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    color: var(--green);
+  }
+
+  .footer-logo span { color: var(--text-dim); }
+
+  .footer-meta {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    text-align: right;
+    line-height: 1.8;
+  }
+
+  .footer-meta a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .footer-meta a:hover { color: var(--green); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  @keyframes rotate {
+    from { transform: translate(-50%, -50%) rotate(0deg); }
+    to   { transform: translate(-50%, -50%) rotate(360deg); }
+  }
+
+  @keyframes scrollLine {
+    0%, 100% { opacity: 0.3; transform: scaleY(1); }
+    50%       { opacity: 1;   transform: scaleY(1.3); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+    50%       { opacity: 1;   transform: translate(-50%, -50%) scale(1.1); }
+  }
+
+  /* ── SCROLL REVEAL ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(32px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .reveal-delay-1 { transition-delay: 0.1s; }
+  .reveal-delay-2 { transition-delay: 0.2s; }
+  .reveal-delay-3 { transition-delay: 0.3s; }
+  .reveal-delay-4 { transition-delay: 0.4s; }
+  .reveal-delay-5 { transition-delay: 0.5s; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    nav { padding: 1rem 1.5rem; }
+    .nav-links, .nav-badge { display: none; }
+    section { padding: 4rem 1.5rem; }
+    .hero { padding: 7rem 1.5rem 4rem; }
+    .problem-grid, .spark-grid, .lou-layout { grid-template-columns: 1fr; gap: 3rem; }
+    .arch-diagram { grid-template-columns: 1fr 1fr; }
+    .arch-layer { border-right: none; border-bottom: 1px solid var(--border); }
+    .oss-grid { grid-template-columns: 1fr; }
+    .principle { grid-template-columns: 3rem 1fr; }
+    .principle p { display: none; }
+    footer { flex-direction: column; gap: 1rem; text-align: center; }
+    .footer-meta { text-align: center; }
+    .cta-btns { flex-direction: column; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="nav-logo">open<span>Aut</span></a>
+  <ul class="nav-links">
+    <li><a href="#problem">Problem</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#ai">AI Layer</a></li>
+    <li><a href="#opensource">Open Source</a></li>
+    <li><a href="#procurement">Procurement</a></li>
+  </ul>
+  <span class="nav-badge">MIT License</span>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="top">
+  <div class="grid-bg"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-glow-2"></div>
+
+  <div class="hero-tag">openAut — v0.1 — Building Intelligence, Open</div>
+
+  <h1 class="hero-title">
+    The building<br>knows. Now <em>you</em><br>can too.
+  </h1>
+
+  <p class="hero-sub">
+    openAut brings supercomputer-grade AI to every building — without replacing your existing systems, locking you into proprietary platforms, or requiring expensive specialists on retainer. Open source. MIT licensed. Ready for public procurement.
+  </p>
+
+  <div class="hero-ctas">
+    <a href="#architecture" class="btn-primary">See how it works</a>
+    <a href="https://github.com/openaut" class="btn-ghost">GitHub →</a>
+  </div>
+
+  <div class="hero-scroll">Scroll to explore</div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-track" id="tickerTrack">
+    <span class="ticker-item accent">MIT Licensed</span>
+    <span class="ticker-item">No vendor lock-in</span>
+    <span class="ticker-item accent">NVIDIA DGX Spark</span>
+    <span class="ticker-item">BACnet · Modbus · OPC UA · M-Bus · KNX</span>
+    <span class="ticker-item accent">LOU Compatible</span>
+    <span class="ticker-item">IEC 62443 Security</span>
+    <span class="ticker-item accent">Read-only field access</span>
+    <span class="ticker-item">Anomaly Detection</span>
+    <span class="ticker-item accent">Energy Optimization</span>
+    <span class="ticker-item">Fault Detection & Diagnostics</span>
+    <span class="ticker-item accent">MIT Licensed</span>
+    <span class="ticker-item">No vendor lock-in</span>
+    <span class="ticker-item accent">NVIDIA DGX Spark</span>
+    <span class="ticker-item">BACnet · Modbus · OPC UA · M-Bus · KNX</span>
+    <span class="ticker-item accent">LOU Compatible</span>
+    <span class="ticker-item">IEC 62443 Security</span>
+    <span class="ticker-item accent">Read-only field access</span>
+    <span class="ticker-item">Anomaly Detection</span>
+    <span class="ticker-item accent">Energy Optimization</span>
+    <span class="ticker-item">Fault Detection & Diagnostics</span>
+  </div>
+</div>
+
+<!-- PROBLEM -->
+<section class="problem" id="problem">
+  <div class="section-label" data-num="01">The Problem</div>
+  <h2 class="section-title reveal">Buildings are <span class="accent">smart.</span> Their software isn't.</h2>
+
+  <div class="problem-grid">
+    <div class="problem-text reveal reveal-delay-1">
+      <p>Every modern building is already generating a torrent of data — temperatures, pressures, energy draws, occupancy patterns, fault states. Your heating system, ventilation units, chillers and meters are running and recording around the clock.</p>
+      <p>But <strong>that data goes nowhere useful.</strong> Siloed inside proprietary BMS platforms, locked behind consultant contracts, invisible to the people who actually operate the building day-to-day.</p>
+      <p>The result? <strong>Energy waste that nobody sees. Faults that fester for weeks. Decisions made on gut feeling instead of data.</strong> And when you do want to change that, you face a bill for a new platform, a migration project, and a dependency on a single vendor for the next 20 years.</p>
+      <p>Public sector organisations face an extra layer: procurement law means you can't simply buy your way out. The solution has to be open, auditable, and reusable.</p>
+    </div>
+
+    <div class="pain-points reveal reveal-delay-2">
+      <div class="pain-point">
+        <span class="pain-num">01</span>
+        <div class="pain-content">
+          <h4>Proprietary lock-in</h4>
+          <p>Existing BMS platforms trap organisations in vendor ecosystems. Switching costs are enormous. Each system speaks its own dialect.</p>
+        </div>
+      </div>
+      <div class="pain-point">
+        <span class="pain-num">02</span>
+        <div class="pain-content">
+          <h4>Expert dependency</h4>
+          <p>Advanced diagnostics and energy optimisation require expensive consultants. Institutional knowledge walks out the door.</p>
+        </div>
+      </div>
+      <div class="pain-point">
+        <span class="pain-num">03</span>
+        <div class="pain-content">
+          <h4>Data trapped in silos</h4>
+          <p>Field data sits in isolated historian systems. Cross-building correlation and pattern recognition are practically impossible.</p>
+        </div>
+      </div>
+      <div class="pain-point">
+        <span class="pain-num">04</span>
+        <div class="pain-content">
+          <h4>No room for AI</h4>
+          <p>Cloud-based AI means sensitive operational data leaves your network. On-premise alternatives have required hardware investments only large enterprises could justify — until now.</p>
+        </div>
+      </div>
+      <div class="pain-point">
+        <span class="pain-num">05</span>
+        <div class="pain-content">
+          <h4>Procurement barriers</h4>
+          <p>Public procurement law (LOU) creates friction for organisations wanting to adopt new technology without open competition.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section class="arch" id="architecture">
+  <div class="grid-bg"></div>
+  <div class="section-label" data-num="02">How it Works</div>
+  <h2 class="section-title reveal">Four layers.<br>One coherent <span class="accent">system.</span></h2>
+
+  <div class="arch-diagram reveal reveal-delay-1">
+
+    <div class="arch-layer">
+      <div class="arch-layer-num">LAYER 01 — FIELD</div>
+      <div class="arch-layer-name">Your existing equipment</div>
+      <div class="arch-layer-desc">openAut never replaces what's already there. Sensors, meters, chillers, AHUs, PLCs and DDC controllers continue running exactly as before — fully in control of their own processes.</div>
+      <div class="arch-nodes">
+        <div class="arch-node">BACnet MS/TP & IP</div>
+        <div class="arch-node">Modbus RTU / TCP</div>
+        <div class="arch-node">M-Bus (energy meters)</div>
+        <div class="arch-node">KNX / OPC UA</div>
+        <div class="arch-node amber">Read-only access only</div>
+      </div>
+    </div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-num">LAYER 02 — EDGE</div>
+      <div class="arch-layer-name">Intelligent edge nodes</div>
+      <div class="arch-layer-desc">Ruggedised industrial edge computers sit quietly at the edge of your OT network. They translate every field protocol into a unified data model, buffer locally, and forward upstream — gracefully degrading if cloud connectivity drops.</div>
+      <div class="arch-nodes">
+        <div class="arch-node green">Protocol translation</div>
+        <div class="arch-node green">Local 24–72h buffer</div>
+        <div class="arch-node green">OPC UA server</div>
+        <div class="arch-node green">Rule-based alarms</div>
+        <div class="arch-node">IEC 62443 SL2 capable</div>
+      </div>
+    </div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-num">LAYER 03 — AI</div>
+      <div class="arch-layer-name">On-premise intelligence</div>
+      <div class="arch-layer-desc">The NVIDIA DGX Spark sits inside your building — not in the cloud. It runs large language models and specialised fault-detection models entirely locally. Your operational data never leaves the premises.</div>
+      <div class="arch-nodes">
+        <div class="arch-node cyan">NVIDIA DGX Spark</div>
+        <div class="arch-node cyan">Local LLM inference</div>
+        <div class="arch-node cyan">Fault detection & FDD</div>
+        <div class="arch-node cyan">Energy optimisation</div>
+        <div class="arch-node cyan">Anomaly correlation</div>
+      </div>
+    </div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-num">LAYER 04 — INTERFACE</div>
+      <div class="arch-layer-name">Operator-first interfaces</div>
+      <div class="arch-layer-desc">Insights reach the people who need them — in tools they already use. Chat interfaces for field technicians. Web dashboards for energy coordinators. APIs for integration teams. All advisory. All human-in-the-loop.</div>
+      <div class="arch-nodes">
+        <div class="arch-node">Telegram / Signal / Slack</div>
+        <div class="arch-node">Web HMI & dashboards</div>
+        <div class="arch-node">Alarm management</div>
+        <div class="arch-node">Auto-documentation</div>
+        <div class="arch-node">REST API</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Terminal block -->
+  <div class="terminal reveal reveal-delay-2">
+    <div class="terminal-header">
+      <div class="terminal-dot"></div>
+      <div class="terminal-dot"></div>
+      <div class="terminal-dot"></div>
+      <span class="terminal-title">openaut — field technician session</span>
+    </div>
+    <div class="terminal-body">
+      <div><span class="t-prompt">openaut&gt; </span><span class="t-cmd">status --building "City Hall Block A"</span></div>
+      <div><span class="t-output">▸ 312 data points online  ·  3 active anomalies  ·  last sync 4s ago</span></div>
+      <div>&nbsp;</div>
+      <div><span class="t-prompt">openaut&gt; </span><span class="t-cmd">diagnose --system AHU-03</span></div>
+      <div><span class="t-output">Analysing 72h trend data for AHU-03...</span></div>
+      <div><span class="t-success">✔ Supply air temperature deviation detected since 06:14</span></div>
+      <div><span class="t-output">  Root cause (87% confidence): heating coil valve hysteresis</span></div>
+      <div><span class="t-output">  Correlated: return temperature spike, increased SFP, Zone B CO₂ rise</span></div>
+      <div><span class="t-output">  Recommended action: inspect actuator feedback signal on CV-103</span></div>
+      <div>&nbsp;</div>
+      <div><span class="t-prompt">openaut&gt; </span><span class="t-cmd">energy --report weekly --format pdf</span></div>
+      <div><span class="t-success">✔ Report generated: /reports/2025-W22-city-hall-a.pdf</span></div>
+      <div><span class="t-comment"># All analysis is advisory — no write-back to field equipment</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- SPARK / AI -->
+<section class="spark-section" id="ai">
+  <div class="section-label" data-num="03">The AI Layer</div>
+  <h2 class="section-title reveal">Supercomputer intelligence.<br><span class="accent">Inside your building.</span></h2>
+
+  <div class="spark-grid">
+
+    <div class="spark-content reveal reveal-delay-1">
+      <p>At the heart of openAut sits the <strong>NVIDIA DGX Spark</strong> — a GB10 Grace Blackwell Superchip system capable of running models with up to 200 billion parameters, entirely on-premise. This is the same generation of hardware powering frontier AI research, now deployable in a building's server room.</p>
+
+      <p>With <strong>128 GB of unified memory</strong> and up to 1 petaFLOP of AI compute at FP4 precision, the DGX Spark can simultaneously run large language models for operator interaction, specialised fault-detection models, energy optimisation algorithms, and anomaly correlation engines — all without a single byte of operational data leaving your network.</p>
+
+      <p>Two linked units extend the capability to <strong>405-billion parameter models</strong>, covering the most demanding building portfolios. Air-gapped deployments are fully supported — no internet connection required, ever.</p>
+
+      <div class="chip-row">
+        <div class="chip green">Local inference</div>
+        <div class="chip green">No cloud dependency</div>
+        <div class="chip">ARM64 architecture</div>
+        <div class="chip">DGX OS (Ubuntu 24.04 LTS)</div>
+        <div class="chip">Air-gap ready</div>
+        <div class="chip green">Data sovereignty</div>
+      </div>
+
+      <div class="spark-stats">
+        <div class="spark-stat">
+          <div class="spark-stat-val">128GB</div>
+          <div class="spark-stat-label">Unified Memory</div>
+        </div>
+        <div class="spark-stat">
+          <div class="spark-stat-val">1 PFLOP</div>
+          <div class="spark-stat-label">FP4 AI Compute</div>
+        </div>
+        <div class="spark-stat">
+          <div class="spark-stat-val">200B+</div>
+          <div class="spark-stat-label">Parameter Models</div>
+        </div>
+        <div class="spark-stat">
+          <div class="spark-stat-val">0</div>
+          <div class="spark-stat-label">External API Calls</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spark-visual reveal reveal-delay-2" style="margin: 0 auto;">
+      <div class="spark-ring spark-ring-1"></div>
+      <div class="spark-ring spark-ring-2"></div>
+      <div class="spark-ring spark-ring-3"></div>
+      <div class="spark-core" style="animation: pulse 3s ease-in-out infinite;">
+        <div class="spark-core-label">DGX<br>Spark<br>GB10</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- OPEN SOURCE -->
+<section class="oss" id="opensource">
+  <div class="section-label" data-num="04">Open Source</div>
+  <h2 class="section-title reveal">MIT licensed.<br><span class="accent">No strings.</span><br>No exceptions.</h2>
+
+  <div class="oss-grid reveal reveal-delay-1">
+
+    <div class="oss-card">
+      <div class="oss-card-icon">⚖</div>
+      <span class="tag">Ownership</span>
+      <h3>You own your deployment</h3>
+      <p>MIT is the most permissive licence in open source. Use openAut commercially, modify it freely, integrate it into existing systems, and redistribute it — with or without changes — with no royalties, no notifications, and no permission required.</p>
+    </div>
+
+    <div class="oss-card">
+      <div class="oss-card-icon">🔬</div>
+      <span class="tag">Transparency</span>
+      <h3>Every line is auditable</h3>
+      <p>All configuration, all application profiles, all AI prompt logic — published openly. Security auditors, technical managers and your own team can inspect exactly what the system does with your data. No black boxes, no hidden logic.</p>
+    </div>
+
+    <div class="oss-card">
+      <div class="oss-card-icon">🌱</div>
+      <span class="tag">Community</span>
+      <h3>Built on contribution</h3>
+      <p>Each organisation that deploys openAut can contribute its application profiles, protocol drivers, and FDD models back to the project. The ecosystem improves with every installation — compounding value for every participant.</p>
+    </div>
+
+    <div class="oss-card">
+      <div class="oss-card-icon">🔌</div>
+      <span class="tag">Architecture</span>
+      <h3>No proprietary core</h3>
+      <p>Every dependency in the openAut stack is open source: <code>pymodbus</code>, <code>BAC0</code>, <code>opcua-asyncio</code>, <code>open62541</code>, Mosquitto, EMQX. If you already hold licences for proprietary drivers like Kepware, those plug in — but they are never required.</p>
+    </div>
+
+    <div class="oss-card">
+      <div class="oss-card-icon">🔄</div>
+      <span class="tag">Repeatability</span>
+      <h3>Any technician can reproduce it</h3>
+      <p>Each application profile is fully self-contained: hardware selection, protocol configuration, OPC UA namespaces, AI model parameters, FAT/SAT checklists. A technician who has never seen your building can commission openAut from the documentation alone.</p>
+    </div>
+
+    <div class="oss-card">
+      <div class="oss-card-icon">🛡</div>
+      <span class="tag">Security</span>
+      <h3>Secure by design</h3>
+      <p>IEC 62443 and NIS2 are designed in from day one — not bolted on later. VLAN segmentation, OPC UA Basic256Sha256, WireGuard VPN, RBAC and audit logging are baseline requirements, not optional extras.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- PROCUREMENT / LOU -->
+<section class="lou" id="procurement">
+  <div class="section-label" data-num="05">Public Procurement</div>
+  <h2 class="section-title reveal">Built for public sector.<br><span class="accent">LOU-compatible</span><br>by design.</h2>
+
+  <div class="lou-layout">
+
+    <div class="lou-text reveal reveal-delay-1">
+      <p>For municipalities, regions and public property owners, the Swedish Public Procurement Act (LOU) creates real constraints on technology adoption. openAut was designed from the outset to work <strong>within</strong> those constraints, not around them.</p>
+
+      <p>Because openAut is MIT-licensed and open source, there is <strong>no single vendor to procure.</strong> The platform itself is freely available. What your organisation procures are the <strong>professional services</strong> to implement, configure and maintain it — services that can be put out to open tender and awarded to your preferred regional consultants, existing framework agreements, or your own in-house team.</p>
+
+      <p>This means openAut is compatible with the full lifecycle of public procurement: <strong>open specification, competitive tendering, independent delivery, and ongoing contribution back to the shared platform.</strong></p>
+
+      <div class="lou-highlight">
+        <p>Adopt the open platform. Procure the expertise. Own the result. Contribute back to the commons.</p>
+      </div>
+    </div>
+
+    <div class="lou-flow reveal reveal-delay-2">
+      <div class="lou-step">
+        <div class="lou-step-dot">01</div>
+        <div class="lou-step-content">
+          <h4>Adopt the open standard</h4>
+          <p>Your organisation decides to base its building intelligence strategy on openAut — freely, without signing any vendor agreement.</p>
+        </div>
+      </div>
+      <div class="lou-step">
+        <div class="lou-step-dot">02</div>
+        <div class="lou-step-content">
+          <h4>Specify in open tender</h4>
+          <p>Implementation requirements are specified against the openly published openAut architecture. Any qualified integrator can respond.</p>
+        </div>
+      </div>
+      <div class="lou-step">
+        <div class="lou-step-dot">03</div>
+        <div class="lou-step-content">
+          <h4>Deliver with chosen consultants</h4>
+          <p>Your procured integrators implement, configure and commission the system using the full openAut documentation. All deliverables are reproducible by any other party.</p>
+        </div>
+      </div>
+      <div class="lou-step">
+        <div class="lou-step-dot">04</div>
+        <div class="lou-step-content">
+          <h4>Own the configuration</h4>
+          <p>Application profiles, I/O lists, AI configurations and commissioning records belong to your organisation — not the consultant. Transition between integrators at any time.</p>
+        </div>
+      </div>
+      <div class="lou-step">
+        <div class="lou-step-dot">05</div>
+        <div class="lou-step-content">
+          <h4>Contribute back</h4>
+          <p>Improvements, new protocol drivers, or application profiles developed during your project can be contributed back to the shared openAut repository. Your investment strengthens the ecosystem for every other public sector organisation.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- PRINCIPLES -->
+<section class="principles" id="principles">
+  <div class="grid-bg"></div>
+  <div class="section-label" data-num="06">Core Principles</div>
+  <h2 class="section-title reveal">What openAut<br>will <span class="accent">never</span> do.</h2>
+
+  <div class="principles-list">
+    <div class="principle reveal">
+      <span class="principle-num">P.01</span>
+      <h3>Write back to field equipment</h3>
+      <p>openAut is read-only against all field devices. Regulation and control remain entirely with field PLCs and DDC controllers. The AI advises. Humans and field controllers decide.</p>
+    </div>
+    <div class="principle reveal reveal-delay-1">
+      <span class="principle-num">P.02</span>
+      <h3>Send your data to the cloud</h3>
+      <p>All inference runs on the on-premise DGX Spark. No operational data — temperatures, occupancy, energy readings — is transmitted to external APIs or cloud services unless you explicitly configure it.</p>
+    </div>
+    <div class="principle reveal reveal-delay-2">
+      <span class="principle-num">P.03</span>
+      <h3>Require proprietary dependencies</h3>
+      <p>The core stack runs entirely on open source libraries. No proprietary drivers, licences or SDKs are required to deploy or operate openAut.</p>
+    </div>
+    <div class="principle reveal reveal-delay-3">
+      <span class="principle-num">P.04</span>
+      <h3>Replace your existing BMS</h3>
+      <p>openAut coexists alongside Siemens Desigo, Schneider EcoStruxure, Trend, Regin and every other platform. It reads their data. It learns their patterns. It never competes with or disrupts them.</p>
+    </div>
+    <div class="principle reveal reveal-delay-4">
+      <span class="principle-num">P.05</span>
+      <h3>Create a new vendor dependency</h3>
+      <p>Every design decision is evaluated against the question: does this create lock-in? If the answer is yes, openAut finds another path. The architecture is modular, documented, and walkable by any competent integrator.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta" id="start">
+  <div class="cta-label">Get started</div>
+  <h2 class="reveal">Your building is<br>already talking.<br><span style="color: var(--green);">Start listening.</span></h2>
+  <p class="reveal reveal-delay-1">openAut is open source, actively developed, and ready for pilot deployments. Explore the documentation, contribute a protocol driver, or adapt an application profile for your building portfolio.</p>
+  <div class="cta-btns reveal reveal-delay-2">
+    <a href="https://github.com/openaut" class="btn-primary">View on GitHub</a>
+    <a href="#architecture" class="btn-ghost">Explore the architecture</a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">open<span>Aut</span></div>
+  <div class="footer-meta">
+    MIT License — free to use, modify and distribute<br>
+    <a href="https://github.com/openaut">github.com/openaut</a> · Building Intelligence, Open
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const reveals = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+  reveals.forEach(el => observer.observe(el));
+
+  // Ticker duplication for seamless loop
+  const track = document.getElementById('tickerTrack');
+  // Already duplicated in HTML for seamless loop
+
+  // Animated dots on spark visual
+  const visual = document.querySelector('.spark-visual');
+  if (visual) {
+    const count = 8;
+    for (let i = 0; i < count; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'spark-dot';
+      const angle = (i / count) * 360;
+      const radius = 42; // percent
+      dot.style.left = `calc(50% + ${radius * Math.cos(angle * Math.PI / 180)}% - 3px)`;
+      dot.style.top = `calc(50% + ${radius * Math.sin(angle * Math.PI / 180)}% - 3px)`;
+      dot.style.opacity = 0.3 + Math.random() * 0.7;
+      dot.style.animation = `pulse ${2 + Math.random() * 2}s ease-in-out infinite`;
+      dot.style.animationDelay = `${Math.random() * 2}s`;
+      visual.appendChild(dot);
+    }
+  }
+</script>
+</body>
+</html>
