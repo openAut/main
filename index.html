@@ -466,6 +466,8 @@
 
   .arch-diagram {
     margin-top: 4rem;
+    margin-left: -4rem;
+    width: calc(100% + 8rem);
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 0;
@@ -1136,7 +1138,11 @@
     section { padding: 4rem 1.5rem; }
     .hero { padding: 7rem 1.5rem 4rem; }
     .problem-grid, .spark-grid, .lou-layout { grid-template-columns: 1fr; gap: 3rem; }
-    .arch-diagram { grid-template-columns: 1fr 1fr; }
+    .arch-diagram {
+      margin-left: -1.5rem;
+      width: calc(100% + 3rem);
+      grid-template-columns: 1fr 1fr;
+    }
     .arch-layer { border-right: none; border-bottom: 1px solid var(--border); }
     .oss-grid { grid-template-columns: 1fr; }
     .principle { grid-template-columns: 3rem 1fr; }
