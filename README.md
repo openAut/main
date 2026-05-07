@@ -1,160 +1,136 @@
 # openAut
 
-> Open-source integration and AI advisory platform for building automation systems.
+> Öppen AI-plattform för fastighetsautomation med lokal inferens, Python edge-reglering och ingen leverantörsinlåsning.
 
-openAut connects field-level equipment — PLCs, DDCs, chillers, air handling units, and energy meters — to a local AI layer that provides fault diagnostics, energy optimization, and alarm management. No central control. No cloud dependency. No vendor lock-in.
+openAut är ett **öppet tillägg till ditt befintliga BMS** — inte en ersättare. Plattformen samlar in driftsdata, analyserar den lokalt med kraftfull AI-hårdvara, och kan driftsätta Python-baserad reglering direkt på edge-noder. Designat för offentlig upphandling, IEC 62443-säkerhet och långsiktig förvaltning.
 
----
-
-## What it does
-
-Commercial and public-sector buildings run complex automation systems from dozens of manufacturers, speaking incompatible protocols, generating data that mostly goes unanalyzed. Facility operators respond to alarms reactively, energy optimization is manual, and troubleshooting relies on individual expertise that is hard to retain.
-
-openAut sits between the field and the people who operate it:
-
-- **Edge nodes** collect data from field equipment over standard protocols and buffer it locally
-- **A local AI layer** on dedicated hardware analyzes trends, correlates alarms, suggests root causes, and identifies energy savings — all on-premises
-- **Operators interact** via familiar messaging apps (Telegram, Signal, Slack) powered by [OpenClaw](https://openclaw.ai)
-
-No data leaves the building. No subscription required. No proprietary runtime.
+**Hemsida:** https://openaut.io · **Licens:** MIT · **Status:** v0.1 — aktiv utveckling
 
 ---
 
-## Architecture
+## Vad openAut gör
+
+- **Feldetektering (FDD):** Korrelerar signaler över tid och identifierar rotorsak med konfidensgrad — levererat i Teams eller Slack, inte i BMS-klienten.
+- **Energioptimering:** Prediktion, lastprognos och avvikelseanalys mot historisk trenddata.
+- **Guidad integration:** Läs in en fabrikants manual, ange edge-nod — openAut guidar teknikern steg för steg och dokumenterar automatiskt.
+- **Python edge-reglering:** Driftsätt Python-baserade reglerloopar direkt på edge-noden mot lokal I/O. Utan rundtur till AI-servern. Versionshanterat, loggat och återkallelsebart centralt via NemoClaw.
+- **Automatisk dokumentation:** I/O-listor, driftsättningsprotokoll och FAT/SAT genereras som sidoeffekt av normal drift.
+
+---
+
+## Arkitektur — fyra lager
 
 ```
-Field Layer                Edge Layer              AI Layer
-──────────────────         ────────────────────    ─────────────────────
-
-PLC (IEC 61131-3)  ──────▶                        
-DUC / DDC          ──────▶  openAut Edge Node      NVIDIA DGX Spark
-Chiller            ──────▶  ─────────────────  ──▶ ──────────────────
-AHU (integrated)   ──────▶  Protocol drivers        OpenClaw Gateway
-Energy meters      ──────▶  OPC UA server           Nemotron (local)
-Heat pumps         ──────▶  Local time-series        BAS Tool Server
-VRF systems        ──────▶  buffer                  
-                            MQTT forwarder          
-                                                    
-                            No write-back           Operator via
-                            to field equipment      Telegram / Signal
+LAGER 04 — GRÄNSSNITT   Teams · Slack · Webb-HMI · REST API
+LAGER 03 — AI           NemoClaw · DGX Spark · LLM-inferens · FDD · Energioptimering
+LAGER 02 — EDGE         Linux-noder · SSH · Protokolldrivrutiner · Python edge-reglering
+LAGER 01 — FÄLT         BACnet · Modbus RTU/TCP · M-Bus · OPC UA · LoRaWAN · KNX · DALI
 ```
 
-The edge node is **read-only**. All regulation and control remains with the field devices. openAut observes, collects, and advises — it does not command.
+**LAGER 01 — FÄLT:** Befintlig fältutrustning ansluts utan modifiering. PLC:er, DDC-regulatorer och mätare kommunicerar via sina befintliga protokoll. openAut läser — fältets reglering behåller prioritet.
+
+**LAGER 02 — EDGE:** Moxa AIG-noder eller Siemens SIMATIC IOT2050 kör standard Linux och nås av NemoClaw via krypterad SSH. Protokolldrivrutiner körs direkt på noden. NemoClaw kan via SSH även driftsätta Python-regleringsskript mot lokal I/O — slutna reglerloopar utan molnrundtur. Data transporteras krypterat via OPC UA (Basic256Sha256) eller MQTT over TLS.
+
+**LAGER 03 — AI:** NVIDIA DGX Spark (GB10 Grace Blackwell, 128 GB unified memory, 1 PFLOP FP4) kör NemoClaw och OpenClaw lokalt. MQTT-broker, LLM-inferens och FDD-modeller på samma hårdvara. All data stannar i fastigheten.
+
+**LAGER 04 — GRÄNSSNITT:** Insikter når de som behöver dem i de verktyg de redan använder. Drifttekniker i Teams. Energisamordnare i dashboard. Integrationsteam via REST API.
 
 ---
 
-## Supported protocols
+## Teknisk stack
 
-| Protocol | Role |
+| Lager | Komponenter |
 |---|---|
-| **Modbus RTU / TCP** | Chillers, AHUs, heat pumps, VFDs |
-| **BACnet MS/TP / BACnet IP** | DDCs, PLCs, supervisory controllers |
-| **OPC UA** | PLCs, modern SCADA integration |
-| **OPC classic (via gateway)** | Legacy installations |
-| **M-Bus** | Energy and heat meters |
-| **MQTT** | Internal transport, edge → AI layer |
+| **openAut** (domänramverk) | BACnet-skill · Modbus-skill · M-Bus-skill · LoRa-skill · OPC UA-skill · FDD-skill · Energianalys-skill · SSH edge-access · Python I/O-skill · Edge-reglerings-skill |
+| **NemoClaw** (agent) | Anthropic Claude Agent SDK · MCP · lokalt körd · ARM64 |
+| **OpenClaw** (LLM) | Öppen källkod · ≤200B parametrar · lokal inferens |
+| **AI-hårdvara** | NVIDIA DGX Spark · ASUS Ascent GX10 (alternativ) |
+| **Edge-hårdvara** | Siemens SIMATIC IOT2050 · Moxa AIG-serien |
+| **I/O-modul** | Siemens EM1.8U (8× universell I/O · Modbus RTU · RS485) |
+| **Transport** | OPC UA Basic256Sha256 · MQTT over TLS · WireGuard VPN |
+| **Databas** | PostgreSQL · TimescaleDB · Haystack · Brick Schema |
 
 ---
 
-## Key capabilities
+## Kärnprinciper
 
-**Data collection**
-- Unified data model across all protocols and manufacturers
-- Local ring buffer (minimum 72 hours) survives network outages
-- Semantic tagging compatible with [Project Haystack](https://project-haystack.org) and [Brick Schema](https://brickschema.org)
+**P.01 — Reglering under kontroll, aldrig på autopilot**
+openAut kan driftsätta Python-baserad reglering direkt på edge-noder via I/O, men bara när en applikationsprofil och ett explicit regleringsuppdrag konfigurerats av behörig användare. All skrivåtkomst loggas, versionshanteras och kan återkallas. Befintliga PLC:er och DDC-regulatorer behåller prioritet.
 
-**AI advisory (on-premises)**
-- Fault detection and diagnostics via conversational interface
-- Alarm correlation and root cause suggestions
-- Energy KPI monitoring and anomaly detection
-- Equipment-specific context: make, model, operating ranges, alarm limits
-- All inference runs locally on dedicated hardware — no API calls to external services
+**P.02 — Skickar inte din data till molnet**
+All inferens körs på den lokala AI-servern i fastigheten. Ingen driftdata lämnar byggnaden om du inte aktivt konfigurerar det.
 
-**Operator interface**
-- Natural language queries via Telegram, Signal, Slack, or web chat
-- Powered by [OpenClaw](https://openclaw.ai) (MIT licensed)
-- Responses include referenced data points and trend context
-- Configurable per-user access control
+**P.03 — Kräver inga proprietära beroenden**
+Kärnstacken körs helt på öppen källkod: `pymodbus`, `opcua-asyncio`, `BAC0`, `open62541` med flera. Inga proprietära drivrutiner eller licenser.
 
-**Integration-ready**
-- OPC UA server on edge node — any OPC UA client can subscribe
-- MQTT broker compatible with standard tooling (Node-RED, Grafana, InfluxDB)
-- REST API for custom integrations
+**P.04 — Ersätter inte ditt befintliga BMS**
+openAut samexisterar med Desigo CC, EcoStruxure, Trend, Regin, Niagara och alla andra plattformar. Det läser deras data — konkurrerar aldrig med dem.
+
+**P.05 — Skapar inget nytt leverantörsberoende**
+Arkitekturen är modulär, dokumenterad och kan tas vid av vilken kompetent integratör som helst. Varje designbeslut utvärderas mot frågan: skapar detta inlåsning?
 
 ---
 
-## Designed for public sector
+## Referenshårdvara
 
-openAut is built with Swedish and European public-sector requirements in mind:
+### AI-lager
+| Enhet | Chip | Minne | Prestanda | Roll |
+|---|---|---|---|---|
+| NVIDIA DGX Spark | GB10 Grace Blackwell | 128 GB unified | 1 PFLOP FP4 | Primär referenshårdvara |
+| ASUS Ascent GX10 | GB10 Grace Blackwell | 128 GB LPDDR5x | 1 PFLOP FP4 | Alternativ, identisk chip |
 
-- **Open standards throughout** — no proprietary protocols or runtimes in the core
-- **Data stays on-premises** — GDPR and NIS2 compliant by architecture
-- **Auditable** — full audit log of AI advisory actions and operator interactions
-- **Vendor-neutral** — qualifying under LOU criteria for open and interoperable systems
-- **Documented** — all APIs and data models are openly specified
+### Edge-lager
+| Enhet | CPU | Gränssnitt | Roll |
+|---|---|---|---|
+| Siemens SIMATIC IOT2050 | TI AM6548 · 4× A53 · 1 GHz | RS232/422/485 · 2× GbE · Arduino Shield | Python-regulator och datainsamlare via SSH |
+| Siemens EM1.8U | — | 8× universell I/O · Modbus RTU · RS485 | Industriell I/O, upp till 31 moduler per buss |
 
----
-
-## Hardware reference
-
-**Edge node** — any Linux computer with serial and Ethernet interfaces
-- Raspberry Pi 5, Siemens IoT2050, Odyssey x86, or equivalent industrial mini-PC
-- Minimum: 4 GB RAM, 32 GB storage, RS-485 interface, Gigabit Ethernet
-
-**AI node** — [NVIDIA DGX Spark](https://www.nvidia.com/en-us/products/workstations/dgx-spark/) (recommended)
-- GB10 Grace Blackwell Superchip, 128 GB unified memory
-- Runs Nemotron 70B–120B locally for full-context diagnostics
-- Ubuntu 24.04 LTS (ARM64)
-- Smaller GPU systems supported for reduced model sizes
+Hela stacken är ARM64-nativ. `pymodbus`, `opcua-asyncio`, `BAC0` och `open62541` är verifierade på ARM64 utan proprietära beroenden.
 
 ---
 
-## Status
+## Säkerhet
 
-> ⚠️ Early development. Not production-ready.
-> APIs, data models, and configuration formats will change.
-> Contributions and feedback welcome.
+Säkerhet är inbyggt från dag ett, inte tillagt i efterhand:
 
-| Component | Status |
-|---|---|
-| Edge node — Modbus driver | 🔧 In progress |
-| Edge node — BACnet driver | 🔧 In progress |
-| Edge node — OPC UA server | 📋 Planned |
-| Edge node — M-Bus driver | 📋 Planned |
-| Local time-series buffer | 🔧 In progress |
-| MQTT forwarder | 📋 Planned |
-| OpenClaw integration | 📋 Planned |
-| BAS Tool Server | 📋 Planned |
-| Semantic data model | 📋 Planned |
+- **IEC 62443** och **NIS2** är baskrav
+- VLAN-segmentering per lager
+- OPC UA Basic256Sha256 för all datatransport
+- WireGuard VPN för fjärråtkomst
+- RBAC och auditloggning
+- Regleringskod versionshanteras och granskas som konfiguration
 
 ---
 
-## License
+## Offentlig sektor och LOU
 
-MIT — see [LICENSE](LICENSE)
+openAut är MIT-licensierat — det finns ingen enskild leverantör att upphandla. Plattformen är gratis att använda. Vad din organisation upphandlar är **kompetensen** att implementera och förvalta den — tjänster som kan tilldelas valfri regional konsult eller befintlig ramavtalspartner.
 
----
-
-## Contributing
-
-openAut is early-stage and welcomes contributors with experience in:
-
-- Building automation protocols (Modbus, BACnet, OPC UA, M-Bus)
-- Field integration (PLCs, DDCs, chillers, AHUs)
-- Python, Node.js
-- OT/IT security
-- Swedish public sector procurement (LOU)
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+En lösning som en kommun bygger kan återanvändas av alla andra. Bidrag tillbaka till projektet stärker plattformen för hela ekosystemet.
 
 ---
 
-## Related projects
+## Protokollstöd
 
-- [OpenClaw](https://openclaw.ai) — self-hosted AI agent gateway (MIT)
-- [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) — secure OpenClaw deployment on DGX hardware
-- [Project Haystack](https://project-haystack.org) — semantic modeling for building data
-- [Brick Schema](https://brickschema.org) — building metadata ontology
-- [open62541](https://github.com/open62541/open62541) — open-source OPC UA stack (MIT)
-- [BAC0](https://github.com/ChristianTremblay/BAC0) — BACnet Python library
-- [pymodbus](https://github.com/pymodbus-dev/pymodbus) — Modbus Python library
+`BACnet/IP` · `BACnet MS/TP` · `Modbus RTU` · `Modbus TCP` · `M-Bus` · `OPC UA` · `MQTT` · `LoRaWAN (EU868)` · `KNX` · `DALI`
+
+---
+
+## Kom igång
+
+```bash
+# Utforska projektet
+https://github.com/openaut
+
+# Hemsida och dokumentation
+https://openaut.io
+
+# Systemtopologi
+https://openaut.io/topologi.html
+```
+
+Projektet är under aktiv utveckling och redo för pilotdriftsättningar. Bidra med en protokolldrivrutin, anpassa en applikationsprofil, eller testa edge-reglering mot din befintliga I/O-hårdvara.
+
+---
+
+MIT License · openAut · https://openaut.io
