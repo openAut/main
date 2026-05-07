@@ -113,6 +113,50 @@
     font-weight: 700;
   }
 
+  .nav-toggle {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    width: 42px;
+    height: 42px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .nav-toggle span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: var(--green);
+    position: relative;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .nav-toggle span::before,
+  .nav-toggle span::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    width: 18px;
+    height: 2px;
+    background: var(--green);
+    transition: transform 0.2s, top 0.2s, bottom 0.2s;
+  }
+
+  .nav-toggle span::before { top: -6px; }
+  .nav-toggle span::after { bottom: -6px; }
+
+  .nav-toggle[aria-expanded="true"] span { background: transparent; }
+  .nav-toggle[aria-expanded="true"] span::before {
+    top: 0;
+    transform: rotate(45deg);
+  }
+  .nav-toggle[aria-expanded="true"] span::after {
+    bottom: 0;
+    transform: rotate(-45deg);
+  }
+
   /* ── HERO ── */
   .hero {
     position: relative;
@@ -1072,8 +1116,23 @@
 
   /* ── RESPONSIVE ── */
   @media (max-width: 900px) {
-    nav { padding: 1rem 1.5rem; }
-    .nav-links, .nav-badge { display: none; }
+    nav {
+      padding: 1rem 1.5rem;
+      flex-wrap: wrap;
+      gap: 0.9rem;
+    }
+    .nav-toggle { display: inline-flex; margin-left: auto; }
+    .nav-badge { display: none; }
+    .nav-links {
+      display: none;
+      width: 100%;
+      flex-direction: column;
+      gap: 0.8rem;
+      padding: 0.5rem 0 0.2rem;
+      border-top: 1px solid var(--border);
+    }
+    .nav-links.open { display: flex; }
+    .nav-links a { display: inline-block; font-size: 0.72rem; }
     section { padding: 4rem 1.5rem; }
     .hero { padding: 7rem 1.5rem 4rem; }
     .problem-grid, .spark-grid, .lou-layout { grid-template-columns: 1fr; gap: 3rem; }
@@ -1093,7 +1152,10 @@
 <!-- NAV -->
 <nav>
   <a href="#" class="nav-logo">open<span>Aut</span></a>
-  <ul class="nav-links">
+  <button class="nav-toggle" id="navToggle" aria-label="Öppna navigering" aria-expanded="false" aria-controls="primaryNav">
+    <span></span>
+  </button>
+  <ul class="nav-links" id="primaryNav">
     <li><a href="#problem">Problem</a></li>
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#ai">AI Layer</a></li>
@@ -1551,6 +1613,25 @@
       visual.appendChild(dot);
     }
   }
+
+  // Mobile navigation
+  const navToggle = document.getElementById('navToggle');
+  const primaryNav = document.getElementById('primaryNav');
+  if (navToggle && primaryNav) {
+    navToggle.addEventListener('click', () => {
+      const isOpen = navToggle.getAttribute('aria-expanded') === 'true';
+      navToggle.setAttribute('aria-expanded', String(!isOpen));
+      primaryNav.classList.toggle('open', !isOpen);
+    });
+
+    primaryNav.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => {
+        navToggle.setAttribute('aria-expanded', 'false');
+        primaryNav.classList.remove('open');
+      });
+    });
+  }
+
 </script>
 </body>
 </html>
