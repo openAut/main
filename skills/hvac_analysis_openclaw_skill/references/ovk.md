@@ -9,7 +9,7 @@ OVK (**Obligatorisk ventilationskontroll**) is a mandatory Swedish inspection to
 - Identify energy‑saving improvements without compromising indoor air quality.
 
 ## Inspection intervals
-Inspection frequency depends on system type and building use【763264260481650†L40-L60】:
+Inspection frequency depends on system type and building use(PBF 2011:338):
 
 | Building/System type                        | Interval |
 |--------------------------------------------|---------|

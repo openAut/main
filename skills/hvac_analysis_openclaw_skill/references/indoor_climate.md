@@ -8,13 +8,13 @@ Indoor climate affects occupant comfort, health, and productivity. Key parameter
 - Uneven temperatures can indicate imbalance in heating/cooling distribution or faulty controls.
 
 ## Humidity
-- Relative humidity (RH) expresses moisture content as a percentage of the maximum at a given temperature. Folkhälsomyndigheten states that RH indoors during the heating season is typically **20–40 %**, with an average around **30 %**【470547024757844†L378-L399】.
-- Absolute humidity difference above **3 g/m³** between indoor and outdoor air suggests poor ventilation【470547024757844†L378-L399】.
+- Relative humidity (RH) expresses moisture content as a percentage of the maximum at a given temperature. Folkhälsomyndigheten states that RH indoors during the heating season is typically **20–40 %**, with an average around **30 %**(FoHMFS 2014:18, avsnitt fukt).
+- Absolute humidity difference above **3 g/m³** between indoor and outdoor air suggests poor ventilation(FoHMFS 2014:18, avsnitt fukt).
 - Too low RH (<20 %) may cause dry eyes and throat; too high RH (>60 %) may promote mould growth.
 
 ## CO₂ concentration
 - CO₂ is an indicator of human occupancy and ventilation performance.
-- Outdoor CO₂ ≈ 400 ppm; well‑ventilated buildings typically maintain 600–800 ppm; values above **1 000 ppm** indicate insufficient ventilation【470547024757844†L410-L425】.
+- Outdoor CO₂ ≈ 400 ppm; well‑ventilated buildings typically maintain 600–800 ppm; values above **1 000 ppm** indicate insufficient ventilation(FoHMFS 2014:18, avsnitt CO₂).
 - Elevated CO₂ can cause drowsiness and reduced cognitive performance.
 
 ## Draught

@@ -1,81 +1,126 @@
 ---
 name: hvac_analysis
 description: |
-  Structured support for analyzing ventilation, heating, cooling, indoor climate, energy optimisation, hydronic balancing, and troubleshooting in Swedish buildings. The skill uses Swedish regulations and industry guidelines to diagnose HVAC issues, propose measurements and actions, and ensure compliance.
+  Use this skill for any question about HVAC systems, ventilation, heating, cooling, or indoor climate in Swedish buildings. Trigger on: ventilation problems (dålig ventilation, högt CO₂, drag, lukt, fukt), heating/cooling issues (ojämn temperatur, värmeläckage, kyla), hydronic systems and balancing (injustering, radiatorer, fjärrvärme), heat pumps (värmepump, luftvärmepump, bergvärme), energy optimisation of HVAC (besparingar, driftsoptimering, VFD, VAV, CAV), BMS/automation questions (styrning, DUC, setpoints, sensorer), OVK and Swedish regulatory compliance (Boverket BBR, Folkhälsomyndigheten, Arbetsmiljöverket, OVK), and commissioning or troubleshooting of FTX/FT/F/S systems, AHU, chillers, district heating, hydronic loops, or any building services question. Always use this skill even when the user asks briefly — e.g. "varför är det kallt på övre plan?" or "hur sparar man energi på ventilation?" — because the structured workflow, Swedish regulations, and calculation tools it provides are always relevant.
 ---
-# Purpose
-Provide a structured methodology to analyse and improve HVAC systems in residential, commercial, and industrial buildings. The skill helps identify ventilation, heating, cooling, indoor climate, and control problems; suggests measurements and corrective actions; emphasises energy efficiency; and references Swedish regulations (Boverket, Folkhälsomyndigheten, Arbetsmiljöverket) and the obligatory ventilation control (OVK).
 
-# When to use
-Use this skill whenever a user asks about:
-- Ventilation problems: insufficient airflow, high CO₂, odours, humidity.
-- Heating or cooling performance issues: uneven temperature, poor comfort, high energy use.
-- Hydronic system imbalance or poor heat distribution.
-- Control or automation questions: scheduling, setpoints, sensors, alarms.
-- Energy optimisation or commissioning of HVAC systems.
-- Compliance with Swedish ventilation rules or OVK.
-- Design or assessment of S, F, FT, FTX, CAV, VAV systems, heat pumps, district heating, hydronic systems.
+# Purpose
+Provide a structured methodology to analyse and improve HVAC systems in residential, commercial, and industrial Swedish buildings. The skill diagnoses ventilation, heating, cooling, indoor climate, and control problems; suggests measurements and corrective actions; emphasises energy efficiency; and references Swedish regulations (Boverket, Folkhälsomyndigheten, Arbetsmiljöverket) and OVK.
+
+# Reference files — when to read them
+Load reference files on demand using the `view` tool. Read only what is relevant to the current question.
+
+| Topic | File |
+|---|---|
+| Swedish regulations, airflow limits, CO₂, OVK intervals | `references/swedish_regulations.md` |
+| OVK details (procedure, intervals, responsibilities) | `references/ovk.md` |
+| Ventilation system types S/F/FT/FTX/CAV/VAV | `references/ventilation_systems.md` |
+| Heating systems: district heating, heat pumps, boilers | `references/heating_systems.md` |
+| Cooling: DX, chilled water, free cooling, splits | `references/cooling_systems.md` |
+| Hydronic systems and balancing | `references/hydronic_systems.md` |
+| BMS and control strategies | `references/controls_and_bms.md` |
+| Indoor climate parameters (temp, humidity, CO₂, noise) | `references/indoor_climate.md` |
+| Energy optimisation strategies | `references/energy_optimization.md` |
+| Troubleshooting guide | `references/troubleshooting.md` |
+| Commissioning and start-up | `references/commissioning.md` |
+
+For novel or complex issues, also read the most relevant example file in `examples/`.
+
+# Calculation tools — when to run them
+Use `bash_tool` to run scripts for numerical calculations. Always show inputs, formula, and result.
+
+| Calculation | Script | When to run |
+|---|---|---|
+| Minimum outdoor airflow (BBR/AFS) | `scripts/airflow_calculator.py` | Any airflow requirement check |
+| Heat loss through envelope or ventilation | `scripts/heat_load_estimator.py` | Heating load estimates |
+| Humidity ratio, dew point, saturation pressure | `scripts/psychrometrics.py` | Moisture/condensation analysis |
+
+Example — call a function from the airflow calculator:
+```bash
+python3 -c "
+import sys; sys.path.insert(0, 'scripts')
+from airflow_calculator import required_airflow_residential, required_airflow_school_or_office
+area, occupants = 120, 4
+print(f'Residential: {required_airflow_residential(area, occupants):.1f} l/s')
+print(f'Office: {required_airflow_school_or_office(area, occupants):.1f} l/s')
+"
+```
 
 # Required inputs
 Before analysis, collect or estimate:
-- **Building information:** type (apartment, office, school, etc.), year of construction, floor area, number of occupants, operating schedule, climate zone, renovation history.
-- **HVAC system information:** type of ventilation (S, F, FT, FTX, CAV, VAV), heating (district heating, heat pump, boiler, electric), cooling (DX, chiller, free cooling, split), hydronic details (pumps, valves, coils), heat recovery type, control system/BMS.
-- **Symptoms:** when and where problems occur, affected rooms or zones, seasonal and diurnal patterns, noise, smell, humidity, temperature deviation, CO₂ measurements.
+- **Building:** type, year of construction, floor area, number of occupants, operating schedule, climate zone, renovation history.
+- **HVAC:** ventilation type (S, F, FT, FTX, CAV, VAV), heating (district heating, heat pump, boiler, electric), cooling (DX, chiller, free cooling, split), hydronic details (pumps, valves, coils), heat recovery type, BMS.
+- **Symptoms:** when and where problems occur, affected rooms/zones, seasonal and diurnal patterns, noise, smell, humidity, temperature deviation, CO₂ readings.
 
 # Workflow
-1. **Identify problem category**: Determine whether the issue relates to airflow, temperature, humidity, pressure, hydronics, controls, energy, occupancy, or envelope interaction.
-2. **Check operating conditions**: Verify schedules, setpoints, fan and pump operation, valve positions, sensor values, alarm history, and trend logs.
-3. **Evaluate ventilation**: Measure supply and extract airflows, pressure balance, filter pressure drop, heat recovery efficiency, damper operation, fan speed, and duct restrictions.
-4. **Evaluate heating and cooling**: Check supply and return temperatures, delta‑T, flow rates, coil operation, compressor staging, heat pump behaviour, and hydronic balancing.
-5. **Evaluate indoor climate**: Assess CO₂, relative humidity, operative temperature, draught risk, noise, and odours.
-6. **Evaluate energy performance**: Look for simultaneous heating and cooling, excessive airflow, incorrect scheduling, bypassed heat recovery, short cycling, pump overcapacity, constant operation, or sensor drift.
-7. **Check regulatory context**: For Swedish projects, verify compliance with Boverket’s ventilation rules (minimum outdoor airflow 0.35 l/s·m² and ≥4 l/s per person in residences【307965596929412†L6814-L6819】; 7 l/s per person + 0.35 l/s·m² in schools and offices【476562234464538†L690-L697】), Folkhälsomyndigheten’s guidelines on CO₂ (indicative limit 1 000 ppm【470547024757844†L410-L425】), relative humidity (20–40 % during heating season【470547024757844†L378-L399】), and absolute humidity difference (<3 g/m³ difference between indoor and outdoor【470547024757844†L378-L399】), and OVK inspection intervals (3 or 6 years depending on system【763264260481650†L40-L60】).
-8. **Assess energy impact and recommend measures**: Start with no‑cost operational changes, then control optimisation, maintenance and balancing, component upgrades, and finally system redesign.
-9. **Provide structured output** (see Output format).
+1. **Identify problem category:** Determine whether the issue relates to airflow, temperature, humidity, pressure, hydronics, controls, energy, occupancy, or building envelope.
+2. **Load relevant reference files** using the `view` tool (see table above).
+3. **Check operating conditions:** Verify schedules, setpoints, fan/pump operation, valve positions, sensor values, alarm history, trend logs.
+4. **Evaluate ventilation:** Supply/extract flows, pressure balance, filter pressure drop, heat recovery efficiency, damper operation, fan speed, duct restrictions.
+5. **Evaluate heating and cooling:** Supply/return temperatures, ΔT, flow rates, coil operation, compressor staging, heat pump behaviour, hydronic balancing.
+6. **Evaluate indoor climate:** CO₂, relative humidity, operative temperature, draught risk, noise, odours.
+7. **Evaluate energy performance:** Look for simultaneous heating/cooling, excessive airflow, incorrect scheduling, bypassed heat recovery, short cycling, pump overcapacity, sensor drift.
+8. **Check regulatory compliance:** Verify minimum airflow (BBR 9:2 for residences; AFS 2020:1 §22 for offices/schools), CO₂ limits (FoHMFS 2014:18), OVK intervals (PBF 2011:338). Read `references/swedish_regulations.md` for details.
+9. **Run calculations** via bash_tool when numerical verification is needed.
+10. **Recommend measures:** No-cost operational changes → control optimisation → maintenance and balancing → component upgrades → system redesign.
+11. **Provide structured output** (see Output format).
 
 # HVAC principles
-- **Measure before acting:** Always verify flow rates, pressures, temperatures, and CO₂ before recommending replacement.
-- **Separate symptoms from root causes:** For example, cold rooms may be due to airflow imbalance, not a faulty heater.
-- **Distinguish problem types:** Comfort, health, energy, capacity, or compliance issues may require different actions.
-- **System thinking:** Evaluate entire airflow paths, pressure relations, occupancy patterns, control sequences, heat recovery, and building envelope interactions rather than isolating components.
-- **Prefer optimisation before replacement:** Prioritise adjusting schedules, setpoints, balancing, and cleaning over replacing equipment.
-- **Use SI units and show formulas** when performing calculations.
+- **Measure before acting:** Verify flow rates, pressures, temperatures, and CO₂ before recommending replacement.
+- **Separate symptoms from root causes:** Cold rooms may be due to airflow imbalance, not a faulty heater.
+- **System thinking:** Evaluate entire airflow paths, pressure relations, occupancy patterns, control sequences, heat recovery, and building envelope interactions.
+- **Prefer optimisation before replacement:** Adjust schedules, setpoints, balancing, and cleaning before replacing equipment.
+- **Use SI units and show formulas** when calculating.
+- **Radon awareness:** Negative building pressure (common in F-systems and poorly balanced FT-systems) can draw radon-laden air from the ground. Flag this risk when relevant.
 
 # Diagnostic principles
 - **Document assumptions** and uncertainties clearly.
-- **Recommend further investigation by qualified personnel** for safety‑critical issues such as refrigerant leaks, combustion systems, electrical faults, mould, legionella, smoke/fire dampers, pressure vessels, gas systems.
+- **Recommend qualified personnel** for safety-critical work: refrigerant systems, combustion, electrical faults, mould, legionella, smoke/fire dampers, pressure vessels, gas systems.
 - **Prioritise occupant health and safety** in all recommendations.
 
 # Calculation rules
-Always provide formulas and units. Examples:
-- Required outdoor airflow (residences): $$q = \max(0.35\,\mathrm{l/s·m²} \times A,\ 4\,\mathrm{l/s/person} \times N)$$ where \(A\) is floor area and \(N\) the number of occupants【307965596929412†L6814-L6819】.
-- Required outdoor airflow (schools/offices): $$q = 0.35\,\mathrm{l/s·m²} \times A + 7\,\mathrm{l/s/person} \times N$$【476562234464538†L690-L697】.
-- Heat load estimate: \(Q = \dot{m}\,c_p\,(T_{\text{in}}-T_{\text{out}})\) (see scripts).
-- Ventilation heat loss: \(Q_{\text{vent}} = \rho\,c_p\,\dot{V}\,(T_{\text{in}}-T_{\text{out}})\).
+Always show formulas and units. Key formulas:
 
-# Swedish regulation context
-The following points summarise key Swedish rules and guidelines:
-- **Minimum airflow in residences:** Outdoor air supply must be at least 0.35 l/s per m² of floor area and not less than 4 l/s per person【307965596929412†L6814-L6819】. 
-- **Minimum airflow in schools/offices:** At sedentary work, supply at least 7 l/s per person plus 0.35 l/s per m²【476562234464538†L690-L697】. 
-- **CO₂ indicator:** Indoor CO₂ levels above 1 000 ppm signal insufficient ventilation; well‑ventilated buildings typically have 600–800 ppm【470547024757844†L410-L425】. Humans exhale ~15–20 l/h CO₂, raising indoor levels if ventilation is inadequate【470547024757844†L410-L425】.
-- **Humidity guidelines:** Typical indoor relative humidity during heating season is 20–40 % (average around 30 %), and an absolute humidity difference >3 g/m³ between indoor and outdoor indicates poor ventilation【470547024757844†L378-L399】.
-- **OVK intervals:** Functional ventilation checks must be performed every 3 years for buildings with supply and extract ventilation (FT, FTX) and certain public buildings, and every 6 years for exhaust‑only systems【763264260481650†L40-L60】.
+**Minimum outdoor airflow — residences (BBR 9:2):**
+$$q = \max(0.35\,\mathrm{l/s \cdot m^2} \times A,\ 4\,\mathrm{l/s/person} \times N)$$
 
-See `references/swedish_regulations.md` for more details.
+**Minimum outdoor airflow — schools/offices at sedentary work (AFS 2020:1 §22):**
+$$q = 0.35\,\mathrm{l/s \cdot m^2} \times A + 7\,\mathrm{l/s/person} \times N$$
+
+**Ventilation heat loss:**
+$$Q_{\text{vent}} = \rho \, c_p \, \dot{V} \, (T_{\text{in}} - T_{\text{out}})$$
+
+**Transmission heat loss:**
+$$Q = U \times A \times \Delta T$$
+
+Run scripts via bash_tool for numerical results (see Calculation tools above).
+
+# Swedish regulatory summary
+| Topic | Value | Source |
+|---|---|---|
+| Min. airflow, residences (area-based) | 0.35 l/s·m² | BBR 9:2 |
+| Min. airflow, residences (person-based) | 4 l/s/person | BBR 9:2 |
+| Min. airflow, offices/schools (sedentary) | 7 l/s/person + 0.35 l/s·m² | AFS 2020:1 §22 |
+| CO₂ — insufficient ventilation | > 1 000 ppm | FoHMFS 2014:18 |
+| CO₂ — well-ventilated buildings | 600–800 ppm | FoHMFS 2014:18 |
+| Indoor RH, heating season | 20–40 % (avg ~30 %) | FoHMFS 2014:18 |
+| Absolute humidity difference (poor ventilation) | > 3 g/m³ indoor vs outdoor | FoHMFS 2014:18 |
+| OVK — FT/FTX and public buildings | Every 3 years | PBF 2011:338 |
+| OVK — exhaust-only (F) | Every 6 years | PBF 2011:338 |
+| OVK — single-family FT/FTX | Initial inspection only | PBF 2011:338 |
+
+Read `references/swedish_regulations.md` and `references/ovk.md` for complete details.
 
 # Output format
-When responding to a user, structure your answer using the following sections:
+Structure every response with these sections:
 
-- **Situation:** Describe the building, system, and observed issue.
-- **Likely causes:** List the most likely, possible, and less likely causes, with brief reasoning.
-- **Controls and measurements:** Specify what to inspect or measure (airflow, temperatures, pressures, CO₂, humidity, sensors, etc.), where, why, and expected values.
-- **Recommended actions:** Prioritise actions from no-cost operational adjustments to maintenance, balancing, controls optimisation, component replacement, and system redesign.
-- **Energy impact:** Estimate whether the problem has low, moderate, or high energy impact and explain why.
-- **Regulation and compliance notes:** Mention potential OVK implications, IAQ concerns, workplace regulations, and other compliance issues.
-- **Risks and assumptions:** Highlight uncertainties, assumptions, and any safety or health risks.
-- **Questions for precision:** List additional questions or data needed to refine analysis.
+- **Situation:** Building, system, and observed issue.
+- **Likely causes:** Most likely → possible → less likely, with brief reasoning.
+- **Controls and measurements:** What to inspect or measure, where, why, and expected values.
+- **Recommended actions:** Prioritised from no-cost → maintenance → controls → component replacement → system redesign.
+- **Energy impact:** Low / Moderate / High — with explanation.
+- **Regulation and compliance notes:** OVK implications, IAQ concerns, workplace regulations.
+- **Risks and assumptions:** Uncertainties, assumptions, safety and health risks.
+- **Questions for precision:** Additional data needed to refine the analysis.
 
-Refer to example files in `examples/` for sample analyses.
-
-# Referencing
-Whenever applicable, cite content from the reference files in the skill. Use the heading names (e.g. “Swedish regulations”, “Energy optimisation”) to refer the user to detailed documentation in the `references/` folder.
+See `examples/` for complete worked analyses following this format.

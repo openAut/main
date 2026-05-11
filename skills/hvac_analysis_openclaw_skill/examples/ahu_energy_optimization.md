@@ -19,11 +19,11 @@ An air handling unit (AHU) serving a commercial building operates continuously a
 - **Review occupancy patterns** and adjust schedules accordingly.
 
 ## Recommended actions
-1. Implement schedule control: reduce fan speed or shut down the AHU during unoccupied periods【631875643103375†L134-L142】.
-2. Install or commission VFDs on supply and exhaust fans; program them to maintain required airflow and pressure【631875643103375†L146-L166】.
-3. Enable demand-controlled ventilation using CO₂ sensors【631875643103375†L171-L181】.
-4. Check and clean filters and heat exchanger to reduce pressure drop【631875643103375†L119-L131】.
-5. Seal duct leaks and improve insulation【631875643103375†L212-L232】.
+1. Implement schedule control: reduce fan speed or shut down the AHU during unoccupied periods(Energimyndigheten ET 2016:02).
+2. Install or commission VFDs on supply and exhaust fans; program them to maintain required airflow and pressure(Energimyndigheten ET 2016:02).
+3. Enable demand-controlled ventilation using CO₂ sensors(Energimyndigheten ET 2016:02).
+4. Check and clean filters and heat exchanger to reduce pressure drop(Energimyndigheten ET 2016:02).
+5. Seal duct leaks and improve insulation(Energimyndigheten ET 2016:02).
 6. Optimise heat recovery control: avoid bypassing the heat exchanger when heat recovery is beneficial.
 
 ## Energy impact

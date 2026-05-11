@@ -22,3 +22,5 @@ An **FTX** system includes a heat exchanger (typically rotary or plate) that rec
 
 ## Demand‑controlled ventilation
 Demand‑controlled systems use sensors (CO₂, VOC, occupancy) and controls to adjust ventilation flows in real time. They can be implemented in VAV or hybrid systems. Proper sensor placement, calibration, and control algorithms are essential to avoid underventilation or over‑ventilation.
+## Radon and pressure balance
+In S and F systems, the building is held at negative pressure relative to the outdoors. This can draw radon-laden soil air through cracks in the foundation, particularly in radon-risk areas. Signs of elevated radon risk: old building, crawl-space or direct slab-on-ground construction, high local radon geology. Mitigation typically involves sealing penetrations, adding supply air to improve pressure balance, or installing sub-slab depressurisation. Radon measurements (long-term measurements using track detectors, at least 60 days) are required before and after measures. The Swedish action level is 200 Bq/m³ in existing buildings (Strålsäkerhetsmyndigheten, SSM FS 2018:5).

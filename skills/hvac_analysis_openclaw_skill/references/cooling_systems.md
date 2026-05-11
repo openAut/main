@@ -18,3 +18,8 @@ Split systems consist of an indoor unit (evaporator) and an outdoor unit (conden
 Heat pumps can reverse operation to provide cooling. Efficiency is similar to their heating operation but may decrease at very high outdoor temperatures.
 
 Cooling systems often interact with ventilation (e.g., cooling coils in AHUs). Ensure that supply air temperatures and humidity levels are controlled to prevent condensation and occupant discomfort.
+## District cooling (fjärrkyla)
+District cooling distributes chilled water from a central plant through insulated pipes to multiple buildings, similar to district heating. It is common in Swedish city centres (e.g., Stockholm, Göteborg). The building receives chilled water via a heat exchanger; the internal hydronic loop is independent of the district network. Advantages: eliminates on-site chillers, high efficiency through economies of scale and use of cold lake/sea water or industrial waste cold. Key considerations: heat exchanger sizing, return temperature control (district operators set limits), and compatibility with building hydronic pressures.
+
+## Absorption cooling
+Absorption chillers use heat (e.g., district heating, waste heat, solar thermal) rather than electricity to drive the refrigeration cycle. They are used where cheap heat is available and electricity is expensive or limited. Efficiency is expressed as COP (typically 0.6–1.3 for single-effect systems). Maintenance requirements include water treatment (LiBr-water solution), purging of non-condensable gases, and periodic inspection of the vacuum integrity.

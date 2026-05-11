@@ -4,7 +4,7 @@
 A five‑storey office building with a hydronic radiator system heated by district heating experiences uneven temperatures: top floors are cold while lower floors are overheated. The building’s heating system uses a variable-speed pump but has not been rebalanced since renovations.
 
 ## Likely causes
-1. **Unbalanced flow distribution** – balancing valves may be improperly set, causing too much flow on lower floors and too little on upper floors【988802230460612†L154-L159】.
+1. **Unbalanced flow distribution** – balancing valves may be improperly set, causing too much flow on lower floors and too little on upper floors(Energimyndigheten, injusteringshandbok).
 2. **Insufficient pump head or incorrect pump control** – pump may not provide adequate pressure to overcome vertical height; variable-speed control may be set incorrectly.
 3. **Air in the system** – trapped air at high points can block water flow to upper floors.
 4. **Stuck or malfunctioning control valves** – thermostatic radiator valves may be stuck closed or open.
@@ -19,7 +19,7 @@ A five‑storey office building with a hydronic radiator system heated by distri
 
 ## Recommended actions
 1. Bleed air from the system.
-2. Perform hydronic balancing: adjust balancing valves at each riser and radiator to match design flows【988802230460612†L154-L159】.
+2. Perform hydronic balancing: adjust balancing valves at each riser and radiator to match design flows(Energimyndigheten, injusteringshandbok).
 3. Check and adjust pump speed or replace pump if unable to provide required head.
 4. Repair or replace faulty thermostatic valves.
 5. Insulate piping where necessary to reduce heat loss.

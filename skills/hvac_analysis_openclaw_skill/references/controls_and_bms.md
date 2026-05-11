@@ -17,9 +17,9 @@ Actuators include valves, dampers, variable-frequency drives (VFDs) on fans and 
 
 ## Building Management Systems
 A BMS provides centralised monitoring and control of HVAC and other systems. It can log data, trigger alarms, and optimise schedules. Energy optimisation includes:
-- Using VFDs to modulate fan and pump speeds to match load【631875643103375†L146-L166】.
-- Implementing automatic control based on real‑time data for temperature, humidity, and air quality【631875643103375†L171-L181】.
-- Scheduling equipment to run only when needed【631875643103375†L134-L142】.
+- Using VFDs to modulate fan and pump speeds to match load(Energimyndigheten ET 2016:02).
+- Implementing automatic control based on real‑time data for temperature, humidity, and air quality(Energimyndigheten ET 2016:02).
+- Scheduling equipment to run only when needed(Energimyndigheten ET 2016:02).
 - Integrating heat recovery and free cooling strategies.
 
 ## Maintenance and troubleshooting

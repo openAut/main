@@ -29,3 +29,5 @@ Documentation of measurements provides a baseline for future comparisons.
 - Identifies installation errors or equipment faults early.
 - Provides baseline data for troubleshooting and optimisation.
 - Supports compliance with regulatory requirements and certification schemes (e.g., OVK, energy declarations).
+## Relationship to OVK
+Commissioning and OVK (Obligatorisk ventilationskontroll) are closely linked but distinct. Initial commissioning establishes baseline airflows and documents that the system meets design intent — this documentation is used as reference in subsequent OVK inspections. A thorough commissioning report (measured flows, balanced values, fan curves) makes OVK inspections faster and provides a comparison baseline for detecting degradation. For FT/FTX systems in multi-dwelling buildings, OVK must be performed within 3 years of commissioning and every 3 years thereafter (PBF 2011:338). Building owners should keep commissioning reports accessible to the OVK inspector.

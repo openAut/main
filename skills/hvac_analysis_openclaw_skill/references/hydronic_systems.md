@@ -10,7 +10,7 @@ Hydronic systems circulate water through pipes, radiators, or coils to transfer 
 - **Control valves**: modulate flow based on thermostats or control signals.
 
 ## Hydronic balancing
-Hydronic balancing is the process of adjusting the flow distribution so that each radiator or coil receives the proper amount of water【988802230460612†L154-L159】. Without balancing, some circuits may be over‑supplied (causing energy waste) while others are under‑supplied (causing discomfort). Balancing improves energy efficiency and lowers operating cost【988802230460612†L154-L159】.
+Hydronic balancing is the process of adjusting the flow distribution so that each radiator or coil receives the proper amount of water(Energimyndigheten, injusteringshandbok). Without balancing, some circuits may be over‑supplied (causing energy waste) while others are under‑supplied (causing discomfort). Balancing improves energy efficiency and lowers operating cost(Energimyndigheten, injusteringshandbok).
 
 ### Balancing procedure
 1. Determine design flow rates for each circuit.
