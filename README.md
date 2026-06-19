@@ -1,8 +1,25 @@
 # openAut NemoClaw Skills
 
+> ## ⚠️ Learning project — not for production
+>
+> This is a **development and learning project** whose purpose is to explore how AI agents can be
+> applied to building management. It is **not a product** and is **not intended for live or
+> production environments**.
+>
+> - The skills are runbooks and **reference scripts**; their live behaviour is **unverified** (every
+>   `SKILL.md` says so). They have not been tested against real building hardware, control systems,
+>   or a production NemoClaw deployment.
+> - **Do not** connect these to live HVAC, energy, or safety-critical systems, or to occupied
+>   buildings. A wrong setpoint or control write can damage equipment or affect people.
+> - Anything that writes to field devices must stay a **human-confirmed** action, and should only be
+>   exercised in a lab/test rig you fully control.
+> - Use this to **learn** — read the architecture, study the security model, experiment in an
+>   isolated sandbox. For real deployments, engage qualified controls, security, and compliance
+>   professionals and validate everything independently.
+
 Agent-agnostic **skills (runbooks)** that let a coding agent — **Claude Code** or **OpenAI Codex** —
-securely connect to a server and provision **NemoClaw** agents that meet the
-[openAut](https://openaut.io) reference architecture.
+securely connect to a server and provision **NemoClaw** agents that follow the
+[openAut](https://openaut.io) reference architecture, as a hands-on way to learn the patterns.
 
 These skills do **not** reimplement NemoClaw. NemoClaw already ships the bootstrap
 (`curl … nemoclaw.sh | bash`), the Landlock + seccomp + netns sandbox, inference routing,

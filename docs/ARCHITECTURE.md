@@ -1,5 +1,9 @@
 # openAut architecture & where these skills fit
 
+> ⚠️ **Learning project — not for production.** This is a development/learning exploration of AI in
+> building management, not a product. Do not use against live or safety-critical systems. See the
+> [README](../README.md#️-learning-project--not-for-production) for the full disclaimer.
+
 This pack provisions the **agent tier** of an [openAut](https://openaut.io) deployment. openAut is a
 four-layer, on-premise building-management AI: field data flows up through edge nodes to an on-site
 AI tier, and role-specific agents push insight back out to people. Nothing leaves the building.
