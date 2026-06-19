@@ -83,15 +83,24 @@ AI tier, and role-specific agents push insight back out to people. Nothing leave
 4. **Sandbox kernel boundary** — Landlock (filesystem), seccomp (syscalls), netns (network) confine
    the agent regardless of what a prompt convinces it to attempt.
 
-## Out of scope here (the rest of openAut)
+## Runtime capabilities the agents carry
 
-This pack now covers the agent tier **and** the data backbone + edge. Still out of scope, carried by
-the agents as separate runtime capability skills:
+The pack also includes the runtime skills each persona is granted (least-privilege) in
+[`nemoclaw-agent-workflow`](../skills/nemoclaw-agent-workflow/SKILL.md):
 
-- **Field protocols (Layer 1)** beyond the edge poller's needs: `bacnet`, `modbus`, plus `m-bus`,
-  `knx`, `dali`, `lorawan`.
-- **Analytics:** `fdd`, `energy-optimization`, `anomaly-correlation`.
-- **Compliance references:** `nis2`, `cra`, `ai-act`, `iso27001`, `iec62443`.
+- **Field protocols (Layer 1):** [`bacnet`](../skills/bacnet/SKILL.md),
+  [`modbus`](../skills/modbus/SKILL.md), [`mbus`](../skills/mbus/SKILL.md),
+  [`knx`](../skills/knx/SKILL.md), [`dali`](../skills/dali/SKILL.md),
+  [`lorawan`](../skills/lorawan/SKILL.md) — read field data; the edge poller and agents use these.
+- **Analytics (Layer 3):** [`fdd`](../skills/fdd/SKILL.md),
+  [`energy-optimization`](../skills/energy-optimization/SKILL.md),
+  [`anomaly-correlation`](../skills/anomaly-correlation/SKILL.md) — turn telemetry into diagnosis,
+  savings, and root-cause alerts.
+- **Compliance references:** [`nis2`](../skills/nis2/SKILL.md), [`cra`](../skills/cra/SKILL.md),
+  [`ai-act`](../skills/ai-act/SKILL.md), [`iso27001`](../skills/iso27001/SKILL.md),
+  [`iec62443`](../skills/iec62443/SKILL.md) — the legal/standards backdrop the design is built to.
 
-The agents are wired to these via per-persona tool grants in
-[`nemoclaw-agent-workflow`](../skills/nemoclaw-agent-workflow/SKILL.md).
+## Genuinely out of scope
+
+openAut's own Layer-4 application code — the web dashboard, Power BI models, REST API — is the product
+itself. These skills *operate and secure* a deployment; they don't replace that application.

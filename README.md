@@ -35,6 +35,17 @@ openAut-specific defaults:
 | [`timeseries-stack`](skills/timeseries-stack/SKILL.md) | **TimescaleDB + PostgreSQL** — telemetry hypertable, system schema, MQTT→DB ingest, retention + continuous aggregates, and **least-privilege roles** (ingest write, agent read-only). |
 | [`edge-iot2050`](skills/edge-iot2050/SKILL.md) | Provision a **Siemens IOT2050** edge node: field-protocol poller → EMQX over mutual TLS with the node's cert, **store-and-forward** buffering, resilient systemd service. |
 
+**Runtime capabilities — what each agent persona carries:**
+
+| Group | Skills |
+|---|---|
+| Field protocols | [`bacnet`](skills/bacnet/SKILL.md) · [`modbus`](skills/modbus/SKILL.md) · [`mbus`](skills/mbus/SKILL.md) · [`knx`](skills/knx/SKILL.md) · [`dali`](skills/dali/SKILL.md) · [`lorawan`](skills/lorawan/SKILL.md) |
+| Analytics | [`fdd`](skills/fdd/SKILL.md) · [`energy-optimization`](skills/energy-optimization/SKILL.md) · [`anomaly-correlation`](skills/anomaly-correlation/SKILL.md) |
+| Compliance | [`nis2`](skills/nis2/SKILL.md) · [`cra`](skills/cra/SKILL.md) · [`ai-act`](skills/ai-act/SKILL.md) · [`iso27001`](skills/iso27001/SKILL.md) · [`iec62443`](skills/iec62443/SKILL.md) |
+
+The personas in [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) are each granted
+a **least-privilege subset** of these (e.g. read-only protocols + analytics for the energy role).
+
 Supporting:
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
@@ -52,11 +63,14 @@ self-contained shell/Python; nothing depends on the Anthropic skill mechanism.
 
 ## Scope
 
-This pack covers **creating the agents** (agent tier) **and the data backbone they read from**
-(MQTT/TLS broker, TimescaleDB/PostgreSQL, IOT2050 edge). Still out of scope, tracked as separate
-runtime capability skills the agents *carry*: the field protocols beyond what the edge needs
-(BACnet, Modbus, M-Bus, KNX, DALI, LoRaWAN), the analytics (FDD, energy optimisation, anomaly
-correlation), and the compliance references (NIS2, CRA, AI Act, ISO 27001, IEC 62443).
+This pack is a full openAut skill set: the **agent tier** (provision, sandbox policy, role workflows),
+the **data backbone + edge** (MQTT/TLS broker, TimescaleDB/PostgreSQL, IOT2050), and the **runtime
+capabilities** the agents carry (six field protocols, three analytics skills, five compliance
+references). The protocol and analytics skills are vendor- and site-agnostic guidance + reference
+scripts; live behaviour is unverified until real hardware and the data backbone are connected (each
+SKILL.md says so). What remains genuinely outside the pack is openAut's own application code (the
+dashboards, Power BI, REST API of Layer 4) — these skills *operate* a deployment, they are not the
+product itself.
 
 ## Source references
 
