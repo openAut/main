@@ -1,0 +1,27 @@
+## openAut EMQX mutual-TLS listener — merge into /etc/emqx/emqx.conf
+## Replace <host> with the broker hostname/IP whose cert you generated.
+
+listeners.ssl.openaut {
+  bind = "0.0.0.0:8883"
+  max_connections = 5000
+  ssl_options {
+    cacertfile = "/etc/emqx/certs/ca.crt"
+    certfile   = "/etc/emqx/certs/<host>.crt"
+    keyfile    = "/etc/emqx/certs/<host>.key"
+    ## Require a valid client certificate — this is what makes it MUTUAL TLS.
+    verify     = verify_peer
+    fail_if_no_peer_cert = true
+    ## Use the client cert's Common Name as the MQTT client id the ACL keys on.
+    versions   = ["tlsv1.3", "tlsv1.2"]
+  }
+}
+
+## Turn OFF the default plaintext listener (or firewall :1883).
+listeners.tcp.default {
+  enable = false
+}
+
+## Use the client certificate CN as the authenticated identity.
+authentication = [
+  { mechanism = "x509", from = "cn" }
+]

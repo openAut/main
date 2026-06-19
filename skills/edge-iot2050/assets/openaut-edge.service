@@ -1,0 +1,21 @@
+[Unit]
+Description=openAut IOT2050 edge agent (field -> EMQX over mutual TLS, store-and-forward)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run as a non-root service user that owns /etc/openaut/certs and /var/lib/openaut.
+User=openaut
+EnvironmentFile=/etc/openaut/edge.env
+ExecStart=/opt/openaut-edge/venv/bin/python /opt/openaut-edge/scripts/edge_agent.py
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/openaut
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

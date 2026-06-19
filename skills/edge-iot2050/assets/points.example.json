@@ -1,0 +1,28 @@
+{
+  "site": "karsamala",
+  "node": "iot2050-ahu-01",
+  "interval_s": 15,
+  "points": [
+    {
+      "system": "ahu",
+      "metric": "supply_temp",
+      "protocol": "modbus",
+      "address": {"host": "192.168.1.60", "unit": 1, "register": 100, "type": "holding", "scale": 0.1},
+      "unit": "degC"
+    },
+    {
+      "system": "ahu",
+      "metric": "fan_status",
+      "protocol": "modbus",
+      "address": {"host": "192.168.1.60", "unit": 1, "register": 10, "type": "coil"},
+      "unit": "bool"
+    },
+    {
+      "system": "ahu",
+      "metric": "room_temp",
+      "protocol": "bacnet",
+      "address": {"device": "192.168.1.50", "object": "analogInput", "instance": 1},
+      "unit": "degC"
+    }
+  ]
+}

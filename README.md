@@ -1,1 +1,68 @@
+# openAut NemoClaw Skills
 
+Agent-agnostic **skills (runbooks)** that let a coding agent — **Claude Code** or **OpenAI Codex** —
+securely connect to a server and provision **NemoClaw** agents that meet the
+[openAut](https://openaut.io) reference architecture.
+
+These skills do **not** reimplement NemoClaw. NemoClaw already ships the bootstrap
+(`curl … nemoclaw.sh | bash`), the Landlock + seccomp + netns sandbox, inference routing,
+and lifecycle CLI. The skills here **orchestrate that documented CLI over SSH** and bake in two
+openAut-specific defaults:
+
+| Default | Choice | Why |
+|---|---|---|
+| **Communication channel** | **Microsoft Teams** (via webhook bridge) | openAut targets the Microsoft stack (Teams + Power BI). NemoClaw has no native Teams channel, so a small bridge maps Teams ↔ the OpenClaw gateway. |
+| **Inference** | **Remote Nemotron 3 Super** on a separate machine, **egress-locked + TLS** | Keeps the heavy MoE model on a dedicated GPU box (e.g. ASUS Ascent GX10), reachable only from the sandbox over an encrypted, allow-listed link. |
+
+> These defaults are configurable. Set `TEAMS_*` and `NEMOTRON_*` in `config.env` to point at
+> your own bridge and inference host; every skill sources that file.
+
+## Skills
+
+**Agent tier — create the NemoClaw agents:**
+
+| Skill | What it does |
+|---|---|
+| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
+| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
+| [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut role agents — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. |
+
+**Data backbone & edge — what the agents read from:**
+
+| Skill | What it does |
+|---|---|
+| [`mqtt-tls-broker`](skills/mqtt-tls-broker/SKILL.md) | EMQX broker with a **mutual-TLS** listener, a per-edge-node **client-certificate PKI**, a CN-bound **ACL** topic schema, and TLS verification. The encrypted ingest backbone. |
+| [`timeseries-stack`](skills/timeseries-stack/SKILL.md) | **TimescaleDB + PostgreSQL** — telemetry hypertable, system schema, MQTT→DB ingest, retention + continuous aggregates, and **least-privilege roles** (ingest write, agent read-only). |
+| [`edge-iot2050`](skills/edge-iot2050/SKILL.md) | Provision a **Siemens IOT2050** edge node: field-protocol poller → EMQX over mutual TLS with the node's cert, **store-and-forward** buffering, resilient systemd service. |
+
+Supporting:
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
+- [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.
+- [`config.env.example`](config.env.example) — copy to `config.env` and fill in.
+
+## Using these skills
+
+**Claude Code** — drop the `skills/` folders into `~/.claude/skills/` (or a project `.claude/skills/`).
+Each `SKILL.md` carries YAML frontmatter so the agent auto-discovers it.
+
+**OpenAI Codex** (and any other agent) — there is no skill auto-loader, so point the agent at the
+relevant `SKILL.md` and tell it to follow it as a runbook. The bodies are plain Markdown +
+self-contained shell/Python; nothing depends on the Anthropic skill mechanism.
+
+## Scope
+
+This pack covers **creating the agents** (agent tier) **and the data backbone they read from**
+(MQTT/TLS broker, TimescaleDB/PostgreSQL, IOT2050 edge). Still out of scope, tracked as separate
+runtime capability skills the agents *carry*: the field protocols beyond what the edge needs
+(BACnet, Modbus, M-Bus, KNX, DALI, LoRaWAN), the analytics (FDD, energy optimisation, anomaly
+correlation), and the compliance references (NIS2, CRA, AI Act, ISO 27001, IEC 62443).
+
+## Source references
+
+- NVIDIA DGX Spark playbook — NemoClaw: <https://github.com/NVIDIA/dgx-spark-playbooks/blob/main/nvidia/nemoclaw/README.md>
+- NemoClaw docs: <https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home>
+- OpenClaw docs: <https://docs.openclaw.ai/>
+
+> Tested against NemoClaw **v0.0.55** (June 2026). The installer's default model is
+> `nvidia/Qwen3.6-35B-A3B-NVFP4`; these skills override it to Nemotron 3 Super on a remote host.
