@@ -28,23 +28,27 @@ Two Teams features do the work:
    copy the URL into `TEAMS_INCOMING_WEBHOOK_URL` in `config.env`.
 2. **Outgoing Webhook** — *Team → Manage → Outgoing Webhooks → Create*; callback URL =
    `http://<bridge-host>:<port>/teams`; copy the generated HMAC secret into `TEAMS_OUTGOING_SECRET`.
-3. **Run the bridge** co-located with the gateway (simplest: on the sandbox host, loopback):
+3. **Local gateway token** — set `TEAMS_TO_TEAMS_TOKEN` to a random bearer token. Gateway/agent calls
+   to `/to-teams` must include `Authorization: Bearer $TEAMS_TO_TEAMS_TOKEN`.
+4. **Run the bridge** co-located with the gateway (simplest: on the sandbox host, loopback):
 
    ```bash
    set -a; . ./config.env; set +a
    python3 bridges/teams-webhook/teams_bridge.py
    ```
 
-4. **Bind the gateway** to the bridge: point the gateway's generic webhook/webchat surface at
+5. **Bind the gateway** to the bridge: point the gateway's generic webhook/webchat surface at
    `http://$TEAMS_BRIDGE_HOST:$TEAMS_BRIDGE_PORT/from-gateway`, or have your agents POST replies
    there. (Exact gateway webhook config depends on your OpenClaw version.)
-5. **Egress** — ensure `nemoclaw-sandbox-policy` allow-lists the bridge host and the Teams webhook
+6. **Egress** — ensure `nemoclaw-sandbox-policy` allow-lists the bridge host and the Teams webhook
    domain; everything else stays denied.
 
 ## Security notes
 
 - The bridge **verifies the HMAC signature** on every inbound Teams request and rejects unsigned or
   mismatched ones — without this, anyone who learns the URL could inject messages to your agent.
+- The local `/to-teams` endpoint requires `TEAMS_TO_TEAMS_TOKEN`, so an accidentally exposed bridge
+  cannot be used as an unauthenticated Teams posting relay.
 - It binds to `$TEAMS_BRIDGE_HOST` (loopback by default). Do not expose it on a public interface;
   if Teams' cloud must reach it, front it with a tunnel/reverse proxy that terminates TLS.
 - Treat all Teams text as untrusted input to the agent (prompt-injection surface) — the sandbox

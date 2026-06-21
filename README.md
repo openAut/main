@@ -66,6 +66,7 @@ a **least-privilege subset** of these (e.g. read-only protocols + analytics for 
 Supporting:
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
+- [`docs/LAB.md`](docs/LAB.md) — a local verification path for the MQTT/topic/database contracts.
 - [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.
 - [`config.env.example`](config.env.example) — copy to `config.env` and fill in.
 

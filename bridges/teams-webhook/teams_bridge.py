@@ -10,6 +10,7 @@ Config comes from environment (source ../../config.env first):
   TEAMS_BRIDGE_HOST, TEAMS_BRIDGE_PORT
   TEAMS_INCOMING_WEBHOOK_URL   gateway/agent -> Teams
   TEAMS_OUTGOING_SECRET        HMAC secret Teams signs Outgoing Webhook calls with
+  TEAMS_TO_TEAMS_TOKEN         bearer token required for local /to-teams posts
   GATEWAY_WEBHOOK_URL          where to forward inbound Teams messages (optional)
 
 Stdlib only — no Flask. Not production-hardened; see README security notes.
@@ -26,7 +27,9 @@ HOST = os.environ.get("TEAMS_BRIDGE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("TEAMS_BRIDGE_PORT", "8790"))
 INCOMING_WEBHOOK_URL = os.environ.get("TEAMS_INCOMING_WEBHOOK_URL", "")
 OUTGOING_SECRET = os.environ.get("TEAMS_OUTGOING_SECRET", "")
+TO_TEAMS_TOKEN = os.environ.get("TEAMS_TO_TEAMS_TOKEN", "")
 GATEWAY_WEBHOOK_URL = os.environ.get("GATEWAY_WEBHOOK_URL", "")
+MAX_BODY_BYTES = int(os.environ.get("TEAMS_BRIDGE_MAX_BODY_BYTES", "65536"))
 
 
 def verify_teams_signature(body: bytes, auth_header: str) -> bool:
@@ -48,6 +51,20 @@ def post_json(url: str, payload: dict) -> int:
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         return resp.status
+
+
+def verify_bearer_token(auth_header: str) -> bool:
+    if not TO_TEAMS_TOKEN or not auth_header.startswith("Bearer "):
+        return False
+    provided = auth_header.split(" ", 1)[1].strip()
+    return hmac.compare_digest(TO_TEAMS_TOKEN, provided)
+
+
+def parse_content_length(raw_value: str | None) -> int | None:
+    try:
+        return int(raw_value or "0")
+    except ValueError:
+        return None
 
 
 def send_to_teams(text: str) -> int:
@@ -73,7 +90,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", "0"))
+        length = parse_content_length(self.headers.get("Content-Length"))
+        if length is None:
+            self._reply(400, {"ok": False, "error": "bad content-length"})
+            return
+        if length > MAX_BODY_BYTES:
+            self._reply(413, {"ok": False, "error": "request body too large"})
+            return
         body = self.rfile.read(length) if length else b""
 
         if self.path == "/teams":
@@ -99,6 +122,9 @@ class Handler(BaseHTTPRequestHandler):
 
         elif self.path == "/to-teams":
             # Outbound from gateway/agent -> Teams.
+            if not verify_bearer_token(self.headers.get("Authorization", "")):
+                self._reply(401, {"ok": False, "error": "missing or bad bearer token"})
+                return
             try:
                 payload = json.loads(body or b"{}")
                 status = send_to_teams(payload.get("text", ""))
@@ -119,6 +145,8 @@ def main():
         print("WARN: TEAMS_OUTGOING_SECRET unset — inbound Teams requests will be rejected.")
     if not INCOMING_WEBHOOK_URL:
         print("WARN: TEAMS_INCOMING_WEBHOOK_URL unset — cannot post to Teams.")
+    if not TO_TEAMS_TOKEN:
+        print("WARN: TEAMS_TO_TEAMS_TOKEN unset — /to-teams requests will be rejected.")
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Teams bridge listening on http://{HOST}:{PORT}  (/teams inbound, /to-teams outbound)")
     try:
