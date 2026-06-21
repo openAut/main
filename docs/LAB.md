@@ -35,7 +35,7 @@ mosquitto_pub -h "$EMQX_HOST" -p "$EMQX_TLS_PORT" \
 mosquitto_pub -h "$EMQX_HOST" -p "$EMQX_TLS_PORT" \
   --cafile "$MQTT_CA_CERT" --cert "$PKI_DIR/clients/$EDGE_NODE_ID.crt" \
   --key "$PKI_DIR/clients/$EDGE_NODE_ID.key" \
-  -t "openaut/$EDGE_SITE/$EDGE_NODE_ID/$status" \
+  -t "openaut/$EDGE_SITE/$EDGE_NODE_ID/"'$status' \
   -m '{"value":true,"ts":1700000000}'
 ```
 

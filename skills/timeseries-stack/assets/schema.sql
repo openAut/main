@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS node_status_node_ts
 
 -- 90-day raw retention
 SELECT add_retention_policy('telemetry.readings', INTERVAL '90 days', if_not_exists => TRUE);
+SELECT add_retention_policy('telemetry.node_status', INTERVAL '90 days', if_not_exists => TRUE);
 
 -- Hourly continuous aggregate the energy agent reads
 CREATE MATERIALIZED VIEW IF NOT EXISTS telemetry.readings_hourly

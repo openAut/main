@@ -60,6 +60,13 @@ def verify_bearer_token(auth_header: str) -> bool:
     return hmac.compare_digest(TO_TEAMS_TOKEN, provided)
 
 
+def parse_content_length(raw_value: str | None) -> int | None:
+    try:
+        return int(raw_value or "0")
+    except ValueError:
+        return None
+
+
 def send_to_teams(text: str) -> int:
     """Post a simple MessageCard to the Teams Incoming Webhook."""
     if not INCOMING_WEBHOOK_URL:
@@ -83,7 +90,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
-        length = int(self.headers.get("Content-Length", "0"))
+        length = parse_content_length(self.headers.get("Content-Length"))
+        if length is None:
+            self._reply(400, {"ok": False, "error": "bad content-length"})
+            return
         if length > MAX_BODY_BYTES:
             self._reply(413, {"ok": False, "error": "request body too large"})
             return

@@ -17,6 +17,7 @@ import ssl
 import sys
 import time
 
+MQTT_ERR_SUCCESS = 0
 CFG = os.environ.get("OPENAUT_POINTS", "/etc/openaut/points.json")
 CERT_DIR = os.environ.get("OPENAUT_CERT_DIR", "/etc/openaut/certs")
 BROKER_HOST = os.environ.get("EMQX_HOST")
@@ -124,7 +125,7 @@ def drain(client, db):
     rows = db.execute("SELECT rowid, topic, payload FROM q ORDER BY rowid LIMIT 500").fetchall()
     for rowid, topic, payload in rows:
         info = client.publish(topic, payload, qos=1)
-        if info.rc == 0:
+        if info.rc == MQTT_ERR_SUCCESS:
             db.execute("DELETE FROM q WHERE rowid=?", (rowid,))
         else:
             db.execute("UPDATE q SET retries = retries + 1 WHERE rowid=?", (rowid,))
