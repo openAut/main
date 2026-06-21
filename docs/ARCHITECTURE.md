@@ -7,7 +7,8 @@
 This pack provisions the **agent workbench** and core contracts of an
 [openAut](https://openaut.io) deployment. openAut is a four-layer, on-premise building-management AI:
 field data flows up through edge nodes to an on-site AI tier, and role-specific agents push insight
-back out to people. Nothing leaves the building.
+back out to people. Operational data, manuals, code, the AI index, and inference stay on-prem; Teams
+is the human notification and decision channel.
 
 The current public architecture splits the operating agents into stricter trust domains:
 
@@ -67,13 +68,16 @@ done*. Advisor/Engineer/Security describe the trust boundaries those jobs must r
 | Skill | Layer | Responsibility |
 |---|---|---|
 | [`nemoclaw-provision`](../skills/nemoclaw-provision/SKILL.md) | 3 | Install NemoClaw on the sandbox host; onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint; attach the **Teams** bridge; verify. |
-| [`nemoclaw-sandbox-policy`](../skills/nemoclaw-sandbox-policy/SKILL.md) | 3 | Lock the sandbox: deny-by-default egress to **only** the Nemotron host + Teams bridge; TLS in front of vLLM; IEC 62443 / NIS2 / CRA review. |
+| [`nemoclaw-sandbox-policy`](../skills/nemoclaw-sandbox-policy/SKILL.md) | 3 | Lock the sandbox: deny-by-default egress to **only** the Nemotron host + local Forge + Teams bridge; TLS in front of vLLM; IEC 62443 / NIS2 / CRA review. |
 | [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) | 3→4 | Define Advisor (read-only, Teams), Engineer (SSH/deploy, no Teams), and the approved-case handoff through the Systemdatabas. |
 | [`nemoclaw-agent-workflow`](../skills/nemoclaw-agent-workflow/SKILL.md) | 3→4 | Define the older three role personas as jobs-to-be-done; useful for mapping operational tasks into Advisor/Engineer boundaries. |
 | [`bridges/teams-webhook`](../bridges/teams-webhook/README.md) | 4 | Map Teams ↔ the OpenClaw gateway (NemoClaw has no native Teams channel). |
 | [`mqtt-tls-broker`](../skills/mqtt-tls-broker/SKILL.md) | 3 | EMQX mutual-TLS broker, per-node cert PKI, CN-bound ACL topic schema — the encrypted ingest backbone. |
 | [`timeseries-stack`](../skills/timeseries-stack/SKILL.md) | 3 | TimescaleDB + PostgreSQL, MQTT→DB ingest, retention/aggregates, least-privilege roles. |
 | [`system-database`](../skills/system-database/SKILL.md) | 3 | Define the Systemdatabas contract: equipment, points, documents, cases, approvals, generated artifacts, and audit events. |
+| [`forge-stack`](../skills/forge-stack/SKILL.md) | 3 | Provision local Forgejo as the versioned system of record for code, manuals, runbooks, generated docs, migrations, and artifacts. |
+| [`documentation-store`](../skills/documentation-store/SKILL.md) | 3 | Define Forge-backed documentation retrieval, `forge://` URIs, independent `documents.sha256`, and quarantine-to-verified trust flow. |
+| [`forge-governance`](../skills/forge-governance/SKILL.md) | 3 | Define PR review, branch protection, CI gates, CODEOWNERS, signing, and scoped agent permissions. |
 | [`edge-iot2050`](../skills/edge-iot2050/SKILL.md) | 2 | Siemens IOT2050 edge node: field poller → EMQX over mutual TLS, store-and-forward buffering. |
 | [`engineer-integration`](../skills/engineer-integration/SKILL.md) | 2→3 | Define Engineer's approved manual-to-integration workflow: parse manufacturer docs, deploy to edge over SSH, verify data, and write generated documentation. |
 | [`security-instance`](../skills/security-instance/SKILL.md) | 3→4 | Define the separate Security instance: read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, isolated alerts. |
@@ -84,6 +88,9 @@ done*. Advisor/Engineer/Security describe the trust boundaries those jobs must r
   ships Telegram/Discord/Slack but not Teams, so the pack adds a webhook bridge and points every
   persona at it. Swap it by editing `TEAMS_*` in `config.env`, or graduate to Azure Bot Service later
   without changing the agents.
+- **Local Forgejo as the project forge.** Code, manuals, runbooks, generated docs, migrations, and
+  deployable artifacts live in a local forge in the AI/management zone, with scoped agent access and
+  CI/review gates before anything becomes trusted or deployable.
 - **Remote Nemotron 3 Super, egress-locked + TLS.** The 120B MoE model lives on a dedicated GPU box
   (e.g. ASUS Ascent GX10 running vLLM). The sandbox reaches it over TLS and is allowed to reach
   *nothing else* — turning "an agent with shell access" into "an agent that can only talk to its model
@@ -100,9 +107,11 @@ done*. Advisor/Engineer/Security describe the trust boundaries those jobs must r
    policy and read-only tool grant are the backstop.
 4. **Advisor → Engineer** — no direct chat-to-SSH path. Advisor creates a case/approval request in
    the Systemdatabas; Engineer acts only on approved cases from the management plane.
-5. **Security → deployment** — Security observes via read-only SSH, listen-only Teams, and passive
+5. **Agents → Forge** — Advisor reads verified docs, Engineer writes branches/PRs, and Security
+   watches org-wide. No agent can self-merge protected branches or change branch protection.
+6. **Security → deployment** — Security observes via read-only SSH, listen-only Teams, and passive
    MQTT/log access. It alerts an isolated channel but has no operational write path.
-6. **Sandbox kernel boundary** — Landlock (filesystem), seccomp (syscalls), netns (network) confine
+7. **Sandbox kernel boundary** — Landlock (filesystem), seccomp (syscalls), netns (network) confine
    the agent regardless of what a prompt convinces it to attempt.
 
 ## Runtime capabilities the agents carry

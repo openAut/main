@@ -149,7 +149,7 @@ watches it** (control-code pushes, API anomalies).
 
 | Where Slack appears today | Action |
 |---|---|
-| [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) trust table: Advisor surface "Teams / Slack" | → Teams |
+| [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) trust table and agent rules | Teams as the channel; no Slack surface |
 | NemoClaw native channels (Slack/Telegram/Discord ship enabled) | **explicitly disable** — keep only the Teams webhook bridge |
 
 **Why this is an improvement, not just a preference:**
@@ -201,8 +201,8 @@ The deterministic authorities the forge + CI do **not** cover:
 ## Proposed next steps (not part of this PR)
 
 These turn the proposal into concrete workbench building blocks — the same path PR #4 took for the
-trust-boundary contracts. Sequencing (proposal-only now vs. building these immediately) is David's
-call.
+trust-boundary contracts. The first three skill contracts now exist in this repo; implementation
+repos and runtime enforcement still remain future work.
 
 1. **`forge-stack` skill** — provision Forgejo on the AI/management host: install, TLS, backup,
    placement in the egress allow-list.

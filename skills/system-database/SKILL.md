@@ -1,6 +1,6 @@
 ---
 name: system-database
-description: Define the openAut Systemdatabas contract — relational PostgreSQL tables for sites, equipment, points, documents, cases, approvals, generated documentation, and audit events alongside TimescaleDB telemetry. Use when aligning openAut/main with the public architecture, designing database migrations, or giving agents a shared case and metadata model.
+description: Define the openAut Systemdatabas contract — relational PostgreSQL tables for sites, equipment, points, Forge-backed documents, cases, approvals, generated documentation, and audit events alongside TimescaleDB telemetry. Use when aligning openAut/main with the public architecture, designing database migrations, linking forge:// URIs and documents.sha256, or giving agents a shared case and metadata model.
 ---
 
 # system-database — metadata, cases, approvals, and audit
@@ -17,6 +17,9 @@ readings meaning:
 - cases, approval requests, and execution status
 - generated I/O lists, MQTT topic schemas, FAT/SAT notes, and diagrams
 - audit events and security-relevant history
+
+Document and artifact content should live in the local Forge. The Systemdatabas stores the pointer,
+trust state, content hash, case links, approvals, and audit state.
 
 This skill defines the contract that future migrations should implement. It complements
 [`timeseries-stack`](../timeseries-stack/SKILL.md), whose current `system.sites` and
@@ -91,6 +94,7 @@ CREATE TABLE system.documents (
   title text NOT NULL,
   uri text NOT NULL,
   sha256 text,
+  forge_commit text,
   trust_level text NOT NULL DEFAULT 'untrusted',
   uploaded_by text,
   uploaded_at timestamptz NOT NULL DEFAULT now()
@@ -131,6 +135,7 @@ CREATE TABLE system.generated_artifacts (
   kind text NOT NULL,
   title text NOT NULL,
   content_uri text NOT NULL,
+  forge_commit text,
   generated_by text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -162,14 +167,26 @@ does not adopt either wholesale at the start:
 This lets FDD and energy analysis reason about "supply temperature" or "heating valve" without
 knowing whether the value came from Modbus, BACnet, M-Bus, KNX, or another source.
 
+## Forge-backed documents
+
+Use [`documentation-store`](../documentation-store/SKILL.md) as the source contract:
+
+- `documents.uri` and `generated_artifacts.content_uri` store a `forge://` reference, preferably
+  pinned to a commit.
+- `documents.sha256` is an independent SHA-256 over the blob bytes, not a Git commit SHA.
+- `forge_commit` may duplicate the pinned commit for indexing and SQL joins.
+- `trust_level` starts as `untrusted` or `quarantine` and moves to `verified` only after review or
+  deterministic checks.
+- Generated artifacts should link back to the source case and source documents.
+
 ## Agent access
 
 | Actor | Access |
 |---|---|
 | Ingest | write telemetry only; no case/document writes. |
 | Advisor | read system metadata; create/update cases; cannot approve its own actions. |
-| Engineer | read approved cases and docs; write execution status, mappings, generated artifacts. |
-| Security | read-only metadata/logs plus append security alerts to its own audit/log sink. |
+| Engineer | read approved cases and Forge docs; write execution status, mappings, generated artifacts, and approved Forge revisions. |
+| Security | read-only metadata/logs/Forge references plus append security alerts to its own audit/log sink. |
 | Power BI / dashboards | read-only reporting views. |
 
 ## Verification
@@ -177,6 +194,8 @@ knowing whether the value came from Modbus, BACnet, M-Bus, KNX, or another sourc
 - A read-only agent role cannot write `system.points`, `system.protocol_mappings`, or field action state.
 - Advisor can create a case but cannot mark it approved.
 - Engineer refuses to execute a case without an `approved` approval row.
+- Engineer refuses deployable work unless the case references a green, reviewed Forge revision.
+- `documents.sha256` validates against the fetched Forge blob bytes.
 - Audit events are append-only from normal application roles.
 
 > **Live behaviour is unverified.** Treat this as the canonical schema contract for agents until a

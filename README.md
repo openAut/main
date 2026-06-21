@@ -55,7 +55,7 @@ openAut-specific defaults:
 | Skill | What it does |
 |---|---|
 | [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
-| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
+| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host + local Forge only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
 | [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the current openAut trust split: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams. Actions move through approved cases in the Systemdatabas. |
 | [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut role agents — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. |
 
@@ -68,6 +68,14 @@ openAut-specific defaults:
 | [`system-database`](skills/system-database/SKILL.md) | The richer **Systemdatabas** contract: equipment, points, protocol mappings, documents, cases, approvals, generated artifacts, and audit events. This is the handoff model between Advisor, Engineer, Security, dashboards, and Power BI. |
 | [`edge-iot2050`](skills/edge-iot2050/SKILL.md) | Provision a **Siemens IOT2050** edge node: field-protocol poller → EMQX over mutual TLS with the node's cert, **store-and-forward** buffering, resilient systemd service. |
 | [`engineer-integration`](skills/engineer-integration/SKILL.md) | The **manual → integration → edge deploy → documentation** workflow for Engineer: read a manufacturer manual, extract protocol/register details, deploy after approval, verify MQTT/TimescaleDB, and write generated docs back. |
+
+**Local forge & documentation authority:**
+
+| Skill | What it does |
+|---|---|
+| [`forge-stack`](skills/forge-stack/SKILL.md) | Provision local **Forgejo** in the AI/management zone: TLS, backups, runners, storage, agent access, and sandbox egress. |
+| [`documentation-store`](skills/documentation-store/SKILL.md) | Define how manuals, runbooks, generated docs, point maps, and AI-readable source material live in Forge and link to `documents.uri` / `documents.sha256`. |
+| [`forge-governance`](skills/forge-governance/SKILL.md) | Define branch protection, PR review, CODEOWNERS, commit/artifact signing, CI gates, and scoped agent permissions. |
 
 **Security instance — what watches the deployment:**
 
