@@ -1,11 +1,11 @@
-# openAut improvement proposal — local forge, Teams-only, and deterministic authorities
+# openAut improvement proposal — local forge, Teams, and deterministic authorities
 
 > ⚠️ **Learning project — not for production.** This is a development/learning exploration of AI in
 > building management, not a product. Do not use against live or safety-critical systems. See the
 > [README](../README.md) for the full disclaimer.
 
 > **Authored by Claude Code** (running locally on the service PC, repo access via `gh`), at David's
-> request: fold a local open-source code/document store and a Teams-only channel decision into the
+> request: fold a local open-source code/document store and a Teams channel decision into the
 > architecture-review findings, as one coherent v0.2 direction. This is a **proposal for discussion**,
 > not an implemented change — it adds no runtime and changes no behaviour.
 >
@@ -60,7 +60,7 @@ Teams is Microsoft cloud and human notifications do leave. The honest property �
 survives critical review — is: **operational data, manuals, code, the AI index, and inference stay
 on-prem; only decisions and notifications, with minimised metadata, transit to Teams (Microsoft
 cloud).** The forge is part of what stays local; the only egress remains the model link (local
-network), the Teams bridge, and the Teams webhook domain.
+network), the local forge, the Teams bridge, and the Teams webhook domain.
 
 ### Clear separation of stores (resolves an ambiguity in the current design)
 
@@ -149,8 +149,7 @@ watches it** (control-code pushes, API anomalies).
 
 | Where Slack appears today | Action |
 |---|---|
-| README: "FDD … in Teams **or Slack**" | → Teams only |
-| [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) trust table: Advisor surface "Teams / Slack" | → Teams only |
+| [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) trust table: Advisor surface "Teams / Slack" | → Teams |
 | NemoClaw native channels (Slack/Telegram/Discord ship enabled) | **explicitly disable** — keep only the Teams webhook bridge |
 
 **Why this is an improvement, not just a preference:**
@@ -194,7 +193,7 @@ The deterministic authorities the forge + CI do **not** cover:
 | **PR review / branch protection** | "Advisor-cannot-approve-its-own = only a convention" |
 | Commit signing / versioning | Reproducibility, audit provenance |
 | Quarantine branch for manuals | Manual-as-injection-vector |
-| Remove Slack, Teams only | Attack surface + egress complexity |
+| Remove Slack, use Teams | Attack surface + egress complexity |
 | Deterministic FDD, PLC interlocks, OT detectors | The circularity: names the real authorities |
 
 ---
@@ -220,7 +219,7 @@ call.
    the forge.
 6. Remove the residual Slack reference in
    [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) (README is already
-   Teams-only) and document disabling NemoClaw's native channels — small follow-up, handled
+   Teams-based) and document disabling NemoClaw's native channels — small follow-up, handled
    separately.
 7. Split writable edge control into its own scope decision (read/advise-only vs. functional-safety
    regime).
