@@ -52,3 +52,17 @@ Telemetry rows should land in `telemetry.readings`; node online/offline events s
 | Timescale schema | Lab-oriented | Add migrations, backups, retention review |
 | Teams bridge | Authenticated reference stub | Put behind TLS/reverse proxy and add observability |
 | Field writes | Human-confirmed only | Site risk assessment and qualified controls engineer approval |
+
+## Vision gap checks
+
+The public openAut site describes a richer target architecture than this lab can prove today. Use
+these checks to keep `main` aligned with that vision while staying in a safe lab posture.
+
+| Vision capability | Contract in this repo | Lab proof to add next |
+|---|---|---|
+| Advisor / Engineer split | `skills/advisor-engineer-workflow` | Simulate Advisor creating a case and Engineer refusing it until approved |
+| Systemdatabas handoff | `skills/system-database` | Apply a migration with cases, approvals, points, documents, and audit events |
+| Manual-driven integration | `skills/engineer-integration` | Use a sample manual/register map to generate point metadata and MQTT topics |
+| Separate Security instance | `skills/security-instance` | Simulate read-only SSH log read, listen-only Teams event, and isolated alert |
+| Edge regulation | `edge-iot2050` + protocol skills | Add a safety-envelope lab script before any writable control loop |
+| Layer 4 reporting | Systemdatabas + telemetry views | Add read-only dashboard/Power BI views over telemetry and cases |
