@@ -4,9 +4,19 @@
 > building management, not a product. Do not use against live or safety-critical systems. See the
 > [README](../README.md#️-learning-project--not-for-production) for the full disclaimer.
 
-This pack provisions the **agent tier** of an [openAut](https://openaut.io) deployment. openAut is a
-four-layer, on-premise building-management AI: field data flows up through edge nodes to an on-site
-AI tier, and role-specific agents push insight back out to people. Nothing leaves the building.
+This pack provisions the **agent workbench** and core contracts of an
+[openAut](https://openaut.io) deployment. openAut is a four-layer, on-premise building-management AI:
+field data flows up through edge nodes to an on-site AI tier, and role-specific agents push insight
+back out to people. Nothing leaves the building.
+
+The current public architecture splits the operating agents into stricter trust domains:
+
+- **openAut Advisor** — read-only and Teams-facing; explains alarms, anomalies, and recommendations.
+- **openAut Engineer** — SSH/deploy capable from a controlled management plane; not exposed to Teams.
+- **openAut Security** — separate read-only/watch-only instance; alerts an isolated security channel.
+
+The older Driftstekniker/Energisamordnare/Förvaltare personas still describe useful *jobs to be
+done*. Advisor/Engineer/Security describe the trust boundaries those jobs must run inside.
 
 ## The four layers
 
@@ -58,11 +68,15 @@ AI tier, and role-specific agents push insight back out to people. Nothing leave
 |---|---|---|
 | [`nemoclaw-provision`](../skills/nemoclaw-provision/SKILL.md) | 3 | Install NemoClaw on the sandbox host; onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint; attach the **Teams** bridge; verify. |
 | [`nemoclaw-sandbox-policy`](../skills/nemoclaw-sandbox-policy/SKILL.md) | 3 | Lock the sandbox: deny-by-default egress to **only** the Nemotron host + Teams bridge; TLS in front of vLLM; IEC 62443 / NIS2 / CRA review. |
-| [`nemoclaw-agent-workflow`](../skills/nemoclaw-agent-workflow/SKILL.md) | 3→4 | Define the three openAut role agents, default them to Teams, scope each to least-privilege runtime skills. |
+| [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) | 3→4 | Define Advisor (read-only, Teams), Engineer (SSH/deploy, no Teams), and the approved-case handoff through the Systemdatabas. |
+| [`nemoclaw-agent-workflow`](../skills/nemoclaw-agent-workflow/SKILL.md) | 3→4 | Define the older three role personas as jobs-to-be-done; useful for mapping operational tasks into Advisor/Engineer boundaries. |
 | [`bridges/teams-webhook`](../bridges/teams-webhook/README.md) | 4 | Map Teams ↔ the OpenClaw gateway (NemoClaw has no native Teams channel). |
 | [`mqtt-tls-broker`](../skills/mqtt-tls-broker/SKILL.md) | 3 | EMQX mutual-TLS broker, per-node cert PKI, CN-bound ACL topic schema — the encrypted ingest backbone. |
 | [`timeseries-stack`](../skills/timeseries-stack/SKILL.md) | 3 | TimescaleDB + PostgreSQL, MQTT→DB ingest, retention/aggregates, least-privilege roles. |
+| [`system-database`](../skills/system-database/SKILL.md) | 3 | Define the Systemdatabas contract: equipment, points, documents, cases, approvals, generated artifacts, and audit events. |
 | [`edge-iot2050`](../skills/edge-iot2050/SKILL.md) | 2 | Siemens IOT2050 edge node: field poller → EMQX over mutual TLS, store-and-forward buffering. |
+| [`engineer-integration`](../skills/engineer-integration/SKILL.md) | 2→3 | Define Engineer's approved manual-to-integration workflow: parse manufacturer docs, deploy to edge over SSH, verify data, and write generated documentation. |
+| [`security-instance`](../skills/security-instance/SKILL.md) | 3→4 | Define the separate Security instance: read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, isolated alerts. |
 
 ## The two defaults, and why
 
@@ -81,10 +95,14 @@ AI tier, and role-specific agents push insight back out to people. Nothing leave
    data; validated before it reaches an agent.
 2. **Agent → model** — sandbox → Nemotron over **TLS, single allow-listed destination**. No fallback
    to public LLM APIs (AI Act provider control).
-3. **Agent → people** — only through the Teams bridge, which **HMAC-verifies** inbound Teams calls.
-   Inbound Teams text is treated as untrusted (prompt-injection surface); the sandbox policy is the
-   backstop.
-4. **Sandbox kernel boundary** — Landlock (filesystem), seccomp (syscalls), netns (network) confine
+3. **Advisor → people** — Advisor speaks through the Teams bridge, which **HMAC-verifies** inbound
+   Teams calls. Inbound Teams text is treated as untrusted (prompt-injection surface); the sandbox
+   policy and read-only tool grant are the backstop.
+4. **Advisor → Engineer** — no direct chat-to-SSH path. Advisor creates a case/approval request in
+   the Systemdatabas; Engineer acts only on approved cases from the management plane.
+5. **Security → deployment** — Security observes via read-only SSH, listen-only Teams, and passive
+   MQTT/log access. It alerts an isolated channel but has no operational write path.
+6. **Sandbox kernel boundary** — Landlock (filesystem), seccomp (syscalls), netns (network) confine
    the agent regardless of what a prompt convinces it to attempt.
 
 ## Runtime capabilities the agents carry

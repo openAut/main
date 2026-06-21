@@ -56,6 +56,7 @@ openAut-specific defaults:
 |---|---|
 | [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
 | [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
+| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the current openAut trust split: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams. Actions move through approved cases in the Systemdatabas. |
 | [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut role agents — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. |
 
 **Data backbone & edge — what the agents read from:**
@@ -64,7 +65,15 @@ openAut-specific defaults:
 |---|---|
 | [`mqtt-tls-broker`](skills/mqtt-tls-broker/SKILL.md) | EMQX broker with a **mutual-TLS** listener, a per-edge-node **client-certificate PKI**, a CN-bound **ACL** topic schema, and TLS verification. The encrypted ingest backbone. |
 | [`timeseries-stack`](skills/timeseries-stack/SKILL.md) | **TimescaleDB + PostgreSQL** — telemetry hypertable, system schema, MQTT→DB ingest, retention + continuous aggregates, and **least-privilege roles** (ingest write, agent read-only). |
+| [`system-database`](skills/system-database/SKILL.md) | The richer **Systemdatabas** contract: equipment, points, protocol mappings, documents, cases, approvals, generated artifacts, and audit events. This is the handoff model between Advisor, Engineer, Security, dashboards, and Power BI. |
 | [`edge-iot2050`](skills/edge-iot2050/SKILL.md) | Provision a **Siemens IOT2050** edge node: field-protocol poller → EMQX over mutual TLS with the node's cert, **store-and-forward** buffering, resilient systemd service. |
+| [`engineer-integration`](skills/engineer-integration/SKILL.md) | The **manual → integration → edge deploy → documentation** workflow for Engineer: read a manufacturer manual, extract protocol/register details, deploy after approval, verify MQTT/TimescaleDB, and write generated docs back. |
+
+**Security instance — what watches the deployment:**
+
+| Skill | What it does |
+|---|---|
+| [`security-instance`](skills/security-instance/SKILL.md) | Define the separate **openAut Security** instance: read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, prompt/social-engineering detection, OT anomaly detection, isolated alerts, and compliance reporting. |
 
 **Runtime capabilities — what each agent persona carries:**
 
@@ -76,6 +85,9 @@ openAut-specific defaults:
 
 The personas in [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) are each granted
 a **least-privilege subset** of these (e.g. read-only protocols + analytics for the energy role).
+The newer [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) maps the same
+capabilities onto the public openAut architecture's stricter **Advisor / Engineer / Security**
+trust boundaries.
 
 Supporting:
 

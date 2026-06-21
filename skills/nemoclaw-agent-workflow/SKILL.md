@@ -10,6 +10,10 @@ prompt, (3) personalise it.** Step 1 is [`nemoclaw-sandbox-policy`](../nemoclaw-
 This skill is steps 2–3 for the three openAut personas, each defaulting to **Microsoft Teams** as its
 channel and each scoped to a least-privilege set of runtime skills.
 
+These three personas describe **jobs to be done**. For the trust boundaries they must run inside —
+read-only Advisor vs. SSH/deploy Engineer, with approvals through the Systemdatabas — see
+[`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md).
+
 Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md) and `nemoclaw-sandbox-policy`.
 Assumes `config.env` is sourced.
 
