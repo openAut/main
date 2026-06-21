@@ -24,9 +24,13 @@ Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md),
 
 | Domain | Human surface | Data access | Write/deploy access | Default channel |
 |---|---|---|---|---|
-| Advisor | Teams / Slack | read-only telemetry, system metadata, cases | create recommendations and approval requests only | Teams |
+| Advisor | Teams | read-only telemetry, system metadata, cases | create recommendations and approval requests only | Teams |
 | Engineer | service-PC control plane on mgmt network | system metadata, approved cases, edge inventory | SSH/deploy to edge nodes; update docs after confirmation | no Teams |
 | Security | separate instance | read-only logs, Teams observation, MQTT metadata | none | security alerts only |
+
+openAut standardises on **Microsoft Teams** as the single human channel (via the Teams webhook
+bridge). NemoClaw's native channels (Slack/Telegram/Discord), which ship enabled, are **explicitly
+disabled** — fewer channels means a smaller attack surface and a simpler egress allow-list.
 
 ## Advisor workflow
 
