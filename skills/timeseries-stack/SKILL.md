@@ -69,6 +69,8 @@ Two supported paths (pick one):
 
 Either connects to EMQX as the **`ingest`** identity (cert CN), subscribes read-only to `openaut/#`,
 parses `openaut/<site>/<node>/<system>/<metric>` into columns, and inserts into `telemetry.readings`.
+Node online/offline messages on `openaut/<site>/<node>/$status` are stored separately in
+`telemetry.node_status`.
 Run it as a systemd service on the AI-tier host.
 
 ## Step 5 — Retention & continuous aggregates
@@ -98,8 +100,8 @@ The `nemoclaw-agent-workflow` personas connect as **`$TSDB_AGENT_RO_USER`** with
 bash skills/timeseries-stack/scripts/verify-db.sh
 ```
 
-It checks the hypertable exists, the continuous aggregate is populated, and the read-only role is
-refused an INSERT.
+It checks the telemetry/status hypertables exist, the continuous aggregate is present, and the
+read-only role is refused an INSERT.
 
 ## Security review (openAut frameworks)
 

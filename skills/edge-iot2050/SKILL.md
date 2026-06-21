@@ -72,6 +72,9 @@ broker is unreachable, draining the spool on reconnect. The node also sets an MQ
 `openaut/<site>/<node>/$status` so the AI tier sees it drop offline. This makes the edge resilient to
 WAN/broker outages — a core openAut requirement (local buffering on the edge).
 
+Set `OPENAUT_SPOOL_MAX_ROWS` to bound disk use during long outages. The reference default is 100,000
+queued readings; older rows are dropped first if that cap is reached.
+
 ## Step 5 — Run as a systemd service
 
 ```bash

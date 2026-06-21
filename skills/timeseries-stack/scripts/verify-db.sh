@@ -10,8 +10,8 @@ set -a; . "$ROOT/config.env"; set +a
 
 PSQL="ssh ${TSDB_SSH_USER}@${TSDB_HOST} sudo -u postgres psql -d ${TSDB_DB} -tAc"
 
-echo "== hypertable present? =="
-$PSQL "SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_name='readings';"
+echo "== telemetry hypertables present? =="
+$PSQL "SELECT hypertable_name FROM timescaledb_information.hypertables WHERE hypertable_name IN ('readings','node_status') ORDER BY 1;"
 
 echo "== continuous aggregate present? =="
 $PSQL "SELECT view_name FROM timescaledb_information.continuous_aggregates;"

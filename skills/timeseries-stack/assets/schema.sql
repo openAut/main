@@ -45,6 +45,16 @@ SELECT create_hypertable('telemetry.readings', 'ts',
 CREATE INDEX IF NOT EXISTS readings_node_metric_ts
   ON telemetry.readings (node, metric, ts DESC);
 
+CREATE TABLE IF NOT EXISTS telemetry.node_status (
+  ts        timestamptz       NOT NULL,
+  site      text              NOT NULL,
+  node      text              NOT NULL,
+  online    boolean           NOT NULL
+);
+SELECT create_hypertable('telemetry.node_status', 'ts', if_not_exists => TRUE);
+CREATE INDEX IF NOT EXISTS node_status_node_ts
+  ON telemetry.node_status (node, ts DESC);
+
 -- 90-day raw retention
 SELECT add_retention_policy('telemetry.readings', INTERVAL '90 days', if_not_exists => TRUE);
 
@@ -67,8 +77,8 @@ DO $$ BEGIN
 END $$;
 
 GRANT USAGE ON SCHEMA telemetry TO ingest, agent_ro;
-GRANT INSERT ON telemetry.readings TO ingest;            -- write: ingest only
-GRANT SELECT ON telemetry.readings, telemetry.readings_hourly TO agent_ro;  -- read: agents only
+GRANT INSERT ON telemetry.readings, telemetry.node_status TO ingest;            -- write: ingest only
+GRANT SELECT ON telemetry.readings, telemetry.readings_hourly, telemetry.node_status TO agent_ro;  -- read: agents only
 GRANT USAGE ON SCHEMA system TO agent_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA system TO agent_ro;
 
