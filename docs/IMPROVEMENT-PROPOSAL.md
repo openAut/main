@@ -8,6 +8,11 @@
 > request: fold a local open-source code/document store and a Teams-only channel decision into the
 > architecture-review findings, as one coherent v0.2 direction. This is a **proposal for discussion**,
 > not an implemented change — it adds no runtime and changes no behaviour.
+>
+> **Revised** per the Codex review on the PR: corrected the provenance model (commit SHA is a version
+> pointer, not a content hash), made the locality claim precise (Teams is cloud), phrased CI
+> enforcement as a requirement rather than achieved behaviour, added a Forge access matrix, and named
+> the concrete follow-up skills.
 
 ## Why this proposal
 
@@ -46,9 +51,16 @@ free, lightweight).
 
 Layer 3, in the **AI / management zone** — **not** internet-facing, **not** on an edge node. The
 forge and the System database together form the **System-of-Record services**. Critically, a forge on
-the LAN **reinforces deny-by-default egress** ("nothing leaves the building"): agents fetch manuals
-and code from a local forge, never from github.com. Add the forge host to the sandbox egress
-allow-list (now: model host + Teams bridge + forge).
+the LAN **keeps the data plane on-prem**: agents fetch manuals and code from a local forge, never from
+github.com. Add the forge host to the sandbox egress allow-list (now: model host + Teams bridge +
+forge).
+
+**Locality, stated precisely.** "Nothing leaves the building" is shorthand that over-claims, because
+Teams is Microsoft cloud and human notifications do leave. The honest property — and the one that
+survives critical review — is: **operational data, manuals, code, the AI index, and inference stay
+on-prem; only decisions and notifications, with minimised metadata, transit to Teams (Microsoft
+cloud).** The forge is part of what stays local; the only egress remains the model link (local
+network), the Teams bridge, and the Teams webhook domain.
 
 ### Clear separation of stores (resolves an ambiguity in the current design)
 
@@ -58,9 +70,16 @@ allow-list (now: model host + Teams bridge + forge).
 - **System database (PostgreSQL)** = relational *operational state*: cases, approvals, points, audit.
 - **TimescaleDB** = time-series telemetry.
 
-They cross-reference: [`system-database`](../skills/system-database/SKILL.md)'s `documents.uri` and
-`generated_artifacts.content_uri` point at a forge blob, and the **commit SHA is the `sha256` the
-`documents` table already wants**. Provenance comes for free.
+They cross-reference, with a clean split between **version pointer** and **content integrity**:
+
+- `documents.uri` / `generated_artifacts.content_uri` store a **forge reference** — repo + ref + path
+  + commit, e.g. `forge://openaut/manuals/<path>?commit=<sha>` (or separate metadata fields). This
+  gives version traceability.
+- `documents.sha256` stays an **independent SHA-256 over the blob's bytes**, computed at ingest. A Git
+  commit SHA hashes the commit object, and even a Git blob SHA is SHA-1 over `blob <len>\0<bytes>` —
+  neither equals a content SHA-256, so they are *version pointers*, not *integrity hashes*. Keeping an
+  independent content hash also buys **tamper-evidence if the forge itself is compromised**: a blob
+  can be checked against its recorded hash regardless of what the forge claims.
 
 ### Human + AI retrieval
 
@@ -82,6 +101,21 @@ They cross-reference: [`system-database`](../skills/system-database/SKILL.md)'s 
 | `openaut/runbooks` | the skill pack / operational runbooks | review required |
 | `openaut/system-db` | migrations + role/GRANT definitions | CI-tested, review required |
 
+### Forge access matrix
+
+Scoped access tokens per agent identity; **no agent holds admin**, and merges to protected branches
+require a human reviewer who is not the author. This makes the forge a **control point, not just
+storage**, and deliberately mirrors the [`system-database`](../skills/system-database/SKILL.md)
+"Agent access" table so there is **one shared RBAC model**, not two divergent ones.
+
+| Actor | Forge access | Mirrors System-database role |
+|---|---|---|
+| Advisor | read-only across manuals/docs/generated repos; no push | reads metadata, creates cases |
+| Engineer | write via branch + PR to `control-<site>`, `generated-docs`, `system-db`; cannot self-merge protected branches | writes execution status, mappings, artifacts |
+| Security | read-only org-wide + own append-only audit/log repo; watch-only | read-only metadata/logs + append alerts |
+| Power BI / dashboards | read-only on report/rendered views | read-only reporting |
+| Human admin | repo/branch protection, token issuance, merge of protected branches | the approval authority agents cannot assume |
+
 ### How the forge strengthens the security architecture
 
 This is the point — the forge supplies three of the deterministic authorities the review said were
@@ -90,8 +124,10 @@ missing:
 1. **CI as an independent machine gate** (addresses *"governance, not enforcement"* and the
    *self-audited FAT/SAT* problem). Forgejo Actions runs deterministic checks **before** an Engineer
    deploy: schema migrations, role tests, lint, unit tests, and **plausibility / safety-envelope
-   validation of register maps**. A case cannot move to `approved`/`in_progress` until the pipeline is
-   green and the artifact is signed. The verifier is **not the same LLM** — exactly what the review
+   validation of register maps**. The system **shall** require a green pipeline, a **signed artifact**,
+   and an **approved forge revision** before the System database may move a case to
+   `approved`/`in_progress` — a requirement for the future `system-db` policies/migrations, not a
+   behaviour this proposal implements. The verifier is **not the same LLM** — exactly what the review
    asked for.
 2. **Pull-request review + branch protection give approval real teeth** (addresses *"Advisor cannot
    approve its own case = only a convention"*). Anything that becomes *deployable code/config*
@@ -153,7 +189,7 @@ The deterministic authorities the forge + CI do **not** cover:
 | Improvement | Addresses (from the review) |
 |---|---|
 | Forgejo as System of Record | "AI has read the manual" gets a versioned, provenance-tracked home |
-| Forge on LAN, in the egress allow-list | Reinforces "nothing leaves the building" |
+| Forge on LAN, in the egress allow-list | Reinforces the precise locality property (on-prem data plane) |
 | **Forgejo CI as a deterministic gate** | "Governance, not enforcement"; self-audited FAT/SAT |
 | **PR review / branch protection** | "Advisor-cannot-approve-its-own = only a convention" |
 | Commit signing / versioning | Reproducibility, audit provenance |
@@ -165,15 +201,28 @@ The deterministic authorities the forge + CI do **not** cover:
 
 ## Proposed next steps (not part of this PR)
 
-1. Add a `forge-access` skill (REST API wrapper, scoped tokens, provenance → `documents.sha256`).
-2. Add an `openaut/system-db` repo with the [`system-database`](../skills/system-database/SKILL.md)
-   migrations + role/GRANT definitions, CI-tested (the first thing the forge's CI gate proves).
-3. Update [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) Layer-3 table and
+These turn the proposal into concrete workbench building blocks — the same path PR #4 took for the
+trust-boundary contracts. Sequencing (proposal-only now vs. building these immediately) is David's
+call.
+
+1. **`forge-stack` skill** — provision Forgejo on the AI/management host: install, TLS, backup,
+   placement in the egress allow-list.
+2. **`documentation-store` skill** — the retrieval contract: scoped tokens per agent, the repo
+   layout, provenance (`forge://` reference + the independent `documents.sha256`), and the
+   quarantine → verified flow for ingested manuals.
+3. **`forge-governance` skill** — the CI gate, branch protection, and the access matrix as the
+   *enforced* approval mechanism: a case may move to `approved`/`in_progress` only on a green
+   pipeline, a signed artifact, and an approved forge revision.
+4. **`openaut/system-db` repo** — the [`system-database`](../skills/system-database/SKILL.md)
+   migrations + role/GRANT definitions, CI-tested (the first thing the forge gate proves).
+5. Update [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) Layer-3 table and
    [`nemoclaw-sandbox-policy`](../skills/nemoclaw-sandbox-policy/SKILL.md) egress allow-list to include
    the forge.
-4. Remove Slack references (README + `advisor-engineer-workflow`); document disabling NemoClaw's
-   native channels.
-5. Split writable edge control into its own scope decision (read/advise-only vs. functional-safety
+6. Remove the residual Slack reference in
+   [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) (README is already
+   Teams-only) and document disabling NemoClaw's native channels — small follow-up, handled
+   separately.
+7. Split writable edge control into its own scope decision (read/advise-only vs. functional-safety
    regime).
 
 > **This is a proposal for review.** Nothing here is implemented; it changes no runtime behaviour and
