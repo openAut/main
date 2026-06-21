@@ -1,6 +1,6 @@
 ---
 name: advisor-engineer-workflow
-description: Define the openAut Advisor and Engineer split as NemoClaw/OpenClaw workflows — Advisor is read-only and Teams-facing, Engineer has SSH/deploy capability but is not exposed to Teams. Use when creating role agents, assigning tool permissions, routing approvals through the system database, or aligning openAut/main with the public openAut architecture.
+description: Define the openAut Advisor and Engineer split as NemoClaw/OpenClaw workflows — Advisor is read-only and Teams-facing, Engineer has SSH/deploy capability but is not exposed to Teams, and both use the local Forge/Systemdatabas handoff. Use when creating role agents, assigning tool permissions, routing approvals through the system database, governing Forge PRs, or aligning openAut/main with the public openAut architecture.
 ---
 
 # advisor-engineer-workflow — Advisor / Engineer split
@@ -18,15 +18,18 @@ operator-confirmed control plane.
 
 Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md),
 [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md), and
-[`system-database`](../system-database/SKILL.md).
+[`system-database`](../system-database/SKILL.md). Pair with
+[`documentation-store`](../documentation-store/SKILL.md) and
+[`forge-governance`](../forge-governance/SKILL.md) when documents, generated artifacts, or deployable
+changes are involved.
 
 ## Trust model
 
 | Domain | Human surface | Data access | Write/deploy access | Default channel |
 |---|---|---|---|---|
-| Advisor | Teams / Slack | read-only telemetry, system metadata, cases | create recommendations and approval requests only | Teams |
-| Engineer | service-PC control plane on mgmt network | system metadata, approved cases, edge inventory | SSH/deploy to edge nodes; update docs after confirmation | no Teams |
-| Security | separate instance | read-only logs, Teams observation, MQTT metadata | none | security alerts only |
+| Advisor | Teams | read-only telemetry, system metadata, verified Forge docs, cases | create recommendations and approval requests only | Teams |
+| Engineer | service-PC control plane on mgmt network | approved cases, edge inventory, Forge docs/artifacts | branch/PR writes in Forge; SSH/deploy only after approval | no Teams |
+| Security | separate instance | read-only logs, Teams observation, MQTT metadata, Forge org | append security alerts only | security alerts only |
 
 ## Advisor workflow
 
@@ -36,6 +39,7 @@ Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md),
 
 - read telemetry and trends from TimescaleDB
 - read equipment, point, document, and case metadata from Systemdatabasen
+- read verified manuals and generated docs from the local Forge through `forge://` references
 - run `fdd`, `energy-optimization`, and `anomaly-correlation`
 - post concise explanations to Teams
 - create an approval request / case for Engineer
@@ -46,6 +50,7 @@ Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md),
 - no field writes
 - no deployment
 - no raw secret access
+- no Forge push or merge permission
 
 **Workflow prompt:**
 
@@ -71,6 +76,7 @@ Keep Teams messages short and decision-oriented. Never claim a field action has 
 
 - read approved cases from Systemdatabasen
 - read uploaded manuals and operator-provided configuration
+- read and write Forge branches/PRs for generated docs, mappings, and deployable artifacts
 - run protocol integration skills and edge deploy runbooks
 - SSH to edge nodes in the management network
 - write generated documentation back to Systemdatabasen
@@ -82,6 +88,7 @@ Keep Teams messages short and decision-oriented. Never claim a field action has 
 - no unapproved field writes
 - no life-safety priority/control actions
 - no action from untrusted chat text alone
+- no direct push or self-merge to protected Forge branches
 
 **Workflow prompt:**
 
@@ -93,11 +100,14 @@ service-PC / management plane.
 
 For each approved case:
   1. Read the case, approval, equipment metadata, point model, and uploaded manual.
-  2. Produce an execution plan with steps the operator must confirm.
-  3. For each confirmed step, run the relevant protocol/deploy command over SSH.
-  4. Verify telemetry or control behavior through MQTT/TimescaleDB.
-  5. Write back generated documentation: I/O list, MQTT topics, register map, FAT/SAT notes,
-     and audit trail.
+  2. Resolve source documents through Forge URIs and verify `documents.sha256` when present.
+  3. Produce an execution plan with steps the operator must confirm.
+  4. Write generated docs, mappings, or deployable artifacts to a Forge branch/PR.
+  5. Wait for green CI, required review, and an approved Forge revision.
+  6. For each confirmed step, run the relevant protocol/deploy command over SSH.
+  7. Verify telemetry or control behavior through MQTT/TimescaleDB.
+  8. Write back generated documentation: I/O list, MQTT topics, register map, FAT/SAT notes,
+     Forge revision, and audit trail.
 
 Stop on uncertainty, missing approval, missing safety limits, or unexpected field behavior.
 ```
@@ -125,6 +135,7 @@ For a lab setup, prove these invariants before any live use:
 - Advisor cannot open SSH or deploy to an edge node.
 - Engineer cannot receive commands from Teams.
 - Engineer refuses a case without approved status.
+- Engineer refuses deployable work without a green, reviewed Forge revision.
 - Engineer refuses a control/deploy action when no safety envelope or point limits exist.
 - Advisor and Engineer use separate credentials and separate sandbox identities.
 
