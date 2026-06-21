@@ -17,9 +17,23 @@
 >   isolated sandbox. For real deployments, engage qualified controls, security, and compliance
 >   professionals and validate everything independently.
 
-Agent-agnostic **skills (runbooks)** that let a coding agent — **Claude Code** or **OpenAI Codex** —
-securely connect to a server and provision **NemoClaw** agents that follow the
-[openAut](https://openaut.io) reference architecture, as a hands-on way to learn the patterns.
+## What this repo is
+
+`openAut/main` is the **agent workbench** for the openAut project.
+
+It is meant to be used from coding agents such as **OpenAI Codex**, **Claude Code**, or similar
+tools. The repo gives the agent the domain knowledge, runbooks, reference scripts, architecture
+contracts, and safety constraints needed to help build the rest of openAut: the core framework, role
+agents, security posture, edge integrations, lab environments, dashboards, and future
+proof-of-concept deployments.
+
+This is not the openAut product runtime. It is the project's executable knowledge base: a place
+where agents can read, reason, generate, test, and evolve the surrounding repos without inventing
+the architecture from scratch.
+
+Agent-agnostic **skills, runbooks, contracts, and reference scripts** that let a coding agent —
+**Claude Code**, **OpenAI Codex**, or similar tools — understand the openAut architecture and help
+create the rest of the project safely.
 
 These skills do **not** reimplement NemoClaw. NemoClaw already ships the bootstrap
 (`curl … nemoclaw.sh | bash`), the Landlock + seccomp + netns sandbox, inference routing,
@@ -86,9 +100,12 @@ the **data backbone + edge** (MQTT/TLS broker, TimescaleDB/PostgreSQL, IOT2050),
 capabilities** the agents carry (six field protocols, three analytics skills, five compliance
 references). The protocol and analytics skills are vendor- and site-agnostic guidance + reference
 scripts; live behaviour is unverified until real hardware and the data backbone are connected (each
-SKILL.md says so). What remains genuinely outside the pack is openAut's own application code (the
-dashboards, Power BI, REST API of Layer 4) — these skills *operate* a deployment, they are not the
-product itself.
+SKILL.md says so).
+
+In that sense, this repo is upstream of the rest of openAut: it gives agents the shared context and
+guardrails they need before generating code, docs, deployment recipes, or new repos. What remains
+genuinely outside the pack is openAut's own application code (the dashboards, Power BI, REST API of
+Layer 4) — these skills *operate* and help create a deployment, but they are not the product itself.
 
 ## Source references
 
