@@ -1,6 +1,12 @@
 ---
 name: mbus
 description: Read utility and energy meters over M-Bus (Meter-Bus, EN 13757) — wired and wireless (wM-Bus). Use when integrating heat, electricity, water, gas or cooling meters into openAut, scanning an M-Bus segment for devices, reading consumption/flow/temperature registers, or mapping meter data onto the MQTT telemetry schema. Covers primary/secondary addressing, baud negotiation, and decoding of M-Bus data records.
+permissions:
+  knowledge_only: false
+  network: "M-Bus / wireless M-Bus segment + MQTT bridge"
+  exec: "operator-provisioned meter-scan tooling, allowlisted"
+  files: "read-only"
+  control_writes: none
 ---
 
 # mbus — Meter-Bus metering

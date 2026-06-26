@@ -1,6 +1,12 @@
 ---
 name: knx
 description: Read and control KNX building-automation installations over KNXnet/IP — lighting, blinds/shading, HVAC actuators, room controllers. Use when integrating a KNX bus into openAut, reading or writing group addresses, decoding KNX datapoint types (DPT), or bridging KNX telemetry to MQTT. Covers group-address structure, KNXnet/IP tunnelling vs routing, and safe write practices.
+permissions:
+  knowledge_only: false
+  network: "KNXnet/IP tunnelling/routing (LAN) + MQTT bridge"
+  exec: "operator-provisioned bus tooling, allowlisted"
+  files: "read-only"
+  control_writes: "owner-confirmed (Driftstekniker path), never autonomous"
 ---
 
 # knx — KNX building automation

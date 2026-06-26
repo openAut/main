@@ -1,6 +1,12 @@
 ---
 name: edge-iot2050
 description: Provision a Siemens SIMATIC IOT2050 edge node for openAut — install a field-protocol poller, publish readings to the central EMQX broker over mutual TLS with the node's client certificate, buffer locally (store-and-forward) when the broker is unreachable, and run it as a resilient systemd service. Use when setting up IOT2050 or other Linux edge nodes, bridging BACnet/Modbus/M-Bus field data to MQTT, or adding store-and-forward edge buffering.
+permissions:
+  knowledge_only: false
+  exec: "node-provisioned edge agent (edge_agent.py) + systemd unit"
+  network: "outbound MQTT over mutual TLS to EMQX"
+  files: "read-write (/var/lib/openaut store-and-forward); read certs"
+  credentials: "TLS client cert/key + EnvironmentFile (node-provisioned, not in repo)"
 ---
 
 # edge-iot2050 — Siemens IOT2050 edge node

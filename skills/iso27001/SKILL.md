@@ -1,6 +1,11 @@
 ---
 name: iso27001
 description: ISO/IEC 27001:2022 information security management — ISMS scope and clauses 4–10, the Annex A 93 controls (four themes), risk assessment and treatment, Statement of Applicability, and the certification/audit cycle. Use for questions about building or auditing an ISMS, mapping controls, preparing for certification, or how openAut's design satisfies 27001 expectations.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # iso27001 — ISO/IEC 27001:2022 (ISMS)

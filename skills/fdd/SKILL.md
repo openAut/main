@@ -1,6 +1,11 @@
 ---
 name: fdd
 description: Fault detection and diagnosis for building HVAC systems — apply rule-based AFD (ASHRAE Guideline 36 / APAR-style) to air handlers, VAV boxes, chillers, heat pumps and hydronic loops using the openAut telemetry store, separate symptoms from root causes, and rank likely faults with evidence. Use when an alarm needs root-cause analysis, when diagnosing comfort/energy complaints, or when building automated fault rules over time-series data.
+permissions:
+  knowledge_only: true
+  exec: none
+  network: none
+  data_access: "read-only (openAut telemetry store)"
 ---
 
 # fdd — fault detection & diagnosis (HVAC)

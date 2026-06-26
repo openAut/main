@@ -1,0 +1,22 @@
+# SkillSpector baseline - findings suppressed on future scans.
+# Every entry is a reviewed false positive on the hardened edge agent.
+# See docs/SUPPRESSION.md.
+version: 1
+rules: []
+fingerprints:
+- hash: sha256:91a6b13feca08cbc
+  rule_id: LP3
+  file: SKILL.md
+  reason: "Permissions are declared in this skill's frontmatter; the LP3 heuristic does not parse that block. See permissions: in SKILL.md."
+- hash: sha256:6cb8e1986fa8059c
+  rule_id: MP2
+  file: scripts/edge_agent.py
+  reason: "FP: field telemetry is parsed/normalized for MQTT/TimescaleDB; values are never interpreted as instructions or persisted as agent memory."
+- hash: sha256:b283d5e59d53af26
+  rule_id: MP2
+  file: scripts/edge_agent.py
+  reason: "FP: field telemetry is parsed/normalized for MQTT/TimescaleDB; values are never interpreted as instructions or persisted as agent memory."
+- hash: sha256:93ac96eba8d4fe14
+  rule_id: PE3
+  file: assets/openaut-edge.service
+  reason: "FP: EnvironmentFile=/etc/openaut/edge.env on a hardened unit (User=openaut, NoNewPrivileges, ProtectSystem=strict). Standard secret delivery, not theft."

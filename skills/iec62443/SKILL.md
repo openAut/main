@@ -1,6 +1,11 @@
 ---
 name: iec62443
 description: IEC 62443 industrial automation & control system (IACS/OT) security — the series structure (parts 2-1/3-2/3-3/4-1/4-2), zones and conduits, security levels SL 0–4, the seven foundational requirements, and the secure development lifecycle. Use for OT/ICS security questions in building automation, segmenting a control network, choosing target security levels, or showing how openAut's edge/broker design meets 62443.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # iec62443 — IACS / OT security

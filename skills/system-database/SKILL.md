@@ -1,6 +1,11 @@
 ---
 name: system-database
 description: Define the openAut Systemdatabas contract — relational PostgreSQL tables for sites, equipment, points, Forge-backed documents, cases, approvals, generated documentation, and audit events alongside TimescaleDB telemetry. Use when aligning openAut/main with the public architecture, designing database migrations, linking forge:// URIs and documents.sha256, or giving agents a shared case and metadata model.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # system-database — metadata, cases, approvals, and audit

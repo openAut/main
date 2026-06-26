@@ -1,6 +1,12 @@
 ---
 name: forge-stack
 description: Provision the local openAut Forgejo stack as the self-hosted, open-source forge for code, manuals, runbooks, generated documentation, and agent-readable project knowledge. Use when installing or operating the local GitHub-like forge, placing it in the AI/management zone, configuring TLS, backups, runners, package/LFS storage, egress allow-lists, or making Forgejo available to Codex/Claude/openAut agents.
+permissions:
+  knowledge_only: false
+  exec: "node-provisioned deploy/operate commands (docker, systemctl, TLS, backups)"
+  network: "local Forgejo (AI/management zone) over TLS"
+  files: "read-write (forge data + backups on the node)"
+  credentials: "TLS + scoped forge tokens (node-provisioned, not in repo)"
 ---
 
 # forge-stack - local Forgejo service

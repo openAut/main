@@ -1,6 +1,11 @@
 ---
 name: engineer-integration
 description: Guide openAut Engineer through manual-driven equipment integration — ingest a manufacturer manual, extract protocol/register information, validate against a controlled service-PC context, deploy to an edge node over SSH after approval, verify MQTT/TimescaleDB data flow, and write generated documentation back to the Systemdatabas.
+permissions:
+  knowledge_only: true
+  exec: none
+  network: none
+  delegated_capabilities: "describes the Engineer process; SSH/deploy, dependency install, script copy and systemd reload run via the approved Engineer runtime after approval, not by this skill"
 ---
 
 # engineer-integration — manual to edge integration

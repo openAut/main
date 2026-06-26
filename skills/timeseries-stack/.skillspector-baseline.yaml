@@ -1,0 +1,34 @@
+# SkillSpector baseline - findings suppressed on future scans.
+# Every entry is a reviewed false positive on legitimate DB provisioning code.
+# See docs/SUPPRESSION.md.
+version: 1
+rules: []
+fingerprints:
+- hash: sha256:91a6b13feca08cbc
+  rule_id: LP3
+  file: SKILL.md
+  reason: "Permissions are declared in this skill's frontmatter; the LP3 heuristic does not parse that block. See permissions: in SKILL.md."
+- hash: sha256:b0133d2366e70eaf
+  rule_id: PE3
+  file: SKILL.md
+  reason: "FP: documentation reference to config.env (node-provisioned). No credential is embedded or transmitted."
+- hash: sha256:0797ed66aa656669
+  rule_id: PE2
+  file: assets/schema.sql
+  reason: "Documented operator step needing DB admin (sudo); applied only via owner-approved provisioning, never autonomously by the agent."
+- hash: sha256:b9a96026d3ed395f
+  rule_id: PE3
+  file: scripts/ingest.py
+  reason: "FP, not exfiltration: reads node-local config.env to USE DB credentials; nothing is transmitted off-host."
+- hash: sha256:bd3339cbaf61fcbb
+  rule_id: PE2
+  file: scripts/verify-db.sh
+  reason: "Documented operator step needing DB admin (sudo); applied only via owner-approved provisioning, never autonomously by the agent."
+- hash: sha256:719c1e88c7343ef3
+  rule_id: PE2
+  file: scripts/verify-db.sh
+  reason: "Documented operator step needing DB admin (sudo); applied only via owner-approved provisioning, never autonomously by the agent."
+- hash: sha256:b35a483c9c4914f7
+  rule_id: PE3
+  file: scripts/verify-db.sh
+  reason: "FP, not exfiltration: reads node-local config.env to USE DB credentials; nothing is transmitted off-host."

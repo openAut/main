@@ -1,6 +1,11 @@
 ---
 name: forge-governance
 description: Define governance for the local openAut Forgejo forge: branch protection, pull requests, CODEOWNERS, commit signing, CI gates, scoped agent tokens, artifact approval, and rules that prevent Advisor or Engineer from bypassing human review. Use when making Forge a deterministic authority for deployable code, generated docs, system-db migrations, or AI-created changes.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # forge-governance - review, CI, and agent permissions
