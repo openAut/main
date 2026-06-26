@@ -9,9 +9,10 @@ description: >
 
 permissions:
   knowledge_only: false
-  exec: "allowlisted (scripts/nmap-scan.sh)"
+  exec: "operator-provisioned wrapper (nmap-scan.sh) on the node, allowlisted"
   network: "local-subnet-scan (192.168.1.x)"
   files: "read-only"
+  external_services: "Signal/message notifications via operator wrapper"
 ---
 
 # Nmap-skanning
@@ -22,8 +23,10 @@ Kör ALDRIG nmap direkt med exec. nmap tar för lång tid — exec kommer att ta
 
 Det enda tillåtna sättet att köra en skanning är:
 
+> **Operator-provisioned wrapper:** `nmap-scan.sh` är ett allowlistat wrapper-skript som provisioneras på noden (samma modell som meshcore). Exemplen använder wrapper-namnet; den absoluta nodsökvägen är medvetet utelämnad eftersom den inte är portabel.
+
 ```
-exec: nohup bash /home/noname/.openclaw/workspace-general/scripts/nmap-scan.sh TARGET LEVEL LABEL > /tmp/nmap-scan.log 2>&1 &
+exec: nohup bash nmap-scan.sh TARGET LEVEL LABEL > /tmp/nmap-scan.log 2>&1 &
 ```
 
 Scriptet kör nmap i bakgrunden och skickar resultatet till Signal-gruppen automatiskt när det är klart. Du behöver inte vänta eller följa upp — scriptet sköter det.
@@ -51,17 +54,17 @@ Börja alltid på lägsta lämpliga level. Fråga om David vill eskalera efter a
 
 **Hela nätverket (ping sweep):**
 ```
-exec: nohup bash /home/noname/.openclaw/workspace-general/scripts/nmap-scan.sh 192.168.1.0/24 1 "hemmanätet" > /tmp/nmap-scan.log 2>&1 &
+exec: nohup bash nmap-scan.sh 192.168.1.0/24 1 "hemmanätet" > /tmp/nmap-scan.log 2>&1 &
 ```
 
 **Enskild host, snabb:**
 ```
-exec: nohup bash /home/noname/.openclaw/workspace-general/scripts/nmap-scan.sh 192.168.1.43 2 "GX10" > /tmp/nmap-scan.log 2>&1 &
+exec: nohup bash nmap-scan.sh 192.168.1.43 2 "GX10" > /tmp/nmap-scan.log 2>&1 &
 ```
 
 **Enskild host, med service-versioner:**
 ```
-exec: nohup bash /home/noname/.openclaw/workspace-general/scripts/nmap-scan.sh 192.168.1.172 3 "claw" > /tmp/nmap-scan.log 2>&1 &
+exec: nohup bash nmap-scan.sh 192.168.1.172 3 "claw" > /tmp/nmap-scan.log 2>&1 &
 ```
 
 ## Kända hostar
