@@ -1,6 +1,11 @@
 ---
 name: nis2
 description: "Svenskt stöd för NIS2-omfattning, artikel 20, 21 och 23-checklistor."
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # NIS2

@@ -1,6 +1,12 @@
 ---
 name: bacnet
 description: Discover and communicate with BACnet/IP devices for building automation and HVAC — thermostats, air handlers, VAV boxes, energy meters, lighting and chillers. Use when finding devices (Who-Is), reading object properties (temperature, setpoints, status), writing values with the priority array, or enumerating a device's objects. Feeds the openAut edge poller.
+permissions:
+  knowledge_only: false
+  exec: "allowlisted (BAC0 edge venv scripts)"
+  network: "outbound BACnet/IP (UDP 47808)"
+  files: "read-only"
+  control_writes: "owner-confirmed (Driftstekniker path), never autonomous"
 ---
 
 # bacnet — BACnet/IP building automation

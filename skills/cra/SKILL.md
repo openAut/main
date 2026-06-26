@@ -1,6 +1,11 @@
 ---
 name: cra
 description: "EU Cyber Resilience Act (Regulation (EU) 2024/2847) – scope, obligations, timelines, vulnerability and incident reporting, connected hardware/IoT, open source, and economic-operator roles. Use for CRA compliance questions."
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # EU Cyber Resilience Act (CRA)
