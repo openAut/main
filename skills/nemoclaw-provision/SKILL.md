@@ -1,6 +1,12 @@
 ---
 name: nemoclaw-provision
 description: Provision a NemoClaw agent on a remote server end-to-end — SSH preflight, run the NemoClaw installer, onboard a sandbox pointed at a remote Nemotron 3 Super inference host over TLS, attach a Microsoft Teams channel via webhook bridge, and verify. Use when standing up an openAut agent host, installing or onboarding NemoClaw/OpenClaw on a DGX Spark or RTX box, or wiring an agent to remote inference and Teams.
+permissions:
+  knowledge_only: false
+  exec: "allowlisted scripts (preflight.sh, verify-inference.sh) over SSH"
+  network: "SSH to sandbox host; TLS to Nemotron inference endpoint"
+  files: "read-only (sources config.env)"
+  credentials: "SSH + NEMOTRON_API_KEY/CA from config.env (node-provisioned, not in repo)"
 ---
 
 # nemoclaw-provision — install an openAut NemoClaw agent

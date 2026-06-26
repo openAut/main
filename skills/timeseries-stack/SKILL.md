@@ -1,6 +1,12 @@
 ---
 name: timeseries-stack
 description: Provision the openAut storage tier — PostgreSQL with the TimescaleDB extension for telemetry hypertables plus a relational system schema for devices and config, an MQTT-to-database ingest path, retention and continuous aggregates, and least-privilege roles (ingest write, agent read-only). Use when setting up TimescaleDB/PostgreSQL, storing building timeseries, ingesting MQTT into a database, or granting agents read access to historical data.
+permissions:
+  knowledge_only: false
+  exec: "allowlisted scripts (ingest.py, verify-db.sh)"
+  network: "PostgreSQL/TimescaleDB on the node"
+  files: "read-only (schema.sql)"
+  credentials: "DB credentials from config.env (node-provisioned, not in repo)"
 ---
 
 # timeseries-stack — TimescaleDB + PostgreSQL

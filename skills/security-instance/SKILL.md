@@ -1,6 +1,11 @@
 ---
 name: security-instance
 description: Define and provision the separate openAut Security instance — read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, local Forge watch-only monitoring, prompt/social-engineering detection, OT anomaly detection, isolated security alerts, and compliance reporting. Use when aligning openAut/main with the public security architecture or watching Forge changes, CI, secrets, and deploy artifacts.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # security-instance — separate read-only IT/OT security agent

@@ -1,6 +1,12 @@
 ---
 name: dali
 description: Control and monitor lighting over DALI / DALI-2 (IEC 62386) via a DALI gateway — set levels and scenes, address individual fittings or groups, read ballast/driver status and energy, and detect lamp failures. Use when integrating lighting control into openAut, commissioning DALI short addresses, or bridging DALI status to MQTT. Covers addressing (short/group/broadcast), arc-power levels, and DALI-2 features.
+permissions:
+  knowledge_only: false
+  network: "DALI gateway (LAN) + MQTT bridge"
+  exec: "operator-provisioned gateway tooling, allowlisted"
+  files: "read-only"
+  control_writes: "owner-confirmed (Driftstekniker path), never autonomous"
 ---
 
 # dali — DALI lighting control

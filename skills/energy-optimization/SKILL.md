@@ -1,6 +1,11 @@
 ---
 name: energy-optimization
 description: Analyse building energy performance from the openAut telemetry store and recommend prioritised, low-risk savings — scheduling, setpoint and deadband tuning, economizer/free-cooling use, heat-recovery checks, simultaneous heating/cooling elimination, pump/fan (VFD) optimisation — with weekly reporting and IPMVP-style measurement and verification. Use for energy reports, consumption-increase explanations, or optimisation proposals.
+permissions:
+  knowledge_only: true
+  exec: none
+  network: none
+  data_access: "read-only (openAut telemetry store)"
 ---
 
 # energy-optimization — building energy analysis

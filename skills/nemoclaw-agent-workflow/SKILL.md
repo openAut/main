@@ -1,6 +1,11 @@
 ---
 name: nemoclaw-agent-workflow
 description: Define the three openAut role agents as NemoClaw agent workflows — Driftstekniker (operations technician), Energisamordnare (energy coordinator), and Förvaltare (technical manager) — each defaulting to Microsoft Teams and granted only the runtime skills it needs. Use when creating openAut personas/role agents, writing NemoClaw agent workflow prompts, assigning per-agent tool permissions, or wiring an agent's output to a Teams channel.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # nemoclaw-agent-workflow — the openAut role agents

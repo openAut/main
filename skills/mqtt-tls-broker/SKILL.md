@@ -1,6 +1,12 @@
 ---
 name: mqtt-tls-broker
 description: Stand up the openAut MQTT data backbone — an EMQX broker with a mutual-TLS listener, a per-edge-node client-certificate PKI, an ACL-enforced topic schema, and verification with mosquitto over TLS. Use when setting up EMQX, securing MQTT with TLS/client certs, defining the building telemetry topic schema, or connecting edge nodes to the central broker.
+permissions:
+  knowledge_only: false
+  exec: "allowlisted scripts (gen-certs.sh, verify-tls.sh)"
+  network: "MQTT/TLS broker (EMQX) on the node"
+  files: "read-write (PKI dir; private keys chmod 600)"
+  credentials: "generates/handles TLS CA + broker/client certs (node-local)"
 ---
 
 # mqtt-tls-broker — EMQX with mutual TLS

@@ -1,6 +1,11 @@
 ---
 name: advisor-engineer-workflow
 description: Define the openAut Advisor and Engineer split as NemoClaw/OpenClaw workflows — Advisor is read-only and Teams-facing, Engineer has SSH/deploy capability but is not exposed to Teams, and both use the local Forge/Systemdatabas handoff. Use when creating role agents, assigning tool permissions, routing approvals through the system database, governing Forge PRs, or aligning openAut/main with the public openAut architecture.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # advisor-engineer-workflow — Advisor / Engineer split

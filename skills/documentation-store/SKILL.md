@@ -1,6 +1,11 @@
 ---
 name: documentation-store
 description: Define how openAut stores and retrieves manuals, code, runbooks, generated documentation, point maps, FAT/SAT notes, and AI-readable source material in the local Forgejo forge. Use when designing document ingestion, forge:// URIs, documents.sha256, quarantine-to-verified flows, scoped AI retrieval, or linking Forge content to the Systemdatabas.
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # documentation-store - Forge-backed project knowledge

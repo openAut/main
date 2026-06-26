@@ -1,0 +1,21 @@
+# SkillSpector baseline — findings listed here are suppressed on future scans.
+# Edit 'reason' fields and add glob 'rules' as needed. See docs/SUPPRESSION.md.
+version: 1
+rules: []
+fingerprints:
+- hash: sha256:91a6b13feca08cbc
+  rule_id: LP3
+  file: SKILL.md
+  reason: Accepted finding (auto-generated baseline)
+- hash: sha256:6cb8e1986fa8059c
+  rule_id: MP2
+  file: scripts/edge_agent.py
+  reason: Accepted finding (auto-generated baseline)
+- hash: sha256:b283d5e59d53af26
+  rule_id: MP2
+  file: scripts/edge_agent.py
+  reason: Accepted finding (auto-generated baseline)
+- hash: sha256:93ac96eba8d4fe14
+  rule_id: PE3
+  file: assets/openaut-edge.service
+  reason: Accepted finding (auto-generated baseline)

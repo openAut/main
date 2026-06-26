@@ -1,6 +1,11 @@
 ---
 name: nemoclaw-sandbox-policy
 description: Harden a NemoClaw sandbox after creation — deny-by-default network egress allow-listed to the remote Nemotron inference host, local Forgejo, and the Teams webhook bridge, TLS in front of vLLM, and a hardening review mapped to IEC 62443 / NIS2 / CRA. Use when locking down an openAut agent's network access, reviewing sandbox security, setting up TLS for remote inference, allowing local Forge access, or managing the four sandbox layers (filesystem, process, network, inference).
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # nemoclaw-sandbox-policy — lock down the openAut sandbox

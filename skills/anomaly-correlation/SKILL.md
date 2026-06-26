@@ -1,6 +1,11 @@
 ---
 name: anomaly-correlation
 description: Reduce alarm floods to root cause by correlating events across time, space (system/zone topology) and signal behaviour — temporal clustering, parent/child suppression, common-cause grouping, and statistical anomaly detection on the openAut telemetry store. Use when many alarms fire at once, when distinguishing a root-cause alarm from its downstream symptoms, or when flagging silent drifts that never trip a fixed threshold.
+permissions:
+  knowledge_only: true
+  exec: none
+  network: none
+  data_access: "read-only (openAut telemetry store)"
 ---
 
 # anomaly-correlation — from alarm flood to root cause

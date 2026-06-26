@@ -1,6 +1,12 @@
 ---
 name: lorawan
 description: Integrate LoRaWAN sensors into openAut via a network server (e.g. ChirpStack) — onboard devices with OTAA/ABP, decode uplink payloads, manage device classes and downlinks, and bridge decoded measurements to MQTT. Use when adding long-range battery sensors (temperature, humidity, CO₂, occupancy, leak, energy) to a building, setting up a LoRaWAN gateway/network server, or writing payload decoders. EU868 focus.
+permissions:
+  knowledge_only: false
+  network: "LoRaWAN network server (e.g. ChirpStack) + MQTT bridge"
+  exec: "operator-provisioned payload decoders/tooling, allowlisted"
+  files: "read-only"
+  control_writes: "downlinks owner-confirmed (Class C actuators), never autonomous"
 ---
 
 # lorawan — LoRaWAN sensor integration
