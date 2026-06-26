@@ -1,6 +1,12 @@
 ---
 name: modbus
 description: Scan and communicate with Modbus TCP/RTU devices — PLCs, meters, drives, I/O modules and sensors common in HVAC and industrial plant. Use when enumerating slave/unit IDs, reading holding/input registers, coils and discrete inputs, decoding scaled or multi-register values, or writing setpoints/commands. Feeds the openAut edge poller.
+permissions:
+  knowledge_only: false
+  exec: "allowlisted (pymodbus edge venv scripts)"
+  network: "outbound Modbus TCP (port 502) / RTU serial"
+  files: "read-only"
+  control_writes: "owner-confirmed (Driftstekniker path), never autonomous"
 ---
 
 # modbus — Modbus TCP/RTU

@@ -1,6 +1,11 @@
 ---
 name: ai-act
 description: "Answer EU AI Act scope, risk classes, roles, obligations, and timeline as knowledge support."
+permissions:
+  knowledge_only: true
+  tools: none
+  network: none
+  exec: none
 ---
 
 # AI Act Skill
