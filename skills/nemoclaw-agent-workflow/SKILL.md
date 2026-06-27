@@ -50,7 +50,7 @@ Keep the bridge host on the egress allow-list.
 These are separate capability skills the agents *carry* (not part of this pack). Grant each persona
 only what its job needs:
 
-- `bacnet`, `modbus` — read field/HVAC data and (for Driftstekniker) write controlled overrides
+- `bacnet`, `modbus` — read field/HVAC data (writes/overrides are an **Engineer** capability run via an approved Systemdatabas case, never a persona tool)
 - `fdd` — fault detection & diagnosis
 - `energy-optimization`, `anomaly-correlation` — analytics
 - compliance reference: `nis2`, `cra`, `ai-act`
@@ -59,8 +59,10 @@ only what its job needs:
 
 **Job:** correlate alarms, find the root cause, push it to the on-call technician in Teams.
 
-**Tools granted:** `bacnet` (read + priority-8 override), `modbus` (read; write only on non-critical),
-`fdd`, `anomaly-correlation`. **No** energy-report tools.
+**Tools granted (read-only):** `bacnet` (read), `modbus` (read), `fdd`, `anomaly-correlation`.
+**No** write/override tools — the priority-8 BACnet override is an **Engineer** capability, requested
+via an approved Systemdatabas case (see [`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md)).
+**No** energy-report tools.
 
 **Workflow prompt (personalise the bracketed parts):**
 
@@ -71,12 +73,14 @@ When an alarm arrives on [MQTT topic / EMQX subscription]:
   2. Run fdd + anomaly-correlation to rank likely root causes.
   3. Post to Teams: the alarm, the single most likely root cause, the evidence
      (which points moved), and one concrete recommended action.
-  4. Only propose a control override (bacnet write, priority 8) — never apply it
-     autonomously. Wait for a technician's explicit confirmation in Teams.
+  4. If a control override is warranted (e.g. a priority-8 BACnet write), do NOT apply it and do
+     not hold a write tool. Create an approval request / case in Systemdatabasen for Engineer to
+     execute after explicit human approval. Recommend; never write.
 Keep messages short and action-first. One alarm = one Teams message thread.
 ```
 
-**Guardrails:** writes require human confirmation; never touch life-safety priorities (1–4).
+**Guardrails:** this persona is read-only; field writes happen only through **Engineer** after an
+approved case, never directly from the Teams-facing persona; never touch life-safety priorities (1–4).
 
 ## Persona 2 — Energisamordnare (Energy Coordinator)
 
@@ -134,14 +138,14 @@ ssh -t "$SANDBOX_SSH_USER@$SANDBOX_HOST" "nemoclaw $SANDBOX_NAME connect"
 
 > Exact agent-definition commands depend on your NemoClaw/OpenClaw version's multi-agent config
 > (`openclaw.json` agents/bindings, or the CLI agent subcommands). The invariants to preserve:
-> **least-privilege tools per persona, human-confirmation before any write, Teams as the default
-> channel, and read-only for the energy and manager roles.**
+> **least-privilege tools per persona, all chat-facing personas read-only with field writes only
+> through Engineer after an approved case, and Teams as the default channel.**
 
 ## Verify
 
 For each persona: send a representative trigger (a test alarm / a manual weekly run / a threshold
 crossing) and confirm the message arrives in the correct Teams channel with the right shape, and
-that a write attempt by the read-only personas is refused.
+that a direct write attempt by any persona is refused (field writes belong to Engineer via an approved case).
 
 > **Live behaviour is unverified until a NemoClaw host and the openAut data backbone (EMQX,
 > TimescaleDB) are connected.** The personas, tool grants, and guardrails are the durable part.
