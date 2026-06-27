@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  validate-skills:
+    # Fails hard on BOM, broken frontmatter, missing/invalid permissions, and
+    # dangling relative links. See docs/PERMISSIONS.md and docs/SUPPRESSION.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "pyyaml>=6,<7"
+      - run: python scripts/validate_skills.py
+      - run: python scripts/validate_suppressions.py
+      - run: python scripts/check_links.py
+
+  skillspector:
+    # Static security scan of every skill, honouring its .skillspector-baseline.yaml.
+    # Starts strict only on DO_NOT_INSTALL; tighten the threshold once baselines are stable.
+    # Runs only after the baselines themselves pass policy (docs/SUPPRESSION.md).
+    needs: validate-skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv tool install "git+https://github.com/NVIDIA/skillspector.git"
+      - name: Scan skills (fail on DO_NOT_INSTALL)
+        run: |
+          fail=0
+          for d in skills/*/; do
+            base=""
+            if [ -f "${d}.skillspector-baseline.yaml" ]; then
+              base="--baseline ${d}.skillspector-baseline.yaml"
+            fi
+            skillspector scan "$d" --no-llm $base --format json > /tmp/r.json || true
+            rec=$(python3 -c "import json;print(json.load(open('/tmp/r.json'))['risk_assessment']['recommendation'])")
+            echo "${d} -> ${rec}"
+            if [ "$rec" = "DO_NOT_INSTALL" ]; then fail=1; fi
+          done
+          exit $fail
