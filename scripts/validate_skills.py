@@ -56,6 +56,10 @@ def check(md: pathlib.Path) -> list[str]:
         if not isinstance(v, str) or not v.strip():
             errs.append(f"missing or empty '{key}'")
 
+    name = fm.get("name")
+    if isinstance(name, str) and name.strip() and name.strip() != md.parent.name:
+        errs.append(f"name '{name.strip()}' does not match skill directory '{md.parent.name}'")
+
     perms = fm.get("permissions")
     if not isinstance(perms, dict):
         return errs + ["missing 'permissions' mapping"]

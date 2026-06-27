@@ -27,11 +27,14 @@ jobs:
           python-version: "3.12"
       - run: pip install "pyyaml>=6,<7"
       - run: python scripts/validate_skills.py
+      - run: python scripts/validate_suppressions.py
       - run: python scripts/check_links.py
 
   skillspector:
     # Static security scan of every skill, honouring its .skillspector-baseline.yaml.
     # Starts strict only on DO_NOT_INSTALL; tighten the threshold once baselines are stable.
+    # Runs only after the baselines themselves pass policy (docs/SUPPRESSION.md).
+    needs: validate-skills
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
