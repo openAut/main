@@ -56,8 +56,8 @@ openAut-specific defaults:
 |---|---|
 | [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
 | [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host + local Forge only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
-| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the current openAut trust split: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams. Actions move through approved cases in the Systemdatabas. |
-| [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut role agents — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. |
+| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the openAut trust domains: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams; **Security** is a separate read-only watch instance ([`security-instance`](skills/security-instance/SKILL.md)). Actions move through approved cases in the Systemdatabas. |
+| [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut **operator personas** (jobs-to-be-done) — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. Personas are *realised through* the Advisor / Engineer / Security trust domains; they are not themselves a trust domain. |
 
 **Data backbone & edge — what the agents read from:**
 
@@ -99,6 +99,7 @@ trust boundaries.
 
 Supporting:
 
+- [`CONTEXT.md`](CONTEXT.md) — the canonical glossary: **persona** vs. **agent / trust domain** vs. **runtime skill**.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
 - [`docs/LAB.md`](docs/LAB.md) — a local verification path for the MQTT/topic/database contracts.
 - [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.

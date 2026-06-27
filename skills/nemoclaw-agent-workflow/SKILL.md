@@ -1,6 +1,6 @@
 ---
 name: nemoclaw-agent-workflow
-description: Define the three openAut role agents as NemoClaw agent workflows — Driftstekniker (operations technician), Energisamordnare (energy coordinator), and Förvaltare (technical manager) — each defaulting to Microsoft Teams and granted only the runtime skills it needs. Use when creating openAut personas/role agents, writing NemoClaw agent workflow prompts, assigning per-agent tool permissions, or wiring an agent's output to a Teams channel.
+description: Define the three openAut operator personas as NemoClaw agent workflows — Driftstekniker (operations technician), Energisamordnare (energy coordinator), and Förvaltare (technical manager) — each defaulting to Microsoft Teams and granted only the runtime skills it needs. These personas are jobs-to-be-done, not trust domains; the Advisor / Engineer / Security trust boundaries they run inside are defined in advisor-engineer-workflow. Use when creating openAut operator personas, writing NemoClaw agent workflow prompts, assigning per-agent tool permissions, or wiring a persona's output to a Teams channel.
 permissions:
   knowledge_only: true
   exec: none
@@ -8,16 +8,31 @@ permissions:
   delegated_capabilities: "agent-role design; the documented 'ssh -t ... nemoclaw connect' step is operator/Engineer-executed, not performed by this skill"
 ---
 
-# nemoclaw-agent-workflow — the openAut role agents
+# nemoclaw-agent-workflow — the openAut operator personas
 
 NemoClaw agent setup is three steps: **(1) configure the security policy, (2) run the agent workflow
 prompt, (3) personalise it.** Step 1 is [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md).
 This skill is steps 2–3 for the three openAut personas, each defaulting to **Microsoft Teams** as its
 channel and each scoped to a least-privilege set of runtime skills.
 
-These three personas describe **jobs to be done**. For the trust boundaries they must run inside —
-read-only Advisor vs. SSH/deploy Engineer, with approvals through the Systemdatabas — see
-[`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md).
+These three personas describe **jobs to be done** — *who* needs which insight. They are **not**
+trust domains and not "role agents". The trust boundaries they must run inside — read-only
+**Advisor** vs. SSH/deploy **Engineer** vs. watch-only **Security**, with approvals through the
+Systemdatabas — are defined in [`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md).
+The canonical definitions of persona vs. trust domain vs. runtime skill live in
+[`CONTEXT.md`](../../CONTEXT.md).
+
+## Persona × trust domain
+
+Every persona is served chiefly by **Advisor** (read-only). Only the Driftstekniker has a writing
+path, and it never goes chat→SSH directly — it passes through **Engineer** via an approved case.
+No persona is its own trust domain.
+
+| Persona | Realised through | Autorun (read / recommend) | Human-reviewed (write / deploy) |
+|---|---|---|---|
+| Driftstekniker | Advisor (+ Engineer via case) | read points, fdd / anomaly-correlation, recommend override | bacnet priority-8 override, deploy → Systemdatabas case |
+| Energisamordnare | Advisor | weekly report, energy-optimization, anomaly-correlation | — (read-only) |
+| Förvaltare | Advisor (+ dashboard) | status view, fdd forecast, notify on decision | — (read-only) |
 
 Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md) and `nemoclaw-sandbox-policy`.
 Assumes `config.env` is sourced.

@@ -1,6 +1,6 @@
 ---
 name: advisor-engineer-workflow
-description: Define the openAut Advisor and Engineer split as NemoClaw/OpenClaw workflows — Advisor is read-only and Teams-facing, Engineer has SSH/deploy capability but is not exposed to Teams, and both use the local Forge/Systemdatabas handoff. Use when creating role agents, assigning tool permissions, routing approvals through the system database, governing Forge PRs, or aligning openAut/main with the public openAut architecture.
+description: Define the openAut Advisor / Engineer / Security trust split as NemoClaw/OpenClaw workflows — Advisor is read-only and Teams-facing, Engineer has SSH/deploy capability but is not exposed to Teams, Security is a separate read-only watch-and-audit instance (canonical runbook in security-instance), and all use the local Forge/Systemdatabas handoff. Use when defining the trust domains, assigning tool permissions, routing approvals through the system database, governing Forge PRs, or aligning openAut/main with the public openAut architecture.
 permissions:
   knowledge_only: true
   exec: none
@@ -8,18 +8,30 @@ permissions:
   delegated_capabilities: "governing workflow policy; Engineer (not this skill) performs Forge writes/PRs, deploy runbooks and edge SSH, owner-approved via the Systemdatabas"
 ---
 
-# advisor-engineer-workflow — Advisor / Engineer split
+# advisor-engineer-workflow — Advisor / Engineer / Security split
 
-openAut's public architecture separates the operational agent tier into two trust domains:
+openAut's public architecture separates the operational agent tier into **three trust domains**:
 
 - **openAut Advisor** — read-only, Teams-facing, explains alarms and recommends actions.
 - **openAut Engineer** — SSH/deploy capable, reached from a controlled service-PC / management
   plane, never exposed directly to Teams.
+- **openAut Security** — a separate, read-only watch-and-audit instance: *it can see, it cannot
+  steer*. It watches Advisor and Engineer and the OT environment but cannot act on them. Its full
+  definition (trust boundaries, detection pipeline, alert format, deployment + verification) is the
+  canonical runbook [`security-instance`](../security-instance/SKILL.md); this skill places it in the
+  triad rather than re-specifying it.
+
+These are **trust domains (agents)**, not personas. The three operator personas
+(Driftstekniker / Energisamordnare / Förvaltare) are jobs-to-be-done that run *inside* these domains
+— see [`nemoclaw-agent-workflow`](../nemoclaw-agent-workflow/SKILL.md) and the glossary in
+[`CONTEXT.md`](../../CONTEXT.md).
 
 This split replaces the older "one agent persona can both chat and deploy" mental model. It keeps
 social input and deployment authority apart: Advisor can create or update an approved case in the
 Systemdatabas, but Engineer is the only role that can use SSH/deploy tools, and only from an
-operator-confirmed control plane.
+operator-confirmed control plane. Security stands outside both — by design it cannot be silenced by
+Advisor or Engineer, so audit and monitoring are emitted from a boundary the acting agents do not
+control.
 
 Run after [`nemoclaw-provision`](../nemoclaw-provision/SKILL.md),
 [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md), and
@@ -117,6 +129,27 @@ For each approved case:
 Stop on uncertainty, missing approval, missing safety limits, or unexpected field behavior.
 ```
 
+## Security
+
+Security is the third trust domain, kept deliberately thin here because it has its own canonical
+runbook — [`security-instance`](../security-instance/SKILL.md). Do **not** re-specify it; that skill
+already defines its trust boundaries (separate hardware/VLAN, read-only SSH, listen-only Teams,
+watch-only Forge), what it watches, the Collect→Classify→Explain→Alert pipeline, the alert format,
+and its deployment + verification checklist. What matters for the triad:
+
+**Job:** watch Advisor, Engineer, and the OT environment; correlate and escalate security findings;
+report against compliance obligations (`nis2`, `cra`, `iso27001`, `iec62443`, `ai-act`).
+
+**Allowed:** read-only logs/telemetry metadata, listen-only Teams observation, watch-only Forge org;
+**append-only** alerts to an isolated security channel.
+
+**Denied:** no field writes, no deploy, no Teams inbound, **no case-approval authority** (it must not
+approve Engineer's work — separation of duties), and it cannot be silenced by Advisor or Engineer.
+
+**Generative LLM is not the sole gatekeeper** — Security explains already-classified findings and
+orchestrates deterministic OT detectors; it does not decide on its own whether a blocked action is
+allowed (see also #13).
+
 ## Approval handoff
 
 Advisor and Engineer meet through the Systemdatabas, not through direct chat-to-SSH routing.
@@ -143,6 +176,8 @@ For a lab setup, prove these invariants before any live use:
 - Engineer refuses deployable work without a green, reviewed Forge revision.
 - Engineer refuses a control/deploy action when no safety envelope or point limits exist.
 - Advisor and Engineer use separate credentials and separate sandbox identities.
+- Security can observe Advisor/Engineer activity but cannot write to field/Forge/Teams or approve a
+  case, and neither acting agent can suppress its audit/alert path (full checks in `security-instance`).
 
 > **Live behaviour is unverified.** This workflow is a trust-boundary contract for future openAut
 > agent definitions, not a production-ready agent configuration.
