@@ -1,0 +1,65 @@
+name: Bertil PR review
+
+# Automated, comment-only PR review by the "Bertil" GitHub App.
+# Identity: GitHub App (App ID 4165132, owned by @openAut) — posts as Bertil[bot].
+# Trigger: every PR push, plus an explicit "/bertil review" comment on a PR.
+# The App has Pull requests: write, Issues: write, Contents: read — nothing else.
+# It can only comment; it can never approve, merge, or change settings.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+# The default GITHUB_TOKEN needs nothing here — all writes go through the App token.
+permissions:
+  contents: read
+
+concurrency:
+  # One review at a time per PR; newer pushes cancel older in-flight reviews.
+  group: bertil-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Run on PR events, or on a "/bertil review" comment that is on a PR.
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '/bertil review'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Bertil App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          # App ID is public, not a secret. Only the private key is secret.
+          app-id: "4165132"
+          private-key: ${{ secrets.BERTIL_APP_PRIVATE_KEY }}
+
+      - name: Check out the review script from the default branch (trusted)
+        # Always run the script as it exists on the default branch, never the
+        # version in the PR — so a PR can't alter the logic that reviews it.
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Bertil reviews the PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Set the exact model id your OpenAI account exposes via the
+          # repo/org Actions variable BERTIL_MODEL (defaults to gpt-5.5).
+          BERTIL_MODEL: ${{ vars.BERTIL_MODEL || 'gpt-5.5' }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: python .github/scripts/bertil_review.py
