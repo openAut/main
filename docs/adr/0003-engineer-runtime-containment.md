@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (design draft — for review, nothing wired yet)
 - **Date:** 2026-06-28
-- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md) (§4 the Engineer envelope, §5 different stacks), [`0002-access-control-and-roles`](0002-access-control-and-roles.md) (PAP; no self-granted authority), the `secure-agent-workspace` reference (NVIDIA Secure Agent Workspace, Phase II)
+- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md) (§4 the Engineer envelope, §5 different stacks), `0002-access-control-and-roles` (PAP; no self-granted authority) — **pending in PR #18; merge #18 first** so the cross-references resolve — and the `secure-agent-workspace` reference (NVIDIA Secure Agent Workspace, Phase II)
 
 ## Context
 
@@ -17,15 +17,15 @@ But Advisor's OpenShell profile is built to **contain a chat agent** — deny eg
 **1. Engineer runs in its own runtime sandbox, on its own host / management plane — not inside Advisor's OpenShell instance and not under Advisor's profile.** Reuse the same kernel **primitives** (Landlock + seccomp + netns), with an **Engineer-specific signed policy bundle** — same mechanism, different policy.
 
 **2. The Engineer policy is deny-by-default and tuned to the job:**
-   - **Egress:** reachable = **only the edge VLAN / the nodes in the active case scope**; denied = the public internet, and the Advisor, Security, and PAP networks.
-   - **Filesystem:** writes confined to a work dir + the **read-only release bundle**; system binaries and auto-executed persistence paths protected (no agent-created persistence).
+   - **Egress:** reachable = **the edge VLAN / nodes in the active case scope**, plus exactly three **narrow, policy-owned, case-bound** infrastructure endpoints needed to function: the **credential proxy**, the **mediated inference endpoint** (Nemotron Ultra gateway), and the **append-only audit sink** (§4). Everything else is denied — the public internet and the Advisor, Security, and PAP networks. These three exceptions are defined in the signed policy, not by Engineer, and are the *only* off-VLAN destinations.
+   - **Filesystem:** writes confined to a **work dir**; **read-only** access to the **signed release bundle** (its write-protection is a core 0001 invariant); system binaries and auto-executed persistence paths protected (no agent-created persistence).
    - **Process scope** limited to what deploy/troubleshoot actually needs.
 
 **3. Credentials via a credential proxy, never raw in opencode's context.** SSH/deploy secrets stay in the enterprise store; the sandbox receives **scoped, short-lived capabilities** bound to the case / permission profile, with audit on use. The Nemotron Ultra inference path is mediated the same way, not handed raw.
 
-**4. The sandbox is one layer of the §4 envelope, not the boundary.** It is paired with the dedicated OS account, SSH forced-commands, signed/allowlisted deploy wrappers, network ACLs, and Security audit emitted outside Engineer's control. No single layer carries the security.
+**4. The sandbox is one layer of the §4 envelope, not the boundary.** It is paired with the dedicated OS account, SSH forced-commands, signed/allowlisted deploy wrappers, and network ACLs. **Audit flows *outward* to an append-only sink / external collector that Engineer cannot disable, mute, or read back** — observation does **not** rely on a direct Engineer → Security egress path (which §2 denies); Security consumes the sink, Engineer only writes to it. No single layer carries the security.
 
-**5. No self-granted authority, no agent-controlled lifecycle.** The signed policy and the sandbox lifecycle (create / kill / upgrade) belong to the **operator / PAP**, not to Engineer — consistent with ADR 0002. Engineer cannot widen its own sandbox or policy.
+**5. No self-granted authority, no agent-controlled lifecycle.** The signed policy and the sandbox lifecycle (create / kill / upgrade) belong to the **asset owner / owner-appointed governance authority / PAP** — explicitly **not** Engineer, and **not** any actor running an Engineer permission profile — consistent with ADR 0002. Engineer cannot widen its own sandbox or policy.
 
 **6. The purpose is blast-radius containment, not stopping legitimate work.** Troubleshooting reads **untrusted field data** (logs, device banners) inside the perimeter — a prompt-injection surface (flagged in 0002). The Engineer-tuned sandbox caps what a *hijacked* Engineer session can reach: at worst it disturbs its own in-scope nodes; it cannot reach the internet, Advisor, Security, or the PAP.
 
