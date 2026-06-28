@@ -23,6 +23,9 @@ a fourth agent or trust domain. Distinct from the three internal insight-persona
 job-to-be-done is engineering work, it is external and lower-trust, and edge-node onboarding
 (which extends the perimeter) is gated behind asset-owner approval via a Systemdatabas case. It
 can reach **only** its Engineer profile — never Advisor, Security, the PAP, or its own profile.
+It is **one named instance of the general permission-profile pattern** (see *permission profile*);
+internal operational roles bind to Engineer the same way, differing only in scope / trust /
+duration.
 _Avoid_: Core access, contractor agent, sub-admin.
 
 ## agent / trust domain
@@ -47,19 +50,22 @@ oversight axis (Security / Auditor) — not a single ladder. See
 
 The boundary that **owns role definitions and signed permission profiles** — i.e. *what each
 trust domain is allowed to do*. Named by its standard term, the **Policy Administration Point**
-(XACML; "Policy Administrator" / control plane in NIST SP 800-207 Zero Trust). Only the
-**asset-owner / integrator tier** may write to it; **no operational role — Advisor, Engineer, or
-an external contractor — may modify the PAP, including its own profile** (an enforcement point
-must never write the administration point). The PAP is **not an agent** and **not** the retired
-"Core" delivery concept (see [`docs/adr/0001`](docs/adr/0001-delivery-and-trust-model.md)).
+(XACML; "Policy Administrator" / control plane in NIST SP 800-207 Zero Trust). Only the **asset
+owner or an owner-appointed governance / release authority** (not any operational contractor) may
+write to it; **no operational role — Advisor, Engineer, or any actor running an Engineer profile —
+may modify the PAP, including its own profile** (an enforcement point must never write the
+administration point). The PAP is **not an agent** and **not** the retired "Core" delivery concept
+(see [`docs/adr/0001`](docs/adr/0001-delivery-and-trust-model.md)).
 _Avoid_: Core, policy engine, admin role.
 
 ## permission profile
 
-A **signed, scoped set of permissions** a single actor runs under (per ADR 0001 §9 / 0002).
-Engineer has three: **case-driven deploy**, **break-glass admin**, and **external-contractor** —
-ideally separate OS accounts / service contexts with separate audit, authored by the PAP, never
-self-edited.
+The **general unit of authorization** under a trust domain: a **signed, scoped set of permissions**
+a single actor runs under (per ADR 0001 §9 / 0002 §3). Every actor — internal or external — binds
+to Engineer through a profile; profiles differ along **scope** (site / project / case), **trust
+level**, and **duration** (standing vs just-in-time). Examples: **case-driven deploy**,
+**break-glass admin**, **external-contractor**. A profile is **authored by the PAP**, ideally a
+separate OS account / service context with its own audit, and **never self-edited**.
 _Avoid_: role (reserved for trust domain), grant, scope.
 
 ## runtime skill
