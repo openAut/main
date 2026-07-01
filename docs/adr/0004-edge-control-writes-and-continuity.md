@@ -83,10 +83,12 @@ existing one.
      1. checks the request is within Engineer's active case scope and that the Systemdatabas case is
         `approved` for that specific `<site>/<node>`;
      2. **requests**, rather than mints itself, a **short-lived, case-scoped** publish credential
-        limited to exactly `cmd/<site>/<node>/#` for that one case, from the **same credential proxy /
-        PAP-owned issuer** ADR 0003 §3 already defines for Engineer's SSH secrets — the endpoint holds
-        no standing broker credential and no broad minting secret of its own; it is a requester, like
-        Engineer is;
+        limited to exactly `cmd/<site>/<node>/#` for that one case, from the **same credential proxy**
+        ADR 0003 §3 already defines for Engineer's SSH secrets — issuance is authorized against
+        PAP-authored signed permission profiles (PAP owns the *policy*, not operational minting; the
+        proxy is the mechanism that enforces it, for this credential exactly as for Engineer's own).
+        The endpoint holds no standing broker credential and no broad minting secret of its own; it is
+        a requester, like Engineer is;
      3. publishes the setpoint, and writes the action to the append-only audit sink.
 
      Two different blast radii, not one claim: a **leaked per-request credential** is node-scoped by
