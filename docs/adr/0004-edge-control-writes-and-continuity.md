@@ -49,20 +49,29 @@ existing one.
        namespace needs no such carve-out: the existing rule simply doesn't match `cmd/...` at all.
      - Two new, purely additive ACL rules follow the broker's existing allow-list-then-deny-all
        shape — no negative/exclusion rules anywhere:
-       - `{allow, all, subscribe, ["cmd/${cert_site}/${clientid}/#"]}` — bound to **both** fields of
-         the cert, not a `+` wildcard on site. This is deliberately *not* a copy of the existing
-         telemetry rule (`openaut/+/${clientid}/#`), which wildcards site: least-privilege on a
-         *read* topic tolerates that gap (worst case is a stale/ambiguous reading), but a *write*
-         channel cannot inherit it without also inheriting a way for a reused node-id to read another
-         site's commands. A node's client cert must therefore carry a **site claim** (e.g. a SAN/OU
-         field set at issuance, not just the existing CN-as-node-id) before it is issued `cmd/#`
-         subscribe rights.
-       - **Precondition, not a follow-up:** the command channel is not activated for a node until its
-         cert carries that site claim. Nodes whose certs predate this ADR need reissuing (a
-         `mqtt-tls-broker` provisioning change, scoped narrowly to *this* claim) before they can use
-         `cmd/#` — this is required for decision 1 to ship, not deferred to Open questions. The
-         pre-existing telemetry-side gap (`openaut/+/${clientid}/#` itself still wildcards site) is a
-         separate, lower-severity, read-only legacy issue and can still be fixed on its own schedule.
+       - `{allow, all, subscribe, ["cmd/${cert_site}/${cert_node}/#"]}` — bound to **cert-derived**
+         site and node claims, not MQTT ClientID and not a `+` wildcard on site. `mqtt-tls-broker`'s
+         own SKILL.md documents "CN = client id" only as a **provisioning convention** and flags that
+         "live behaviour is unverified until an EMQX host is available" — meaning nothing today
+         actually stops a connecting client from presenting a valid cert but choosing a different,
+         self-supplied MQTT ClientID at connect time. Tolerable, if sloppy, for a *read* topic
+         (worst case is a stale/ambiguous reading); **not** tolerable for a channel that grants
+         subscribe rights to commands, where it would let a node read another node's setpoints by
+         simply connecting with that node's ClientID.
+       - **Precondition, not a follow-up:** before `cmd/#` is activated for *any* node, two things
+         must both be true, not just documented as intent:
+         1. the node's cert carries a **site claim** (SAN/OU field set at issuance, alongside the
+            existing CN-as-node-id), and
+         2. the broker is configured so the identity used in ACL evaluation (`${cert_site}`,
+            `${cert_node}`) is **read from the certificate itself** at the TLS layer — via EMQX's
+            peer-certificate-to-identity binding (exact directive to confirm against the deployed
+            EMQX version, same "verify against a live host" caveat the skill already carries for its
+            other config) — never trusted from a client-supplied MQTT ClientID.
+         Nodes whose certs predate this ADR need reissuing as part of rollout. The pre-existing
+         telemetry-side gap (`openaut/+/${clientid}/#`, which wildcards site *and* still trusts
+         client-supplied ClientID) is a separate, lower-severity, read-only legacy issue, tracked on
+         its own schedule — but its existence means this precondition should really be verified
+         once, for the broker as a whole, not re-litigated per topic.
        - Publish to `cmd/#` is granted **per request, not as a standing account** — see write
          identity below; there is no static `{allow, {user, ...}, publish, ["cmd/#"]}` rule.
    - **Write identity: Engineer, via a fourth mediated endpoint — not a new actor.**
@@ -116,12 +125,14 @@ existing one.
      ungated path. This is no longer an open question, and step 1 of the mediated endpoint above is
      exactly where it's enforced — before anything is ever published.
    - **Legacy limitation, deliberately not inherited:** the existing telemetry ACL's identity model —
-     client cert CN is the node id alone (`skills/mqtt-tls-broker`), site-scoping via a `+` wildcard —
-     is not carried over to `cmd/#`; the site-claim precondition above is exactly what stops that. The
-     telemetry side keeps its existing gap for now (a separate, read-only, lower-severity issue,
-     tracked in Open questions for its own fix), but a node id being reused across two sites can no
-     longer let it *read commands* meant for another site, because the command subscribe rule checks
-     the cert's site claim, not just its node id.
+     site-scoping via a `+` wildcard, and node identity via `${clientid}` rather than a verified
+     cert-derived claim (`skills/mqtt-tls-broker`) — is not carried over to `cmd/#`; the precondition
+     above (cert-derived site *and* node, enforced at the TLS layer, not the client's self-reported
+     ClientID) is exactly what stops both failure modes at once. The telemetry side keeps its existing
+     gap for now (a separate, read-only, lower-severity issue, tracked in Open questions for its own
+     fix), but neither a reused node id nor a spoofed ClientID can let a node *read commands* meant for
+     another node or site, because the command subscribe rule is evaluated against the certificate
+     itself, not anything the connecting client asserts.
 
 **2. Hold Last Value (HLV), not fail-safe-to-default, is the failure mode on loss of upstream
    communication.** Where the physical field device has its own onboard control (a BACnet priority
@@ -138,7 +149,20 @@ existing one.
    verified as one canonical unit — `site`, `node`, writable-point id, value, unit/profile, the
    case/profile-id it was approved under, sequence number, and timestamp — not just the two
    freshness fields; a signature that covered only sequence/timestamp would leave the value and the
-   site/node binding open to tampering even while looking "fresh". A message that fails any check
+   site/node binding open to tampering even while looking "fresh".
+
+   **Signing identity and key custody — a minimum decision, not fully deferred:** the **mediated MQTT
+   write endpoint** (decision 1), not Engineer, holds the signing capability, and it does so the same
+   way it holds its publish credential — by requesting use of it per-request from the credential
+   proxy / PAP-governed signing service, never holding the private key as a standing secret of its
+   own. Engineer never has access to the raw signing key, consistent with ADR 0003's "never raw
+   credentials in opencode's context". The edge node verifies against a trust anchor distributed
+   through the **same signed-artifact pipeline** already used for code deploys (ADR 0001) — this is
+   not a second, separately-invented PKI. Exact key rotation cadence and the canonical field
+   encoding are left to Open questions, but *who* signs and *where trust is anchored* are decided
+   here.
+
+   A message that fails any check
    (signature, schema, range, or freshness) is discarded and the previous known-good value keeps
    being held. Two things must persist
    *together*, across restarts, not just in memory: the held setpoint **and** the anti-replay state
@@ -234,7 +258,9 @@ existing one.
   identity model) and reachable for publish only via a short-lived, case-scoped credential requested
   per operation (SR 2.1 authorization enforcement, least privilege, no standing broad-scope write
   credential), and is functionally separated from the existing telemetry namespace rather than
-  carved out of it — zone segmentation by construction, not by exception.
+  carved out of it — this supports logical separation and least-privilege/conduit-style policy
+  enforcement; it is a topic/ACL-level control, not a claim that MQTT namespacing by itself
+  constitutes IEC 62443 zone/conduit segmentation, which is a broader network-architecture concept.
 - **NIS2 (Dir (EU) 2022/2555):** Art. 21.2 risk-management measures can support the case for favouring
   continuity of the regulated physical process during a network incident — the article does not
   itself prescribe HLV over fail-safe. The failure mode for each safety-relevant point must still be
@@ -243,18 +269,24 @@ existing one.
 
 ## Open questions
 
-- **Exact canonical command envelope and signing scheme** for `cmd/<site>/<node>/#` (field order/
-  encoding for site/node/point/value/case-id/sequence/timestamp per decision 2), and whether
+- **Exact canonical field encoding** for the signed command envelope (byte order/format for
+  site/node/point/value/case-id/sequence/timestamp — *who* signs and the trust-anchor pipeline are
+  decided in decision 2, only the encoding and key-rotation cadence are open), and whether
   acks/reglercentral health status need a topic distinct from `cmd`.
 - **The mediated MQTT write endpoint's own containment** — where it runs, how it requests and
   verifies the short-lived per-case broker credential from the credential proxy, and how tightly its
   case-check couples to `system-database` — needs a short design note before implementation, the
   same way ADR 0003 §1–§5 did for Engineer's own sandbox.
-- **Exact site-claim mechanism** for the cert reissue decision 1 requires (SAN field vs. OU vs. a
-  new extension) and the reissuance rollout plan for nodes provisioned before this ADR.
-- **`mqtt-tls-broker`'s telemetry-side site wildcard** (`openaut/+/${clientid}/#`) is untouched by
-  this ADR (decision 1's "legacy limitation" note) — still worth fixing broker-wide since it's the
-  same underlying gap, just lower severity on a read-only path; tracked as its own follow-up, not
-  blocking this ADR.
+- **Exact site-claim field** (SAN vs. OU vs. a new extension) and the **exact EMQX directive** that
+  binds connection identity to the certificate rather than the client-supplied MQTT ClientID —
+  decision 1 requires both to exist, but the precise config (and confirming the EMQX version in use
+  actually supports it) needs verification against a live host, the same caveat
+  `skills/mqtt-tls-broker`'s own SKILL.md already carries. Also needs the reissuance rollout plan for
+  nodes provisioned before this ADR.
+- **`mqtt-tls-broker`'s telemetry-side gap** (`openaut/+/${clientid}/#`, which wildcards site *and*
+  still trusts client-supplied ClientID) is untouched by this ADR (decision 1's "legacy limitation"
+  note) — still worth fixing broker-wide, ideally by applying the *same* cert-derived-identity
+  mechanism decision 1 introduces rather than a second bespoke fix; tracked as its own follow-up,
+  not blocking this ADR.
 - **The interlock mechanism itself** (hardware limit switches, PLC-level clamps, etc.) is
   per-equipment and out of scope here — this ADR only establishes that HLV depends on one existing.
