@@ -50,9 +50,11 @@ existing one.
      - Two new, purely additive ACL rules follow the broker's existing allow-list-then-deny-all
        shape — no negative/exclusion rules anywhere:
        - `{allow, all, subscribe, ["cmd/+/${clientid}/#"]}` — a node subscribes only to its own
-         command prefix. A stolen node cert still cannot see or affect any other node's commands,
-         inheriting the same node-id-as-CN identity model as the existing telemetry ACL (see
-         "inherited limitation" note below).
+         command prefix. A stolen node cert still cannot see or affect commands for a *different
+         clientid* — it inherits the same node-id-as-CN identity model as the existing telemetry ACL,
+         which means this holds only as long as clientid is unique; it is **not** yet a "different
+         site" guarantee (see "inherited limitation" note below, which this claim must be read
+         together with).
        - Publish to `cmd/#` is granted **per request, not as a standing account** — see write
          identity below; there is no static `{allow, {user, ...}, publish, ["cmd/#"]}` rule.
    - **Write identity: Engineer, via a fourth mediated endpoint — not a new actor.**
@@ -68,19 +70,23 @@ existing one.
      a raw broker socket or a standing credential itself. Concretely, the endpoint:
      1. checks the request is within Engineer's active case scope and that the Systemdatabas case is
         `approved` for that specific `<site>/<node>`;
-     2. mints or uses a **short-lived, case-scoped** publish credential limited to exactly
-        `cmd/<site>/<node>/#` for that one case — never a blanket `cmd/#` grant;
+     2. **requests**, rather than mints itself, a **short-lived, case-scoped** publish credential
+        limited to exactly `cmd/<site>/<node>/#` for that one case, from the **same credential proxy /
+        PAP-owned issuer** ADR 0003 §3 already defines for Engineer's SSH secrets — the endpoint holds
+        no standing broker credential and no broad minting secret of its own; it is a requester, like
+        Engineer is;
      3. publishes the setpoint, and writes the action to the append-only audit sink.
 
      Two different blast radii, not one claim: a **leaked per-request credential** is node-scoped by
      construction (point 2) — it is only ever valid for the one `<site>/<node>` it was minted for. A
-     **compromised endpoint itself** is a different, larger problem — if the endpoint's own minting
-     path or case-check were bypassed, its blast radius is whatever that path can reach, which this
-     ADR does not yet bound. That containment (no broad minting secret held anywhere the endpoint
-     itself could exfiltrate; issuance itself gated through the credential proxy / PAP, not owned by
-     the endpoint; the endpoint's own network ACL scoped to just Systemdatabas + credential proxy +
-     audit sink + broker; its own dedicated sandbox) is real work, tracked in Open questions, not
-     something to claim solved here.
+     **compromised endpoint itself** is a different, larger problem: even holding no credential of its
+     own, a compromised endpoint could still *request* proxy-issued tokens for cases it has no business
+     touching unless the proxy's own authorization checks the endpoint's identity and active-case claim
+     independently — that check is the proxy's job, not the endpoint re-implementing it, exactly as
+     Engineer's SSH-secret requests are already authorized by the proxy today. What's still genuinely
+     open is the endpoint's *own* containment shape — its sandbox, and its network ACL scoped to just
+     Systemdatabas + credential proxy + audit sink + broker — tracked in Open questions, the same way
+     ADR 0003 left Engineer's enforcement substrate open while still deciding it *would* be sandboxed.
 
      **ADR 0003 §2 is amended by this decision**, not silently widened: its three named endpoints are
      now four (see the corresponding edit to `0003-engineer-runtime-containment.md` §2, made alongside
@@ -114,9 +120,14 @@ existing one.
    because the field device has no onboard logic — that loop must read from a **locally persisted,
    last validated setpoint**, never a live inbound message. "Validated" means the incoming MQTT
    payload passed schema/type checking, per-point range/clamp limits, and freshness/replay protection
-   (a signed sequence number and timestamp, both covered by the signature, checked against
-   previously-seen values) before it is allowed to overwrite the held value — a message that fails
-   any check is discarded and the previous known-good value keeps being held. Two things must persist
+   (sequence number and timestamp checked against previously-seen values) before it is allowed to
+   overwrite the held value. The **entire** command envelope is signed and
+   verified as one canonical unit — `site`, `node`, writable-point id, value, unit/profile, the
+   case/profile-id it was approved under, sequence number, and timestamp — not just the two
+   freshness fields; a signature that covered only sequence/timestamp would leave the value and the
+   site/node binding open to tampering even while looking "fresh". A message that fails any check
+   (signature, schema, range, or freshness) is discarded and the previous known-good value keeps
+   being held. Two things must persist
    *together*, across restarts, not just in memory: the held setpoint **and** the anti-replay state
    (last-accepted sequence number/timestamp) — otherwise a node restart resets the replay window and
    a captured old command becomes acceptable again. Command messages are published with `retain=false`
@@ -162,8 +173,9 @@ existing one.
   four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
   language already used for the credential proxy. The endpoint itself is still new infrastructure to
   build — it doesn't exist today — but it is Engineer's endpoint to call, not a new trust domain or a
-  capability living outside CONTEXT.md's three-trust-domain model. Its own containment (minting-path
-  isolation, network ACL, sandbox) is separate work, tracked in Open questions.
+  capability living outside CONTEXT.md's three-trust-domain model. Its own containment (network ACL,
+  sandbox, and relying on the credential proxy's own authorization rather than re-implementing it) is
+  separate work, tracked in Open questions.
 - This ADR does not invent the interlock mechanism itself — that stays a per-equipment engineering
   task — it only establishes that HLV *requires* one wherever the held value could be unsafe.
 - Decision 1's case-gate is now confirmed (same gate as `deploy`); implementation must not ship the
@@ -207,12 +219,13 @@ existing one.
 
 ## Open questions
 
-- **Exact payload schema** for `cmd/<site>/<node>/#` (sequence number / signed timestamp fields per
-  decision 2), and whether acks/reglercentral health status need a topic distinct from `cmd`.
-- **The mediated MQTT write endpoint's own containment** — where it runs, how it mints/verifies the
-  short-lived per-case broker credential, and how tightly its case-check couples to
-  `system-database` — needs a short design note before implementation, the same way ADR 0003 §1–§5
-  did for Engineer's own sandbox.
+- **Exact canonical command envelope and signing scheme** for `cmd/<site>/<node>/#` (field order/
+  encoding for site/node/point/value/case-id/sequence/timestamp per decision 2), and whether
+  acks/reglercentral health status need a topic distinct from `cmd`.
+- **The mediated MQTT write endpoint's own containment** — where it runs, how it requests and
+  verifies the short-lived per-case broker credential from the credential proxy, and how tightly its
+  case-check couples to `system-database` — needs a short design note before implementation, the
+  same way ADR 0003 §1–§5 did for Engineer's own sandbox.
 - **`mqtt-tls-broker`'s node-id-as-CN identity model** doesn't bind site into the client identity
   (decision 1's "inherited limitation" note); worth fixing broker-wide now that the gap affects
   command delivery, not just telemetry — tracked as a follow-up to `mqtt-tls-broker`, not blocking
