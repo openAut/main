@@ -34,7 +34,11 @@ existing one.
    - **Setpoint / operational-parameter updates** to an *already-deployed* control loop (frequent,
      light): travel over **MQTT**, not SSH. This requires a genuinely new capability: today's ACL has
      no inbound topic at all. Command traffic gets a **sibling top-level namespace**,
-     `cmd/<site>/<node>/#` — **not** nested under `openaut/<site>/<node>/#` — for two reasons at once:
+     `cmd/<site>/<node>/#`, with individual writable points as sub-topics (`cmd/<site>/<node>/<point>`)
+     — **not** nested under `openaut/<site>/<node>/#` — for two reasons at once. (The node's own
+     *subscribe* grant below is node-wide by design — a node needs to receive commands for all its own
+     points; it is the *publish* side, scoped per point to what a case actually approved, where
+     least-privilege matters — see the write-identity bullet.)
      - Today's AI-tier consumers (`ingest`, `agent_ro`) already hold a broad, deliberately unscoped
        `openaut/#` read subscription (`skills/mqtt-tls-broker/assets/acl.conf`). If commands lived
        under `openaut/.../cmd/#` they'd leak straight into that existing wildcard with no ACL change
@@ -88,27 +92,38 @@ existing one.
      added alongside the credential proxy and mediated inference endpoint already named in ADR 0003
      §2. Like those two, Engineer hands its case/scope to the endpoint and gets back a result — it
      never holds
-     a raw broker socket or a standing credential itself. Concretely, the endpoint:
+     a raw broker socket or a standing credential itself. Concretely — and **scoped to the specific
+     writable point, not the whole node**, since a case approves one or more named points, never
+     blanket access to everything under a node, the same granularity decision 2's per-point
+     range/clamp checks and HLV already assume — the endpoint:
      1. checks the request is within Engineer's active case scope and that the Systemdatabas case is
-        `approved` for that specific `<site>/<node>`;
+        `approved` for that specific `<site>/<node>/<point>`;
      2. **requests**, rather than mints itself, a **short-lived, case-scoped** publish credential
-        limited to exactly `cmd/<site>/<node>/#` for that one case, from the **same credential proxy**
-        ADR 0003 §3 already defines for Engineer's SSH secrets — issuance is authorized against
-        PAP-authored signed permission profiles (PAP owns the *policy*, not operational minting; the
-        proxy is the mechanism that enforces it, for this credential exactly as for Engineer's own).
-        The endpoint holds no standing broker credential and no broad minting secret of its own; it is
-        a requester, like Engineer is;
+        limited to exactly `cmd/<site>/<node>/<point>` — the one point the case approved, never the
+        node-wide `cmd/<site>/<node>/#` — from the **same credential proxy** ADR 0003 §3 already
+        defines for Engineer's SSH secrets — issuance is authorized against PAP-authored signed
+        permission profiles (PAP owns the *policy*, not operational minting; the proxy is the
+        mechanism that enforces it, for this credential exactly as for Engineer's own). A case that
+        legitimately covers multiple points gets multiple point-scoped credentials, not one
+        node-wide grant. The endpoint holds no standing broker credential and no broad minting
+        secret of its own; it is a requester, like Engineer is;
      3. publishes the setpoint.
 
-     **Every attempt is audited, not just successful ones.** Step 1 rejections (out-of-scope case,
-     not `approved`), step 2 failures (proxy declines to issue), and step 3 failures (broker publish
-     error) each write their own entry to the append-only audit sink — case/profile-id, site/node/
-     point, decision, and failure reason — the same as a successful publish. An endpoint that only
-     logged what it *did* would leave Security blind to probing or a compromise attempt that never
-     got past step 1 or 2.
+     **Every attempt is audited, not just successful ones — and the write fails closed if the audit
+     entry can't be written.** Step 1 rejections (out-of-scope case, not `approved`), step 2 failures
+     (proxy declines to issue), and step 3 failures (broker publish error) each write their own entry
+     to the append-only audit sink — case/profile-id, site/node/point, decision, and failure reason —
+     the same as a successful publish. An endpoint that only logged what it *did* would leave Security
+     blind to probing or a compromise attempt that never got past step 1 or 2. If the audit sink itself
+     is unreachable, the endpoint **does not proceed to step 2 or 3** — an unauditable write is treated
+     as equivalent to an unauthorized one, the same fail-closed posture as decision 2's "discard on
+     failed validation", not a silent write-without-a-trail. (Step 1's own rejection can still be
+     logged locally / retried once the sink recovers, since it is itself a negative outcome, not a
+     write.)
 
-     Two different blast radii, not one claim: a **leaked per-request credential** is node-scoped by
-     construction (point 2) — it is only ever valid for the one `<site>/<node>` it was minted for. A
+     Two different blast radii, not one claim: a **leaked per-request credential** is scoped to a
+     single writable point by construction (point 2) — it is only ever valid for the one
+     `<site>/<node>/<point>` it was minted for, not the whole node. A
      **compromised endpoint itself** is a different, larger problem: even holding no credential of its
      own, a compromised endpoint could still *request* proxy-issued tokens for cases it has no business
      touching unless the proxy's own authorization checks the endpoint's identity and active-case claim
@@ -160,7 +175,12 @@ existing one.
    last validated setpoint**, never a live inbound message. "Validated" means the incoming MQTT
    payload passed schema/type checking, per-point range/clamp limits, and freshness/replay protection
    (sequence number and timestamp checked against previously-seen values) before it is allowed to
-   overwrite the held value. The **entire** command envelope is signed and
+   overwrite the held value. The **freshness window** itself is not left implicit: it is a per-point
+   attribute of the same equipment/permission profile that already carries that point's range/clamp
+   limits, with a **default maximum of 60 seconds** unless a profile explicitly sets a
+   tighter one — and the same value is what both the node's local check *and* the broker's
+   `message expiry interval` (below) are configured from, a single source of truth rather than two
+   independently-set numbers that could silently drift apart. The **entire** command envelope is signed and
    verified as one canonical unit — `site`, `node`, writable-point id, value, unit/profile, the
    case/profile-id it was approved under, sequence number, and timestamp — not just the two
    freshness fields; a signature that covered only sequence/timestamp would leave the value and the
@@ -271,10 +291,11 @@ existing one.
 - **IEC 62443:** HLV as the default failure mode supports **availability** of the regulated process
   (a core SR/FR concern for OT, distinct from IT's confidentiality-first ordering); the new `cmd/#`
   namespace is scoped per **site and node** for subscribe (not just node, unlike the legacy telemetry
-  identity model) and reachable for publish only via a short-lived, case-scoped credential requested
-  per operation (SR 2.1 authorization enforcement, least privilege, no standing broad-scope write
-  credential), and is functionally separated from the existing telemetry namespace rather than
-  carved out of it — this supports logical separation and least-privilege/conduit-style policy
+  identity model) and reachable for publish only via a short-lived, **point-scoped** credential
+  requested per operation (SR 2.1 authorization enforcement, least privilege — narrower than the node
+  itself, no standing broad-scope write credential), and is functionally separated from the existing
+  telemetry namespace rather than carved out of it — this supports logical separation and
+  least-privilege/conduit-style policy
   enforcement; it is a topic/ACL-level control, not a claim that MQTT namespacing by itself
   constitutes IEC 62443 zone/conduit segmentation, which is a broader network-architecture concept.
 - **NIS2 (Dir (EU) 2022/2555):** Art. 21.2 risk-management measures can support the case for favouring
