@@ -98,7 +98,14 @@ existing one.
         proxy is the mechanism that enforces it, for this credential exactly as for Engineer's own).
         The endpoint holds no standing broker credential and no broad minting secret of its own; it is
         a requester, like Engineer is;
-     3. publishes the setpoint, and writes the action to the append-only audit sink.
+     3. publishes the setpoint.
+
+     **Every attempt is audited, not just successful ones.** Step 1 rejections (out-of-scope case,
+     not `approved`), step 2 failures (proxy declines to issue), and step 3 failures (broker publish
+     error) each write their own entry to the append-only audit sink — case/profile-id, site/node/
+     point, decision, and failure reason — the same as a successful publish. An endpoint that only
+     logged what it *did* would leave Security blind to probing or a compromise attempt that never
+     got past step 1 or 2.
 
      Two different blast radii, not one claim: a **leaked per-request credential** is node-scoped by
      construction (point 2) — it is only ever valid for the one `<site>/<node>` it was minted for. A
@@ -106,10 +113,18 @@ existing one.
      own, a compromised endpoint could still *request* proxy-issued tokens for cases it has no business
      touching unless the proxy's own authorization checks the endpoint's identity and active-case claim
      independently — that check is the proxy's job, not the endpoint re-implementing it, exactly as
-     Engineer's SSH-secret requests are already authorized by the proxy today. What's still genuinely
-     open is the endpoint's *own* containment shape — its sandbox, and its network ACL scoped to just
-     Systemdatabas + credential proxy + audit sink + broker — tracked in Open questions, the same way
-     ADR 0003 left Engineer's enforcement substrate open while still deciding it *would* be sandboxed.
+     Engineer's SSH-secret requests are already authorized by the proxy today.
+
+     **Minimum containment, decided here, not deferred whole:** the endpoint runs under its own
+     dedicated service account and sandbox (not Engineer's, not shared with any other endpoint),
+     owner-/PAP-governed lifecycle (create/kill/upgrade — the same "no self-granted authority" rule
+     ADR 0003 §5 puts on Engineer applies here too), and **deny-by-default egress to exactly four
+     destinations**: Systemdatabas (case-approval checks), the credential/signing proxy, the MQTT
+     broker, and the append-only audit sink — no reachability to Advisor, Security, the PAP network,
+     or the public internet, mirroring ADR 0003 §2's shape for Engineer. What's still genuinely open
+     is the **enforcement substrate** for that sandbox (namespaces+LSM vs. microVM) — tracked in Open
+     questions, the same way ADR 0003 §Open-questions left that same choice open for Engineer while
+     still deciding Engineer *would* be sandboxed.
 
      **ADR 0003 §2 is amended by this decision**, not silently widened: its three named endpoints are
      now four (see the corresponding edit to `0003-engineer-runtime-containment.md` §2, made alongside
@@ -219,9 +234,10 @@ existing one.
   four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
   language already used for the credential proxy. The endpoint itself is still new infrastructure to
   build — it doesn't exist today — but it is Engineer's endpoint to call, not a new trust domain or a
-  capability living outside CONTEXT.md's three-trust-domain model. Its own containment (network ACL,
-  sandbox, and relying on the credential proxy's own authorization rather than re-implementing it) is
-  separate work, tracked in Open questions.
+  capability living outside CONTEXT.md's three-trust-domain model. Its minimum containment shape
+  (dedicated sandbox/service account, owner-/PAP-governed lifecycle, deny-by-default egress to exactly
+  Systemdatabas + credential proxy + broker + audit sink, full audit of denied/failed attempts too)
+  is decided by decision 1; only the enforcement substrate is separate work, tracked in Open questions.
 - This ADR does not invent the interlock mechanism itself — that stays a per-equipment engineering
   task — it only establishes that HLV *requires* one wherever the held value could be unsafe.
 - Decision 1's case-gate is now confirmed (same gate as `deploy`); implementation must not ship the
@@ -273,10 +289,10 @@ existing one.
   site/node/point/value/case-id/sequence/timestamp — *who* signs and the trust-anchor pipeline are
   decided in decision 2, only the encoding and key-rotation cadence are open), and whether
   acks/reglercentral health status need a topic distinct from `cmd`.
-- **The mediated MQTT write endpoint's own containment** — where it runs, how it requests and
-  verifies the short-lived per-case broker credential from the credential proxy, and how tightly its
-  case-check couples to `system-database` — needs a short design note before implementation, the
-  same way ADR 0003 §1–§5 did for Engineer's own sandbox.
+- **The mediated MQTT write endpoint's enforcement substrate** — namespaces+LSM vs. a microVM, the
+  same choice ADR 0003's Open questions left open for Engineer — and how tightly its case-check
+  couples to `system-database` in practice; the containment *shape* itself (sandbox, egress
+  allowlist, audited denials) is decided in decision 1, not open.
 - **Exact site-claim field** (SAN vs. OU vs. a new extension) and the **exact EMQX directive** that
   binds connection identity to the certificate rather than the client-supplied MQTT ClientID —
   decision 1 requires both to exist, but the precise config (and confirming the EMQX version in use
