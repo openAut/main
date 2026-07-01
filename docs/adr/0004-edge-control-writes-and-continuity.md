@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (design draft — for review, nothing wired yet)
 - **Date:** 2026-07-01
-- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md) (§4 Engineer envelope, §7 controlled ingress / deny-by-default egress), [`0003-engineer-runtime-containment`](0003-engineer-runtime-containment.md) (§2 Engineer's edge-VLAN-in-case-scope reachability and narrow policy-owned egress endpoints — amended by this ADR from three to four), [`skills/forge-governance`](../../skills/forge-governance/SKILL.md), [`skills/system-database`](../../skills/system-database/SKILL.md) (case → Forge → CI-approved-revision pipeline), [`skills/edge-iot2050`](../../skills/edge-iot2050/SKILL.md), [`skills/mqtt-tls-broker`](../../skills/mqtt-tls-broker/SKILL.md), `CONTEXT.md` (*reglercentral*, *Hold Last Value*), issue #13
+- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md) (§4 Engineer envelope, §7 controlled ingress / deny-by-default egress), [`0003-engineer-runtime-containment`](0003-engineer-runtime-containment.md) (§2 Engineer's edge-VLAN-in-case-scope reachability and narrow policy-owned egress endpoints — amended by this ADR from three to four), [`skills/forge-governance`](../../skills/forge-governance/SKILL.md), [`skills/system-database`](../../skills/system-database/SKILL.md) (case → Forge → CI-approved-revision pipeline), [`skills/edge-iot2050`](../../skills/edge-iot2050/SKILL.md), [`skills/mqtt-tls-broker`](../../skills/mqtt-tls-broker/SKILL.md), [`CONTEXT.md`](../../CONTEXT.md) (*reglercentral*, *Hold Last Value*), issue #13
 
 ## Context
 
@@ -70,11 +70,15 @@ existing one.
      domains, and "only the Driftstekniker has a writing path, and it never goes chat→SSH directly —
      it passes through **Engineer** via an approved case in the Systemdatabas." A standalone write
      service that Engineer never touches would be a **fourth write-capable actor outside that model** —
-     this ADR's previous draft got that wrong. The corrected design: **Engineer remains the sole write
-     actor**, exactly as for SSH deploys, and it reaches the broker only through a new **mediated MQTT
-     write endpoint** — a fourth narrow, policy-owned, case-bound infrastructure endpoint added
-     alongside the credential proxy and mediated inference endpoint already named in ADR 0003 §2. Like
-     those two, Engineer hands its case/scope to the endpoint and gets back a result — it never holds
+     this ADR's previous draft got that wrong. The corrected design: **Engineer remains the sole
+     operational write trust domain — the only one that may initiate a setpoint write, via an
+     approved case** — exactly as for SSH deploys. The **mediated MQTT write endpoint** it calls is
+     policy-owned mediation infrastructure (a policy enforcement point), not a fourth agent, persona,
+     or trust domain — it never initiates anything on its own, only executes what Engineer's approved
+     case already authorized. It is a fourth narrow, policy-owned, case-bound infrastructure endpoint
+     added alongside the credential proxy and mediated inference endpoint already named in ADR 0003
+     §2. Like those two, Engineer hands its case/scope to the endpoint and gets back a result — it
+     never holds
      a raw broker socket or a standing credential itself. Concretely, the endpoint:
      1. checks the request is within Engineer's active case scope and that the Systemdatabas case is
         `approved` for that specific `<site>/<node>`;
@@ -137,12 +141,18 @@ existing one.
    being held. Two things must persist
    *together*, across restarts, not just in memory: the held setpoint **and** the anti-replay state
    (last-accepted sequence number/timestamp) — otherwise a node restart resets the replay window and
-   a captured old command becomes acceptable again. Command messages are published with `retain=false`
-   and the broker must not retain `cmd/#`; a late-joining or reconnecting subscriber must never receive
-   a stale command from the broker's own retained-message store instead of from the node's own
-   validated local state. This keeps the loop regulating unaffected by an outage anywhere above it in
-   the chain, and this is the same discipline as the existing store-and-forward spool, applied to the
-   inbound side.
+   a captured old command becomes acceptable again. `retain=false` alone isn't sufficient — MQTT can
+   still redeliver a queued QoS 1/2 message from a persistent session or offline queue on reconnect,
+   with no retained message involved at all. `cmd/#` subscriptions therefore also require: no
+   persistent session (clean start / session expiry 0, no offline queueing), and a `message expiry
+   interval` at or below decision 2's own freshness window as a second, broker-side backstop — the
+   node's own signature/freshness check (above) is still the primary defense and must not be relied
+   on alone, but the broker configuration needs to be exactly as explicit as the retained-message
+   prohibition, not merely implied by it. A late-joining or reconnecting subscriber must never receive
+   a stale command from *any* broker-side store — retained, queued, or otherwise — instead of relying
+   purely on the node's own validated local state. This keeps the loop regulating unaffected by an
+   outage anywhere above it in the chain, and this is the same discipline as the existing
+   store-and-forward spool, applied to the inbound side.
 
 **3. Central revocation of an already-applied setpoint during a partition is accepted as impossible
    by design**, not solved by a protocol. It is a direct consequence of decisions 1–2: there is no
@@ -170,11 +180,12 @@ existing one.
   validate each incoming setpoint (schema/range/freshness/replay per decision 2) before persisting it
   locally alongside its anti-replay state, and — only when acting as a reglercentral — run the control
   loop as a process decoupled from the MQTT client's connection state.
-- `mqtt-tls-broker`'s topic schema and ACL need the new sibling `cmd/#` namespace, its site-and-node
-  -bound subscribe rule, and `retain=false`/no server-side retention on `cmd/#` — see decision 1/2.
-  Existing rules (`openaut/#` reads, per-node telemetry publish) are untouched by construction; this
-  is still the **first** departure from a strictly one-way broker and deserves its own abuse/injection
-  review even though the blast radius stays node-scoped (identical containment logic to today's
+- `mqtt-tls-broker`'s topic schema and ACL need the new sibling `cmd/#` namespace, its
+  site-and-node-bound subscribe rule, `retain=false`/no server-side retention, and no persistent
+  session / offline queueing on `cmd/#` — see decision 1/2. Existing rules (`openaut/#` reads,
+  per-node telemetry publish) are untouched by construction; this is still the **first** departure
+  from a strictly one-way broker and deserves its own abuse/injection review even though the blast
+  radius stays node-scoped (identical containment logic to today's
   publish scoping). It also needs a **cert-issuance change**: nodes need a site claim added before
   they can be granted `cmd/#` subscribe rights (decision 1) — existing certs predate this and need
   reissuing as part of rollout, not after.
@@ -207,8 +218,9 @@ existing one.
   Rejected on review: `CONTEXT.md` is explicit that openAut has three trust domains and that the
   Driftstekniker's only writing path passes through Engineer — a write-capable actor Engineer never
   calls would sit outside that model as an unnamed fourth actor. Replaced with decision 1's mediated
-  endpoint, which keeps Engineer as the sole write actor and adds infrastructure *Engineer calls*,
-  the same shape as the existing credential proxy and mediated inference endpoint.
+  endpoint, which keeps Engineer as the sole operational write trust domain and adds policy-owned
+  mediation infrastructure *Engineer calls*, the same shape as the existing credential proxy and
+  mediated inference endpoint.
 
 ## Compliance alignment (IEC 62443 / NIS2)
 
