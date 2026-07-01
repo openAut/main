@@ -34,26 +34,40 @@ existing one.
    - **Setpoint / operational-parameter updates** to an *already-deployed* control loop (frequent,
      light): travel over **MQTT**, not SSH. This requires a genuinely new capability: today's ACL has
      no inbound topic at all. Add a node-scoped command topic (e.g.
-     `openaut/<site>/<node>/cmd/#`) and an ACL rule that lets a node **subscribe only to its own**
-     command prefix — the same least-privilege pattern already used for publish scoping, just
-     mirrored for the inbound direction. A stolen node cert still cannot see or affect any other
-     node's commands.
-   - **Open question, working assumption:** setpoint updates over the new MQTT channel still require
-     the same Systemdatabas case approval as any other write — `CONTEXT.md`'s persona table already
-     treats a live "bacnet priority-8 override" as `deploy → Systemdatabas case`, so this reuses that
-     existing rule rather than inventing a lighter, ungated path. **Needs explicit confirmation before
-     this ADR leaves Proposed.**
+     `openaut/<site>/<node>/cmd/#`) with **two separate ACL rules, not one**:
+     - The node **subscribes only to its own** command prefix — the same least-privilege pattern
+       already used for publish scoping, just mirrored for the inbound direction. A stolen node cert
+       still cannot see or affect any other node's commands.
+     - The node's **own publish grant is explicitly scoped to exclude `cmd/#`** — it keeps publishing
+       telemetry under its own prefix, but may never publish to its own or any other node's command
+       topic. **Publishing to `cmd/#` is restricted to a single, case-bound write identity** (a scoped
+       Engineer profile or a mediated write service, with its own certificate and carrying the
+       case-id for audit) — mirroring how Sparkplug B restricts NCMD/DCMD publish rights to
+       authorized Host Applications rather than letting any broker client send commands. Without this
+       second rule, the node's existing telemetry-publish grant could technically extend to `cmd/#`,
+       which would make the case-gate below unenforceable at the transport layer.
+   - **Case-approval for the MQTT setpoint channel: confirmed, same gate as SSH deploy.**
+     `CONTEXT.md`'s persona table already treats a live "bacnet priority-8 override" identically to
+     `deploy` — both are `Human-reviewed (write/deploy) → Systemdatabas case` for the Driftstekniker
+     persona. A live MQTT setpoint write is the same class of act (a runtime change to an
+     already-deployed control loop), so it reuses that existing rule rather than inventing a lighter,
+     ungated path. This is no longer an open question.
 
 **2. Hold Last Value (HLV), not fail-safe-to-default, is the failure mode on loss of upstream
    communication.** Where the physical field device has its own onboard control (a BACnet priority
-   array or a Modbus holding register on a DDC controller / VFD / PLC), HLV is already a native
-   property of that hardware — the edge node does nothing extra, and must never self-reset or
-   reinitialize a previously-deployed value on its own (e.g. on a service restart). Where the edge
-   node itself is the **reglercentral** — it runs the control algorithm in software because the field
-   device has no onboard logic — that loop must read from a **locally persisted, last-received**
-   setpoint, never a live inbound message, so it keeps regulating unaffected by an outage anywhere
-   above it in the chain. This is the same discipline as the existing store-and-forward spool, applied
-   to the inbound side.
+   array or a Modbus holding register on a DDC controller / VFD / PLC), HLV **can** be a native
+   property of that hardware — verified per writable point against the equipment profile's documented
+   comm-loss/restart behaviour, not assumed generically. In all cases the edge node must never
+   self-reset or reinitialize a previously-deployed value on its own (e.g. on a service restart).
+   Where the edge node itself is the **reglercentral** — it runs the control algorithm in software
+   because the field device has no onboard logic — that loop must read from a **locally persisted,
+   last validated setpoint**, never a live inbound message. "Validated" means the incoming MQTT
+   payload passed schema/type checking, per-point range/clamp limits, and freshness/replay protection
+   (a signed sequence number and timestamp, both covered by the signature, checked against
+   previously-seen values) before it is allowed to overwrite the held value — a message that fails
+   any check is discarded and the previous known-good value keeps being held. This keeps the loop
+   regulating unaffected by an outage anywhere above it in the chain, and this is the same discipline
+   as the existing store-and-forward spool, applied to the inbound side.
 
 **3. Central revocation of an already-applied setpoint during a partition is accepted as impossible
    by design**, not solved by a protocol. It is a direct consequence of decisions 1–2: there is no
@@ -71,16 +85,20 @@ existing one.
 
 ## Consequences
 
-- `edge-iot2050` needs a new writable-point mode: subscribe to its own `cmd` topic, persist the
-  last-received value locally, and — only when acting as a reglercentral — run the control loop as
-  a process decoupled from the MQTT client's connection state.
-- `mqtt-tls-broker`'s topic schema and ACL need the new inbound rule; this is the **first** departure
-  from a strictly one-way broker and deserves its own abuse/injection review even though the blast
-  radius stays node-scoped (identical containment logic to today's publish scoping).
+- `edge-iot2050` needs a new writable-point mode: subscribe to its own `cmd` topic, validate each
+  incoming setpoint (schema/range/freshness per decision 2) before persisting it locally, and — only
+  when acting as a reglercentral — run the control loop as a process decoupled from the MQTT client's
+  connection state.
+- `mqtt-tls-broker`'s topic schema and ACL need **two** new rules — node-scoped subscribe on `cmd/#`,
+  and a separate publish grant restricted to the case-bound write identity (decision 1) — not just the
+  subscribe side. This is the **first** departure from a strictly one-way broker and deserves its own
+  abuse/injection review even though the blast radius stays node-scoped (identical containment logic
+  to today's publish scoping).
 - This ADR does not invent the interlock mechanism itself — that stays a per-equipment engineering
   task — it only establishes that HLV *requires* one wherever the held value could be unsafe.
-- The case-approval question in decision 1 is a real open item; shipping the ACL change before
-  it's answered would create an ungated write path.
+- Decision 1's case-gate is now confirmed (same gate as `deploy`); implementation must not ship the
+  ACL change until the write identity is actually case-bound end to end, or it would create an
+  ungated write path despite the gate being decided on paper.
 
 ## Alternatives considered
 
@@ -101,17 +119,17 @@ existing one.
 
 - **IEC 62443:** HLV as the default failure mode supports **availability** of the regulated process
   (a core SR/FR concern for OT, distinct from IT's confidentiality-first ordering); the new inbound
-  topic is scoped per-node (SR 2.1 authorization enforcement, least privilege), mirroring the existing
-  publish ACL.
-- **NIS2 (Dir (EU) 2022/2555):** Art. 21.2 risk-management measures favour continuity of the regulated
-  physical process during a network incident over an aggressive fail-safe that could itself cause an
-  outage of an essential service (e.g. heating). openAut itself is not a NIS2 entity, but the building
-  operator deploying it plausibly is.
+  topic is scoped per-node in both directions (SR 2.1 authorization enforcement, least privilege) —
+  subscribe mirrors the existing publish ACL, and publish to `cmd/#` is further restricted to the
+  case-bound write identity.
+- **NIS2 (Dir (EU) 2022/2555):** Art. 21.2 risk-management measures can support the case for favouring
+  continuity of the regulated physical process during a network incident — the article does not
+  itself prescribe HLV over fail-safe. The failure mode for each safety-relevant point must still be
+  risk-assessed per installation; openAut itself is not a NIS2 entity, but the building operator
+  deploying it plausibly is.
 
 ## Open questions
 
-- **Case-approval for the MQTT setpoint channel** — confirm whether it's gated identically to SSH
-  deploys or via a lighter, still-audited path (see decision 1).
 - **Exact topic/schema** for the new inbound command channel, and whether acks/reglercentral health
   status need a topic distinct from `cmd`.
 - **The interlock mechanism itself** (hardware limit switches, PLC-level clamps, etc.) is
