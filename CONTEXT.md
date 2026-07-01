@@ -93,10 +93,12 @@ _Avoid_: control agent, edge controller (ambiguous with the physical field contr
 
 The chosen failure-mode principle for openAut's writable points: on loss of upstream
 communication, a reglercentral or a previously-deployed setpoint keeps enforcing the **last
-known-good value**, rather than reverting to a predetermined default. HLV is the default;
-**fail-safe** (revert to a predetermined safe value) is used only where an independent
-physical/PLC interlock requires it — the interlock is what makes an unsafe held value survivable,
-not a network-level revocation. Standard SCADA/DCS terminology.
+known-good value**, rather than reverting to a predetermined default. HLV is the standard choice for
+normal regulation; **fail-safe** (revert to a predetermined safe value) is used instead where the
+equipment profile, a risk assessment, or an independent physical/PLC interlock requires it — the
+interlock is what makes an unsafe held value survivable, not a network-level revocation, so any
+safety-relevant writable point held via HLV requires one. The choice is made per writable point, not
+globally. Standard SCADA/DCS terminology.
 _Avoid_: fail-safe (opposite behaviour for the default case — do not conflate), default value.
 
 ## persona × trust domain

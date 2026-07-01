@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (design draft — for review, nothing wired yet)
 - **Date:** 2026-07-01
-- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md) (§4 Engineer envelope, §7 controlled ingress / deny-by-default egress), [`0003-engineer-runtime-containment`](0003-engineer-runtime-containment.md) (§2 Engineer's edge-VLAN-in-case-scope reachability, three narrow policy-owned egress endpoints), [`skills/forge-governance`](../../skills/forge-governance/SKILL.md), [`skills/system-database`](../../skills/system-database/SKILL.md) (case → Forge → CI-approved-revision pipeline), [`skills/edge-iot2050`](../../skills/edge-iot2050/SKILL.md), [`skills/mqtt-tls-broker`](../../skills/mqtt-tls-broker/SKILL.md), `CONTEXT.md` (*reglercentral*, *Hold Last Value*), issue #13
+- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md) (§4 Engineer envelope, §7 controlled ingress / deny-by-default egress), [`0003-engineer-runtime-containment`](0003-engineer-runtime-containment.md) (§2 Engineer's edge-VLAN-in-case-scope reachability and narrow policy-owned egress endpoints — amended by this ADR from three to four), [`skills/forge-governance`](../../skills/forge-governance/SKILL.md), [`skills/system-database`](../../skills/system-database/SKILL.md) (case → Forge → CI-approved-revision pipeline), [`skills/edge-iot2050`](../../skills/edge-iot2050/SKILL.md), [`skills/mqtt-tls-broker`](../../skills/mqtt-tls-broker/SKILL.md), `CONTEXT.md` (*reglercentral*, *Hold Last Value*), issue #13
 
 ## Context
 
@@ -69,15 +69,25 @@ existing one.
      1. checks the request is within Engineer's active case scope and that the Systemdatabas case is
         `approved` for that specific `<site>/<node>`;
      2. mints or uses a **short-lived, case-scoped** publish credential limited to exactly
-        `cmd/<site>/<node>/#` for that one case — never a blanket `cmd/#` grant — so a compromised
-        endpoint or leaked credential can affect only the single node named in the active case, not
-        every site;
+        `cmd/<site>/<node>/#` for that one case — never a blanket `cmd/#` grant;
      3. publishes the setpoint, and writes the action to the append-only audit sink.
-     **This is a deliberate, explicit amendment to ADR 0003 §2**, not a silent widening: that section's
-     three named endpoints become four. It does *not* reopen §1's containment model (dedicated OS
-     account, sandbox profile) or widen Engineer's *direct* network reachability — the broker itself
-     is still never in Engineer's reachable set, exactly as decision 4 states, because Engineer talks
-     to the endpoint, not the broker.
+
+     Two different blast radii, not one claim: a **leaked per-request credential** is node-scoped by
+     construction (point 2) — it is only ever valid for the one `<site>/<node>` it was minted for. A
+     **compromised endpoint itself** is a different, larger problem — if the endpoint's own minting
+     path or case-check were bypassed, its blast radius is whatever that path can reach, which this
+     ADR does not yet bound. That containment (no broad minting secret held anywhere the endpoint
+     itself could exfiltrate; issuance itself gated through the credential proxy / PAP, not owned by
+     the endpoint; the endpoint's own network ACL scoped to just Systemdatabas + credential proxy +
+     audit sink + broker; its own dedicated sandbox) is real work, tracked in Open questions, not
+     something to claim solved here.
+
+     **ADR 0003 §2 is amended by this decision**, not silently widened: its three named endpoints are
+     now four (see the corresponding edit to `0003-engineer-runtime-containment.md` §2, made alongside
+     this ADR). It does *not* reopen §1's containment model (dedicated OS account, sandbox profile) or
+     widen Engineer's *direct* network reachability — the broker itself is still never in Engineer's
+     reachable set, exactly as decision 4 states, because Engineer talks to the endpoint, not the
+     broker.
    - **Case-approval for the MQTT setpoint channel: confirmed, same gate as SSH deploy.**
      `CONTEXT.md`'s persona table already treats a live "bacnet priority-8 override" identically to
      `deploy` — both are `Human-reviewed (write/deploy) → Systemdatabas case` for the Driftstekniker
@@ -125,14 +135,15 @@ existing one.
    a second one** — HLV without an independent interlock is not an acceptable end state for any
    safety-relevant writable point.
 
-**4. No change to the air-gap / deny-by-default-egress boundary (ADR 0001 §7). ADR 0003 §2's egress
-   allowlist gains one deliberate fourth entry, the mediated MQTT write endpoint — everything else is
-   unchanged.** Continuity of control requires zero new external connectivity — decision 2 is achieved
-   entirely through traffic that was already intended to exist inside the perimeter (field-device-local
+**4. No new public egress and no direct Engineer-to-broker reachability — but the internal egress
+   allowlist does grow by one entry (ADR 0003 §2, amended: three named endpoints become four).**
+   Continuity of control requires zero new external connectivity — decision 2 is achieved entirely
+   through traffic that was already intended to exist inside the perimeter (field-device-local
    control, or a new but still-internal, still-scoped MQTT namespace). Engineer's *direct* reachable
    set (edge VLAN in case scope) does not grow, and the broker is still never in it — only the named
-   endpoint is, exactly as for the two existing endpoints. Nothing here reaches further outward than
-   before.
+   endpoint is, exactly as for the two pre-existing endpoints. The air-gap / deny-by-default-egress
+   boundary at the perimeter (ADR 0001 §7) is unchanged; what changes is one more narrow hole in
+   Engineer's *internal* allowlist, the same shape as the two that already exist.
 
 ## Consequences
 
@@ -147,11 +158,12 @@ existing one.
   though the blast radius stays node-scoped (identical containment logic to today's publish scoping).
   The node-id-as-CN identity model it inherits (not site+node) is a pre-existing gap, now relevant to
   writes too — see decision 1's "inherited limitation" note and Open questions.
-- **ADR 0003 needs a short follow-up edit**, not a new document: §2's three named endpoints become
-  four (add the mediated MQTT write endpoint), with the same short-lived/case-bound credential
-  language already used for the credential proxy. The endpoint itself is new infrastructure to build —
-  it doesn't exist today — but it is Engineer's endpoint to call, not a new trust domain or a capability
-  living outside CONTEXT.md's three-trust-domain model.
+- **ADR 0003 §2 is amended alongside this ADR** (done, not deferred): its three named endpoints become
+  four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
+  language already used for the credential proxy. The endpoint itself is still new infrastructure to
+  build — it doesn't exist today — but it is Engineer's endpoint to call, not a new trust domain or a
+  capability living outside CONTEXT.md's three-trust-domain model. Its own containment (minting-path
+  isolation, network ACL, sandbox) is separate work, tracked in Open questions.
 - This ADR does not invent the interlock mechanism itself — that stays a per-equipment engineering
   task — it only establishes that HLV *requires* one wherever the held value could be unsafe.
 - Decision 1's case-gate is now confirmed (same gate as `deploy`); implementation must not ship the
