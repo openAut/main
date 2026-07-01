@@ -92,8 +92,10 @@ _Avoid_: control agent, edge controller (ambiguous with the physical field contr
 ## Hold Last Value (HLV)
 
 The chosen failure-mode principle for openAut's writable points: on loss of upstream
-communication, a reglercentral or a previously-deployed setpoint keeps enforcing the **last
-known-good value**, rather than reverting to a predetermined default. HLV is the standard choice for
+communication, a reglercentral, or the field device holding a previously-deployed setpoint, keeps
+operating on the **last known-good value**, rather than reverting to a predetermined default —
+the setpoint itself doesn't "enforce" anything; it's the local controller (reglercentral, or the
+field device's own DDC/VFD/PLC) that keeps acting on it. HLV is the standard choice for
 normal regulation; **fail-safe** (revert to a predetermined safe value) is used instead where the
 equipment profile, a risk assessment, or an independent physical/PLC interlock requires it — the
 interlock is what makes an unsafe held value survivable, not a network-level revocation, so any

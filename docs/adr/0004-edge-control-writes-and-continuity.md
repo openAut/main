@@ -49,12 +49,20 @@ existing one.
        namespace needs no such carve-out: the existing rule simply doesn't match `cmd/...` at all.
      - Two new, purely additive ACL rules follow the broker's existing allow-list-then-deny-all
        shape — no negative/exclusion rules anywhere:
-       - `{allow, all, subscribe, ["cmd/+/${clientid}/#"]}` — a node subscribes only to its own
-         command prefix. A stolen node cert still cannot see or affect commands for a *different
-         clientid* — it inherits the same node-id-as-CN identity model as the existing telemetry ACL,
-         which means this holds only as long as clientid is unique; it is **not** yet a "different
-         site" guarantee (see "inherited limitation" note below, which this claim must be read
-         together with).
+       - `{allow, all, subscribe, ["cmd/${cert_site}/${clientid}/#"]}` — bound to **both** fields of
+         the cert, not a `+` wildcard on site. This is deliberately *not* a copy of the existing
+         telemetry rule (`openaut/+/${clientid}/#`), which wildcards site: least-privilege on a
+         *read* topic tolerates that gap (worst case is a stale/ambiguous reading), but a *write*
+         channel cannot inherit it without also inheriting a way for a reused node-id to read another
+         site's commands. A node's client cert must therefore carry a **site claim** (e.g. a SAN/OU
+         field set at issuance, not just the existing CN-as-node-id) before it is issued `cmd/#`
+         subscribe rights.
+       - **Precondition, not a follow-up:** the command channel is not activated for a node until its
+         cert carries that site claim. Nodes whose certs predate this ADR need reissuing (a
+         `mqtt-tls-broker` provisioning change, scoped narrowly to *this* claim) before they can use
+         `cmd/#` — this is required for decision 1 to ship, not deferred to Open questions. The
+         pre-existing telemetry-side gap (`openaut/+/${clientid}/#` itself still wildcards site) is a
+         separate, lower-severity, read-only legacy issue and can still be fixed on its own schedule.
        - Publish to `cmd/#` is granted **per request, not as a standing account** — see write
          identity below; there is no static `{allow, {user, ...}, publish, ["cmd/#"]}` rule.
    - **Write identity: Engineer, via a fourth mediated endpoint — not a new actor.**
@@ -101,14 +109,13 @@ existing one.
      already-deployed control loop), so it reuses that existing rule rather than inventing a lighter,
      ungated path. This is no longer an open question, and step 1 of the mediated endpoint above is
      exactly where it's enforced — before anything is ever published.
-   - **Inherited limitation, not solved here:** the node subscribe rule reuses the existing telemetry
-     ACL's identity model, where the client cert CN is the node id alone (`skills/mqtt-tls-broker`) and
-     site-scoping in the topic pattern relies on a `+` wildcard, not a bound site claim. If a node id
-     were ever reused across two sites, that pre-existing ambiguity would now extend to *reading*
-     commands, not just telemetry. Fixing it (e.g. binding site into the cert subject) is a
-     `mqtt-tls-broker`-wide change out of scope for this ADR; flagged under Open questions. The
-     mediated endpoint's own per-case credential (step 2 above) is scoped to the exact site/node pair
-     regardless, which limits the practical exposure on the *write* side even before that's fixed.
+   - **Legacy limitation, deliberately not inherited:** the existing telemetry ACL's identity model —
+     client cert CN is the node id alone (`skills/mqtt-tls-broker`), site-scoping via a `+` wildcard —
+     is not carried over to `cmd/#`; the site-claim precondition above is exactly what stops that. The
+     telemetry side keeps its existing gap for now (a separate, read-only, lower-severity issue,
+     tracked in Open questions for its own fix), but a node id being reused across two sites can no
+     longer let it *read commands* meant for another site, because the command subscribe rule checks
+     the cert's site claim, not just its node id.
 
 **2. Hold Last Value (HLV), not fail-safe-to-default, is the failure mode on loss of upstream
    communication.** Where the physical field device has its own onboard control (a BACnet priority
@@ -146,15 +153,16 @@ existing one.
    a second one** — HLV without an independent interlock is not an acceptable end state for any
    safety-relevant writable point.
 
-**4. No new public egress and no direct Engineer-to-broker reachability — but the internal egress
-   allowlist does grow by one entry (ADR 0003 §2, amended: three named endpoints become four).**
-   Continuity of control requires zero new external connectivity — decision 2 is achieved entirely
-   through traffic that was already intended to exist inside the perimeter (field-device-local
-   control, or a new but still-internal, still-scoped MQTT namespace). Engineer's *direct* reachable
-   set (edge VLAN in case scope) does not grow, and the broker is still never in it — only the named
-   endpoint is, exactly as for the two pre-existing endpoints. The air-gap / deny-by-default-egress
-   boundary at the perimeter (ADR 0001 §7) is unchanged; what changes is one more narrow hole in
-   Engineer's *internal* allowlist, the same shape as the two that already exist.
+**4. Engineer's edge-VLAN/node reachability does not grow; its non-edge infrastructure allowlist
+   grows by one mediated endpoint (ADR 0003 §2, amended: three named endpoints become four). The
+   broker itself remains unreachable directly from Engineer.** Continuity of control requires zero
+   new external connectivity — decision 2 is achieved entirely through traffic that was already
+   intended to exist inside the perimeter (field-device-local control, or a new but still-internal,
+   still-scoped MQTT namespace). The air-gap / deny-by-default-egress boundary at the perimeter (ADR
+   0001 §7) is unchanged and gains no new public egress. What *does* change, honestly stated rather
+   than glossed over: Engineer's off-VLAN allowlist is a real, if narrow, new attack surface — one
+   more mediated endpoint, the same shape as the two that already exist, that a threat model must
+   treat as such rather than assume away because "nothing changed".
 
 ## Consequences
 
@@ -162,13 +170,14 @@ existing one.
   validate each incoming setpoint (schema/range/freshness/replay per decision 2) before persisting it
   locally alongside its anti-replay state, and — only when acting as a reglercentral — run the control
   loop as a process decoupled from the MQTT client's connection state.
-- `mqtt-tls-broker`'s topic schema and ACL need the new sibling `cmd/#` namespace, its node-subscribe
-  rule, and `retain=false`/no server-side retention on `cmd/#` — see decision 1/2. Existing rules
-  (`openaut/#` reads, per-node telemetry publish) are untouched by construction; this is still the
-  **first** departure from a strictly one-way broker and deserves its own abuse/injection review even
-  though the blast radius stays node-scoped (identical containment logic to today's publish scoping).
-  The node-id-as-CN identity model it inherits (not site+node) is a pre-existing gap, now relevant to
-  writes too — see decision 1's "inherited limitation" note and Open questions.
+- `mqtt-tls-broker`'s topic schema and ACL need the new sibling `cmd/#` namespace, its site-and-node
+  -bound subscribe rule, and `retain=false`/no server-side retention on `cmd/#` — see decision 1/2.
+  Existing rules (`openaut/#` reads, per-node telemetry publish) are untouched by construction; this
+  is still the **first** departure from a strictly one-way broker and deserves its own abuse/injection
+  review even though the blast radius stays node-scoped (identical containment logic to today's
+  publish scoping). It also needs a **cert-issuance change**: nodes need a site claim added before
+  they can be granted `cmd/#` subscribe rights (decision 1) — existing certs predate this and need
+  reissuing as part of rollout, not after.
 - **ADR 0003 §2 is amended alongside this ADR** (done, not deferred): its three named endpoints become
   four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
   language already used for the credential proxy. The endpoint itself is still new infrastructure to
@@ -207,10 +216,11 @@ existing one.
 
 - **IEC 62443:** HLV as the default failure mode supports **availability** of the regulated process
   (a core SR/FR concern for OT, distinct from IT's confidentiality-first ordering); the new `cmd/#`
-  namespace is scoped per-node for subscribe and reachable for publish only via a short-lived,
-  case-scoped credential minted per request (SR 2.1 authorization enforcement, least privilege, no
-  standing broad-scope write credential), and is functionally separated from the existing telemetry
-  namespace rather than carved out of it — zone segmentation by construction, not by exception.
+  namespace is scoped per **site and node** for subscribe (not just node, unlike the legacy telemetry
+  identity model) and reachable for publish only via a short-lived, case-scoped credential requested
+  per operation (SR 2.1 authorization enforcement, least privilege, no standing broad-scope write
+  credential), and is functionally separated from the existing telemetry namespace rather than
+  carved out of it — zone segmentation by construction, not by exception.
 - **NIS2 (Dir (EU) 2022/2555):** Art. 21.2 risk-management measures can support the case for favouring
   continuity of the regulated physical process during a network incident — the article does not
   itself prescribe HLV over fail-safe. The failure mode for each safety-relevant point must still be
@@ -226,9 +236,11 @@ existing one.
   verifies the short-lived per-case broker credential from the credential proxy, and how tightly its
   case-check couples to `system-database` — needs a short design note before implementation, the
   same way ADR 0003 §1–§5 did for Engineer's own sandbox.
-- **`mqtt-tls-broker`'s node-id-as-CN identity model** doesn't bind site into the client identity
-  (decision 1's "inherited limitation" note); worth fixing broker-wide now that the gap affects
-  command delivery, not just telemetry — tracked as a follow-up to `mqtt-tls-broker`, not blocking
-  this ADR.
+- **Exact site-claim mechanism** for the cert reissue decision 1 requires (SAN field vs. OU vs. a
+  new extension) and the reissuance rollout plan for nodes provisioned before this ADR.
+- **`mqtt-tls-broker`'s telemetry-side site wildcard** (`openaut/+/${clientid}/#`) is untouched by
+  this ADR (decision 1's "legacy limitation" note) — still worth fixing broker-wide since it's the
+  same underlying gap, just lower severity on a read-only path; tracked as its own follow-up, not
+  blocking this ADR.
 - **The interlock mechanism itself** (hardware limit switches, PLC-level clamps, etc.) is
   per-equipment and out of scope here — this ADR only establishes that HLV depends on one existing.
