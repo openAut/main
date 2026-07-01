@@ -75,6 +75,27 @@ A **capability** an agent *carries* (not a persona and not a trust domain) — e
 references (`nis2`, `cra`, `ai-act`, `iso27001`, `iec62443`). Each persona/agent is granted a
 **least-privilege subset** of runtime skills.
 
+## reglercentral (local control loop)
+
+When an edge node runs the control algorithm itself in software — rather than relying on a field
+device's own onboard DDC/controller — that loop is a **reglercentral**. It must be architecturally
+decoupled from upstream connectivity: it acts on a **locally persisted, last-received** setpoint,
+never a live inbound message, so regulation continues unaffected by an outage anywhere above it in
+the communication chain. Not every writable point needs one — a field device with its own onboard
+control (BACnet priority array, Modbus holding register on a DDC/VFD) already provides this
+property natively. See [`skills/edge-iot2050`](skills/edge-iot2050/SKILL.md).
+_Avoid_: control agent, edge controller (ambiguous with the physical field controller).
+
+## Hold Last Value (HLV)
+
+The chosen failure-mode principle for openAut's writable points: on loss of upstream
+communication, a reglercentral or a previously-deployed setpoint keeps enforcing the **last
+known-good value**, rather than reverting to a predetermined default. HLV is the default;
+**fail-safe** (revert to a predetermined safe value) is used only where an independent
+physical/PLC interlock requires it — the interlock is what makes an unsafe held value survivable,
+not a network-level revocation. Standard SCADA/DCS terminology.
+_Avoid_: fail-safe (opposite behaviour for the default case — do not conflate), default value.
+
 ## persona × trust domain
 
 Every persona is served chiefly by **Advisor** (read-only). Only the Driftstekniker has a
