@@ -50,29 +50,49 @@ existing one.
      - Two new, purely additive ACL rules follow the broker's existing allow-list-then-deny-all
        shape — no negative/exclusion rules anywhere:
        - `{allow, all, subscribe, ["cmd/+/${clientid}/#"]}` — a node subscribes only to its own
-         command prefix. A stolen node cert still cannot see or affect any other node's commands.
-       - `{allow, {user, "mqtt_write_mediator"}, publish, ["cmd/#"]}` — publishing to any `cmd/#`
-         topic is restricted to a single, dedicated write-identity account (see below). No node, and
-         no existing telemetry/read role, gains publish rights here.
-   - **Write identity: a dedicated mediated write service, not Engineer/opencode.** The service that
-     publishes to `cmd/#` is new, narrow, single-purpose infrastructure — analogous to the existing
-     credential proxy and mediated inference endpoint (ADR 0003 §2) — that (a) checks the Systemdatabas
-     case is `approved` for that node/point, (b) publishes exactly that case's setpoint, and (c) writes
-     to the append-only audit sink. It is a separate service account, **not** a capability granted to
-     Engineer's opencode sandbox. This is a deliberate choice, not an oversight: ADR 0003 §2 caps
-     Engineer's egress at the edge VLAN plus exactly three named endpoints (credential proxy, mediated
-     inference, audit sink) and denies everything else — the MQTT broker is not on that list, and
-     giving Engineer a fourth, direct path to a shared broker would both widen the most-privileged
-     actor's blast radius (the reason ADR 0003 exists) and require reopening that ADR. Routing setpoint
-     writes through their own mediator avoids both, and keeps this ADR's decision 4 (no egress-boundary
-     change) literally true for Engineer specifically.
+         command prefix. A stolen node cert still cannot see or affect any other node's commands,
+         inheriting the same node-id-as-CN identity model as the existing telemetry ACL (see
+         "inherited limitation" note below).
+       - Publish to `cmd/#` is granted **per request, not as a standing account** — see write
+         identity below; there is no static `{allow, {user, ...}, publish, ["cmd/#"]}` rule.
+   - **Write identity: Engineer, via a fourth mediated endpoint — not a new actor.**
+     `CONTEXT.md`'s trust-domain model is explicit and non-negotiable: openAut has **three** trust
+     domains, and "only the Driftstekniker has a writing path, and it never goes chat→SSH directly —
+     it passes through **Engineer** via an approved case in the Systemdatabas." A standalone write
+     service that Engineer never touches would be a **fourth write-capable actor outside that model** —
+     this ADR's previous draft got that wrong. The corrected design: **Engineer remains the sole write
+     actor**, exactly as for SSH deploys, and it reaches the broker only through a new **mediated MQTT
+     write endpoint** — a fourth narrow, policy-owned, case-bound infrastructure endpoint added
+     alongside the credential proxy and mediated inference endpoint already named in ADR 0003 §2. Like
+     those two, Engineer hands its case/scope to the endpoint and gets back a result — it never holds
+     a raw broker socket or a standing credential itself. Concretely, the endpoint:
+     1. checks the request is within Engineer's active case scope and that the Systemdatabas case is
+        `approved` for that specific `<site>/<node>`;
+     2. mints or uses a **short-lived, case-scoped** publish credential limited to exactly
+        `cmd/<site>/<node>/#` for that one case — never a blanket `cmd/#` grant — so a compromised
+        endpoint or leaked credential can affect only the single node named in the active case, not
+        every site;
+     3. publishes the setpoint, and writes the action to the append-only audit sink.
+     **This is a deliberate, explicit amendment to ADR 0003 §2**, not a silent widening: that section's
+     three named endpoints become four. It does *not* reopen §1's containment model (dedicated OS
+     account, sandbox profile) or widen Engineer's *direct* network reachability — the broker itself
+     is still never in Engineer's reachable set, exactly as decision 4 states, because Engineer talks
+     to the endpoint, not the broker.
    - **Case-approval for the MQTT setpoint channel: confirmed, same gate as SSH deploy.**
      `CONTEXT.md`'s persona table already treats a live "bacnet priority-8 override" identically to
      `deploy` — both are `Human-reviewed (write/deploy) → Systemdatabas case` for the Driftstekniker
      persona. A live MQTT setpoint write is the same class of act (a runtime change to an
      already-deployed control loop), so it reuses that existing rule rather than inventing a lighter,
-     ungated path. This is no longer an open question, and it is the mediator above — not Engineer —
-     that enforces it before ever publishing.
+     ungated path. This is no longer an open question, and step 1 of the mediated endpoint above is
+     exactly where it's enforced — before anything is ever published.
+   - **Inherited limitation, not solved here:** the node subscribe rule reuses the existing telemetry
+     ACL's identity model, where the client cert CN is the node id alone (`skills/mqtt-tls-broker`) and
+     site-scoping in the topic pattern relies on a `+` wildcard, not a bound site claim. If a node id
+     were ever reused across two sites, that pre-existing ambiguity would now extend to *reading*
+     commands, not just telemetry. Fixing it (e.g. binding site into the cert subject) is a
+     `mqtt-tls-broker`-wide change out of scope for this ADR; flagged under Open questions. The
+     mediated endpoint's own per-case credential (step 2 above) is scoped to the exact site/node pair
+     regardless, which limits the practical exposure on the *write* side even before that's fixed.
 
 **2. Hold Last Value (HLV), not fail-safe-to-default, is the failure mode on loss of upstream
    communication.** Where the physical field device has its own onboard control (a BACnet priority
@@ -86,9 +106,15 @@ existing one.
    payload passed schema/type checking, per-point range/clamp limits, and freshness/replay protection
    (a signed sequence number and timestamp, both covered by the signature, checked against
    previously-seen values) before it is allowed to overwrite the held value — a message that fails
-   any check is discarded and the previous known-good value keeps being held. This keeps the loop
-   regulating unaffected by an outage anywhere above it in the chain, and this is the same discipline
-   as the existing store-and-forward spool, applied to the inbound side.
+   any check is discarded and the previous known-good value keeps being held. Two things must persist
+   *together*, across restarts, not just in memory: the held setpoint **and** the anti-replay state
+   (last-accepted sequence number/timestamp) — otherwise a node restart resets the replay window and
+   a captured old command becomes acceptable again. Command messages are published with `retain=false`
+   and the broker must not retain `cmd/#`; a late-joining or reconnecting subscriber must never receive
+   a stale command from the broker's own retained-message store instead of from the node's own
+   validated local state. This keeps the loop regulating unaffected by an outage anywhere above it in
+   the chain, and this is the same discipline as the existing store-and-forward spool, applied to the
+   inbound side.
 
 **3. Central revocation of an already-applied setpoint during a partition is accepted as impossible
    by design**, not solved by a protocol. It is a direct consequence of decisions 1–2: there is no
@@ -99,29 +125,33 @@ existing one.
    a second one** — HLV without an independent interlock is not an acceptable end state for any
    safety-relevant writable point.
 
-**4. No change to the air-gap / deny-by-default-egress boundary (ADR 0001 §7), and no change to
-   Engineer's egress allowlist (ADR 0003 §2).** Continuity of control requires zero new external
-   connectivity — decision 2 is achieved entirely through traffic that was already intended to exist
-   inside the perimeter (field-device-local control, or a new but still-internal, still-scoped MQTT
-   namespace). The new write mediator (decision 1) is separate infrastructure with its own narrow
-   egress, not a new capability bolted onto Engineer — Engineer's own reachable set is unchanged.
-   Nothing here reaches further outward than before, for either boundary.
+**4. No change to the air-gap / deny-by-default-egress boundary (ADR 0001 §7). ADR 0003 §2's egress
+   allowlist gains one deliberate fourth entry, the mediated MQTT write endpoint — everything else is
+   unchanged.** Continuity of control requires zero new external connectivity — decision 2 is achieved
+   entirely through traffic that was already intended to exist inside the perimeter (field-device-local
+   control, or a new but still-internal, still-scoped MQTT namespace). Engineer's *direct* reachable
+   set (edge VLAN in case scope) does not grow, and the broker is still never in it — only the named
+   endpoint is, exactly as for the two existing endpoints. Nothing here reaches further outward than
+   before.
 
 ## Consequences
 
 - `edge-iot2050` needs a new writable-point mode: subscribe to its own `cmd/<site>/<node>/#` prefix,
-  validate each incoming setpoint (schema/range/freshness per decision 2) before persisting it
-  locally, and — only when acting as a reglercentral — run the control loop as a process decoupled
-  from the MQTT client's connection state.
-- `mqtt-tls-broker`'s topic schema and ACL need the new sibling `cmd/#` namespace and its two additive
-  rules (node subscribe, mediator publish) — see decision 1. Existing rules (`openaut/#` reads,
-  per-node telemetry publish) are untouched by construction; this is still the **first** departure
-  from a strictly one-way broker and deserves its own abuse/injection review even though the blast
-  radius stays node-scoped (identical containment logic to today's publish scoping).
-- A **new mediated write service** needs building: it doesn't exist today, has to authenticate against
-  Systemdatabas case state, and becomes a new component in `mqtt-tls-broker`'s / `system-database`'s
-  trust boundary — it is out of scope for ADR 0003 (which only governs Engineer's opencode sandbox),
-  but should get its own short containment note before implementation.
+  validate each incoming setpoint (schema/range/freshness/replay per decision 2) before persisting it
+  locally alongside its anti-replay state, and — only when acting as a reglercentral — run the control
+  loop as a process decoupled from the MQTT client's connection state.
+- `mqtt-tls-broker`'s topic schema and ACL need the new sibling `cmd/#` namespace, its node-subscribe
+  rule, and `retain=false`/no server-side retention on `cmd/#` — see decision 1/2. Existing rules
+  (`openaut/#` reads, per-node telemetry publish) are untouched by construction; this is still the
+  **first** departure from a strictly one-way broker and deserves its own abuse/injection review even
+  though the blast radius stays node-scoped (identical containment logic to today's publish scoping).
+  The node-id-as-CN identity model it inherits (not site+node) is a pre-existing gap, now relevant to
+  writes too — see decision 1's "inherited limitation" note and Open questions.
+- **ADR 0003 needs a short follow-up edit**, not a new document: §2's three named endpoints become
+  four (add the mediated MQTT write endpoint), with the same short-lived/case-bound credential
+  language already used for the credential proxy. The endpoint itself is new infrastructure to build —
+  it doesn't exist today — but it is Engineer's endpoint to call, not a new trust domain or a capability
+  living outside CONTEXT.md's three-trust-domain model.
 - This ADR does not invent the interlock mechanism itself — that stays a per-equipment engineering
   task — it only establishes that HLV *requires* one wherever the held value could be unsafe.
 - Decision 1's case-gate is now confirmed (same gate as `deploy`); implementation must not ship the
@@ -140,6 +170,12 @@ existing one.
   it.
 - **Everything over SSH (no MQTT command channel).** Rejected: makes every routine setpoint nudge as
   heavy as a code deploy, which doesn't match real operational cadence for HVAC tuning.
+- **A standalone write service that Engineer never touches** (an earlier revision of this ADR).
+  Rejected on review: `CONTEXT.md` is explicit that openAut has three trust domains and that the
+  Driftstekniker's only writing path passes through Engineer — a write-capable actor Engineer never
+  calls would sit outside that model as an unnamed fourth actor. Replaced with decision 1's mediated
+  endpoint, which keeps Engineer as the sole write actor and adds infrastructure *Engineer calls*,
+  the same shape as the existing credential proxy and mediated inference endpoint.
 
 ## Compliance alignment (IEC 62443 / NIS2)
 
@@ -147,10 +183,10 @@ existing one.
 
 - **IEC 62443:** HLV as the default failure mode supports **availability** of the regulated process
   (a core SR/FR concern for OT, distinct from IT's confidentiality-first ordering); the new `cmd/#`
-  namespace is scoped per-node for subscribe and restricted to a single mediator identity for publish
-  (SR 2.1 authorization enforcement, least privilege), and is functionally separated from the existing
-  telemetry namespace rather than carved out of it — zone segmentation by construction, not by
-  exception.
+  namespace is scoped per-node for subscribe and reachable for publish only via a short-lived,
+  case-scoped credential minted per request (SR 2.1 authorization enforcement, least privilege, no
+  standing broad-scope write credential), and is functionally separated from the existing telemetry
+  namespace rather than carved out of it — zone segmentation by construction, not by exception.
 - **NIS2 (Dir (EU) 2022/2555):** Art. 21.2 risk-management measures can support the case for favouring
   continuity of the regulated physical process during a network incident — the article does not
   itself prescribe HLV over fail-safe. The failure mode for each safety-relevant point must still be
@@ -161,8 +197,13 @@ existing one.
 
 - **Exact payload schema** for `cmd/<site>/<node>/#` (sequence number / signed timestamp fields per
   decision 2), and whether acks/reglercentral health status need a topic distinct from `cmd`.
-- **The mediated write service's own containment** — where it runs, what mints/verifies its
-  broker credential, and how tightly its case-check couples to `system-database` — needs a short
-  design note before implementation, the same way ADR 0003 did for Engineer.
+- **The mediated MQTT write endpoint's own containment** — where it runs, how it mints/verifies the
+  short-lived per-case broker credential, and how tightly its case-check couples to
+  `system-database` — needs a short design note before implementation, the same way ADR 0003 §1–§5
+  did for Engineer's own sandbox.
+- **`mqtt-tls-broker`'s node-id-as-CN identity model** doesn't bind site into the client identity
+  (decision 1's "inherited limitation" note); worth fixing broker-wide now that the gap affects
+  command delivery, not just telemetry — tracked as a follow-up to `mqtt-tls-broker`, not blocking
+  this ADR.
 - **The interlock mechanism itself** (hardware limit switches, PLC-level clamps, etc.) is
   per-equipment and out of scope here — this ADR only establishes that HLV depends on one existing.
