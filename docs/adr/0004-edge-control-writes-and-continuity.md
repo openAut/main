@@ -320,8 +320,8 @@ existing one.
   [`docs/operations/cert-reissuance-plan.md`](../operations/cert-reissuance-plan.md). It also needs
   **MQTT 5 support** (decision 2's `message expiry interval` requirement) confirmed on both broker
   and publisher/node clients before `cmd/#` is activated for any node, not assumed from the ACL
-  config alone — verified against a live broker,
-  [`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md).
+  config alone — verified against a live broker
+  ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)).
 - **ADR 0003 §2 is amended alongside this ADR** (done, not deferred): its three named endpoints become
   four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
   language already used for the credential proxy. The endpoint itself is still new infrastructure to
