@@ -247,9 +247,12 @@ existing one.
    push path into a node that isn't reachable, by the same deny-by-default, edge-initiated model that
    already governs everything else in this architecture. The backstop against an unsafe held value is
    a **physical/PLC interlock independent of the software that issued the command** — never a network
-   mechanism. **This is the same decision as the "Physical/PLC interlocks" checklist item in #13, not
-   a second one** — HLV without an independent interlock is not an acceptable end state for any
-   safety-relevant writable point.
+   mechanism. **This addresses the "Physical/PLC interlocks" checklist item in #13, but narrower than
+   its literal "every writable point" wording**: HLV without an independent interlock is not an
+   acceptable end state for any **safety-relevant** writable point — not every writable point needs
+   one (a comfort-tuning setpoint with no safety consequence doesn't). #13 stays open for whichever is
+   broader in practice; this ADR decides the *safety-relevant* subset, it does not close the checklist
+   item outright.
 
 **4. Engineer's edge-VLAN/node reachability does not grow; its non-edge infrastructure allowlist
    grows by one mediated endpoint (ADR 0003 §2, amended: three named endpoints become four). The
@@ -276,7 +279,10 @@ existing one.
   radius stays node-scoped (identical containment logic to today's
   publish scoping). It also needs a **cert-issuance change**: nodes need a site claim added before
   they can be granted `cmd/#` subscribe rights (decision 1) — existing certs predate this and need
-  reissuing as part of rollout, not after.
+  reissuing as part of rollout, not after. It also needs **MQTT 5 support** (decision 2's `message
+  expiry interval` requirement) confirmed on both broker and publisher/node clients before `cmd/#` is
+  activated for any node, not assumed from the ACL config alone — verification against the live
+  deployment is tracked in issue #24, alongside the cert-issuance rollout.
 - **ADR 0003 §2 is amended alongside this ADR** (done, not deferred): its three named endpoints become
   four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
   language already used for the credential proxy. The endpoint itself is still new infrastructure to
