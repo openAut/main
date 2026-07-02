@@ -53,8 +53,10 @@ existing one.
        namespace needs no such carve-out: the existing rule simply doesn't match `cmd/...` at all.
      - Two new, purely additive ACL rules follow the broker's existing allow-list-then-deny-all
        shape — no negative/exclusion rules anywhere:
-       - `{allow, all, subscribe, ["cmd/${cert_site}/${cert_node}/#"]}` — bound to **cert-derived**
-         site and node claims, not MQTT ClientID and not a `+` wildcard on site. `mqtt-tls-broker`'s
+       - `{allow, all, subscribe, ["cmd/${cert_common_name}/#"]}` — bound to the **cert-derived**
+         Common Name, which *is* the combined `<site>/<node>` claim on Community Edition (verified;
+         see the precondition below) — not MQTT ClientID and not a `+` wildcard on site.
+         `mqtt-tls-broker`'s
          own SKILL.md documents "CN = client id" only as a **provisioning convention** and flags that
          "live behaviour is unverified until an EMQX host is available" — meaning nothing today
          actually stops a connecting client from presenting a valid cert but choosing a different,
@@ -64,16 +66,27 @@ existing one.
          simply connecting with that node's ClientID.
        - **Precondition, not a follow-up:** before `cmd/#` is activated for *any* node, three things
          must all be true, not just documented as intent:
-         1. the node's cert carries a **site claim** (SAN/OU field set at issuance, alongside the
-            existing CN-as-node-id), and
-         2. the broker is configured so the identity used in ACL evaluation (`${cert_site}`,
-            `${cert_node}`) is **read from the certificate itself** at the TLS layer — via EMQX's
-            peer-certificate-to-identity binding (exact directive to confirm against the deployed
-            EMQX version, same "verify against a live host" caveat the skill already carries for its
-            other config) — never trusted from a client-supplied MQTT ClientID, and
-         3. `site`, `node`, and `point` are **canonical, asset-owner/Systemdatabas-owned identifiers,
-            referenced (not minted) by PAP-authored permission profiles** — PAP owns role/policy
-            definitions and signed permission profiles ([`CONTEXT.md`](../../CONTEXT.md),
+         1. **Site-claim field, verified against a live EMQX 5.8.9 Community Edition instance**
+            (`docs/verification/emqx-mqtt5-cmd-verification.md`): the node's cert carries a **site
+            claim as part of the Common Name (CN)** — the CN is the combined, canonical
+            `<site>/<node>` identifier itself (e.g. `CN=A/n1`), not a separate SAN or OU field.
+            SAN-based extraction of `site` and `node` as two independent claims was the original
+            intent, but EMQX's `client_attrs_init` + `cert_san.*` mechanism that would provide it is
+            **EMQX Enterprise Edition only** (confirmed against the deployed Community Edition — that
+            capability doesn't exist there). Community Edition's only built-in cert-derived ACL
+            placeholder is `${cert_common_name}`, one whole-CN string — the design uses that
+            constraint rather than assuming a two-field mechanism this project isn't running. If
+            Enterprise Edition is ever adopted, the SAN-based two-field mechanism remains a strictly
+            better option and should be revisited then; it is not required for Community Edition.
+         2. the broker is configured so the identity used in ACL evaluation (`${cert_common_name}`)
+            is **read from the certificate itself** at the TLS layer, via EMQX's built-in
+            `verify_peer` + `fail_if_no_peer_cert = true` TLS options — **verified working** against
+            EMQX 5.8.9 CE, never trusted from a client-supplied MQTT ClientID (confirmed: a spoofed
+            ClientID does not grant access to another node's scope, and does not lose access to its
+            own cert-derived scope), and
+         3. `site` and `node` are **canonical, asset-owner/Systemdatabas-owned identifiers, referenced
+            (not minted) by PAP-authored permission profiles** — PAP owns role/policy definitions and
+            signed permission profiles ([`CONTEXT.md`](../../CONTEXT.md),
             [`0002-access-control-and-roles`](0002-access-control-and-roles.md)), not equipment naming;
             a profile may scope a case to `site=A`/`node=B`/`point=C`, but the topology identifiers
             themselves come from the same asset-owner/Systemdatabas case-and-approval flow that already
@@ -82,13 +95,24 @@ existing one.
             operational actor indirectly widen its own scope through local naming — the same failure
             mode ADR 0002 already forecloses for policy itself. These identifiers must also be
             **stable canonical IDs, not free-text display names**: a display name can change without
-            notice, and a permission profile's scope must not follow it implicitly. All three are
-            validated against an allow-pattern before they are ever concatenated into a topic string,
-            an ACL rule, or the signed command envelope (decision 2). None of the three may contain an
-            MQTT wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters, or a
-            broker-reserved leading `$`. Without this, a value taken unvalidated from an equipment
-            profile could widen a subscribe/publish grant beyond the single point it was meant to
-            scope, or forge a different node's topic. This applies uniformly to the cert-derived
+            notice, and a permission profile's scope must not follow it implicitly. `site`, `node`, and
+            `point` are each validated *individually* against an allow-pattern before they are ever
+            used — none of the three may contain an MQTT wildcard (`+`, `#`), a topic separator (`/`),
+            NUL/control characters, or a broker-reserved leading `$`. The certificate's CN is then a
+            **separate, additional structural check**, not just the concatenation of two
+            already-valid segments: it must equal exactly `<site>/<node>` — one literal `/`
+            separating two non-empty, individually-valid segments, constructed at cert-issuance time
+            by the asset-owner/Systemdatabas process, never accepted as a free-form string from a
+            certificate request. **This is a verified, not theoretical, requirement**
+            (`docs/verification/emqx-mqtt5-cmd-verification.md`): a CN of a single unvalidated
+            character (`+`) reproducibly granted cross-tenant read access to another node's topic by
+            being live-interpreted as an MQTT wildcard once substituted into
+            `cmd/${cert_common_name}/#`, and a CN missing the node segment entirely (e.g. just `A`)
+            would silently widen a grant from node-scope to site-scope — both are precisely the
+            failure modes this precondition exists to close, not edge cases to defer. Without this,
+            a value taken unvalidated from an equipment profile could widen a subscribe/publish grant
+            beyond the single point it was meant to scope, or forge a different node's topic. This
+            applies uniformly to the cert-derived
             `site`/`node` claims and to the `point` segment, which has no certificate to anchor it and
             so depends entirely on this check.
          Nodes whose certs predate this ADR need reissuing as part of rollout. The pre-existing
@@ -367,10 +391,12 @@ open-ended prose, so each gets its own owner and can close independently of this
   same choice ADR 0003's Open questions left open for Engineer; the containment *shape* itself
   (sandbox, egress allowlist, audited denials) is decided in decision 1, not open. Tracked as
   issue #28.
-- **Exact site-claim field, exact EMQX directive for cert-derived ACL identity, and MQTT5/broker
-  max-expiry verification** — decision 1 requires all three to exist, but the precise config (and
-  confirming the target EMQX version supports it) needs verification against a live host, plus a
-  cert-reissuance rollout plan for nodes provisioned before this ADR. Tracked as issue #24 — blocks
+- **Site-claim field, EMQX directive, and MQTT5/broker max-expiry: verified** against a live EMQX
+  5.8.9 Community Edition instance (`docs/verification/emqx-mqtt5-cmd-verification.md`) — decision
+  1's precondition 1–2 text above now reflects the result (CN via `${cert_common_name}`, not a
+  separate SAN/OU claim, which needs Enterprise Edition). What's **still open**: the cert-reissuance
+  rollout plan for nodes provisioned before this ADR, and re-verifying against the actual target
+  EMQX edition/version if it differs from the CE instance tested. Tracked as issue #24 — blocks
   activating `cmd/#` for any real node, even though it doesn't block this ADR's Proposed status.
 - **`mqtt-tls-broker`'s telemetry-side gap** (`openaut/+/${clientid}/#`, which wildcards site *and*
   still trusts client-supplied ClientID) is untouched by this ADR (decision 1's "legacy limitation"
