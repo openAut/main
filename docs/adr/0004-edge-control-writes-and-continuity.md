@@ -103,12 +103,13 @@ existing one.
             not rewritten to `site-01` — silent rewriting would make Systemdatabas and topology diverge
             from what was actually requested):
             ```
-            ^[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?$
+            ^(?=.{1,63}$)[a-z0-9]+(?:[._-][a-z0-9]+)*$
             ```
             1–63 characters, lowercase ASCII letters/digits only, with `.`/`_`/`-` allowed strictly
-            *between* two alphanumerics (never leading or trailing) — which by construction forbids an
-            MQTT wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters, whitespace, a
-            broker-reserved leading `$`, and Unicode/homoglyph confusables. **Validated at two
+            *one at a time, between* two alphanumerics — never leading, trailing, or consecutive
+            (`a..b`, `a-_b`, and `a.-b` are all rejected, not just `-a` or `a-`) — which by construction
+            forbids an MQTT wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters,
+            whitespace, a broker-reserved leading `$`, and Unicode/homoglyph confusables. **Validated at two
             enforcement points, defense in depth, neither trusting the other:** (1) Systemdatabas at
             equipment-profile write time — stops bad data at the source and keeps topology consistent
             — and (2) the mediated MQTT write endpoint at request time, as the last fail-closed check
@@ -126,8 +127,11 @@ existing one.
             a **structural** check that *replaces* what would otherwise have been two independent
             per-field checks under a SAN-based, Enterprise-only mechanism:
             ```
-            ^(?P<site>[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?)/(?P<node>[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?)$
+            ^(?=[a-z0-9._-]{1,63}/)(?P<site>[a-z0-9]+(?:[._-][a-z0-9]+)*)/(?=[a-z0-9._-]{1,63}$)(?P<node>[a-z0-9]+(?:[._-][a-z0-9]+)*)$
             ```
+            (two length lookaheads, one per segment, since a single trailing `$`-anchored lookahead
+            can't bound both halves of a compound value independently — each named group still uses
+            the same no-consecutive-separator segment pattern as the per-field regex above)
             one literal `/` separating two non-empty segments that each independently match the
             per-segment pattern above, constructed at cert-issuance time by the asset-owner/Systemdatabas
             process, never accepted as a free-form string from a certificate request. `/` is forbidden
