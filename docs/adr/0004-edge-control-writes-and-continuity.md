@@ -316,10 +316,12 @@ existing one.
   radius stays node-scoped (identical containment logic to today's
   publish scoping). It also needs a **cert-issuance change**: nodes need a site claim added before
   they can be granted `cmd/#` subscribe rights (decision 1) — existing certs predate this and need
-  reissuing as part of rollout, not after. It also needs **MQTT 5 support** (decision 2's `message
-  expiry interval` requirement) confirmed on both broker and publisher/node clients before `cmd/#` is
-  activated for any node, not assumed from the ACL config alone — verification against the live
-  deployment is tracked in issue #24, alongside the cert-issuance rollout.
+  reissuing as part of rollout, not after; the procedure is decided in
+  [`docs/operations/cert-reissuance-plan.md`](../operations/cert-reissuance-plan.md). It also needs
+  **MQTT 5 support** (decision 2's `message expiry interval` requirement) confirmed on both broker
+  and publisher/node clients before `cmd/#` is activated for any node, not assumed from the ACL
+  config alone — verified against a live broker
+  ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)).
 - **ADR 0003 §2 is amended alongside this ADR** (done, not deferred): its three named endpoints become
   four, with the mediated MQTT write endpoint described in the same short-lived/case-bound credential
   language already used for the credential proxy. The endpoint itself is still new infrastructure to
@@ -398,10 +400,13 @@ open-ended prose, so each gets its own owner and can close independently of this
   ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md))
   — decision
   1's precondition 1–2 text above now reflects the result (CN via `${cert_common_name}`, not a
-  separate SAN/OU claim, which needs Enterprise Edition). What's **still open**: the cert-reissuance
-  rollout plan for nodes provisioned before this ADR, and re-verifying against the actual target
-  EMQX edition/version if it differs from the CE instance tested. Tracked as issue #24 — blocks
-  activating `cmd/#` for any real node, even though it doesn't block this ADR's Proposed status.
+  separate SAN/OU claim, which needs Enterprise Edition). The cert-reissuance rollout plan for nodes
+  provisioned before this ADR is decided in
+  [`docs/operations/cert-reissuance-plan.md`](../operations/cert-reissuance-plan.md) — a procedure,
+  not a claim that any real fleet has been migrated; there is no deployed fleet yet. Building the
+  inventory/issuance tooling the plan describes, and re-verifying against the actual target EMQX
+  edition/version if it ever differs from the CE instance tested, are both real follow-on work, but
+  neither blocks closing issue #24 — that issue asked for the plan, not the fleet or the tooling.
 - **`mqtt-tls-broker`'s telemetry-side gap** (`openaut/+/${clientid}/#`, which wildcards site *and*
   still trusts client-supplied ClientID) is untouched by this ADR (decision 1's "legacy limitation"
   note) — still worth fixing broker-wide, ideally by applying the *same* cert-derived-identity
