@@ -75,6 +75,34 @@ A **capability** an agent *carries* (not a persona and not a trust domain) — e
 references (`nis2`, `cra`, `ai-act`, `iso27001`, `iec62443`). Each persona/agent is granted a
 **least-privilege subset** of runtime skills.
 
+## reglercentral (local control loop)
+
+When an edge node runs the control algorithm itself in software — rather than relying on a field
+device's own onboard DDC/controller — that loop is a **reglercentral**. It must be architecturally
+decoupled from upstream connectivity. It acts on a **locally persisted, last validated setpoint**,
+never a live inbound message — only a setpoint that has passed schema, range, and freshness checks
+is written to that local store, so a rejected or replayed message can never become the held value.
+This lets regulation continue unaffected by an outage anywhere above it in the communication chain.
+Not every writable point needs one — a field device with its own onboard control (BACnet priority
+array, Modbus holding register on a DDC/VFD) can provide this property natively, where the
+equipment profile documents its comm-loss/restart behaviour. See
+[`skills/edge-iot2050`](skills/edge-iot2050/SKILL.md).
+_Avoid_: control agent, edge controller (ambiguous with the physical field controller).
+
+## Hold Last Value (HLV)
+
+The chosen failure-mode principle for openAut's writable points: on loss of upstream
+communication, a reglercentral, or the field device holding a previously-deployed setpoint, keeps
+operating on the **last known-good value**, rather than reverting to a predetermined default —
+the setpoint itself doesn't "enforce" anything; it's the local controller (reglercentral, or the
+field device's own DDC/VFD/PLC) that keeps acting on it. HLV is the standard choice for
+normal regulation; **fail-safe** (revert to a predetermined safe value) is used instead where the
+equipment profile, a risk assessment, or an independent physical/PLC interlock requires it — the
+interlock is what makes an unsafe held value survivable, not a network-level revocation, so any
+safety-relevant writable point held via HLV requires one. The choice is made per writable point, not
+globally. Standard SCADA/DCS terminology.
+_Avoid_: fail-safe (opposite behaviour for the default case — do not conflate), default value.
+
 ## persona × trust domain
 
 Every persona is served chiefly by **Advisor** (read-only). Only the Driftstekniker has a
