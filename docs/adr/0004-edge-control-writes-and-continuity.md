@@ -333,30 +333,32 @@ existing one.
 
 ## Open questions
 
-- **Exact canonical field encoding** for the signed command envelope (byte order/format for
-  site/node/point/value/case-id/sequence/timestamp — *who* signs and the trust-anchor pipeline are
-  decided in decision 2, only the encoding and key-rotation cadence are open), and whether
-  acks/reglercentral health status need a topic distinct from `cmd`.
-- **The exact allow-pattern for canonical `site`/`node`/`point` identifiers** (decision 1's third
-  precondition decides *that* they must be validated and lists the forbidden characters; the precise
-  regex/charset and where it's enforced — Systemdatabas on profile write vs. the endpoint on each
-  request, ideally both — is implementation detail) and the **"unresolved intent" reconciliation
-  window** (decision 1 decides the intent/outcome audit split and that Security must be able to query
-  unmatched intents; the exact bounded window before an unmatched intent is surfaced is left open).
+Each item below is decided *that* it must happen and, where applicable, its shape or preconditions;
+none are blocking for this ADR's Proposed status. Tracked as separate issues rather than left as
+open-ended prose, so each gets its own owner and can close independently of this document:
+
+- **Exact canonical field encoding** for the signed command envelope, key-rotation cadence, and
+  whether acks/reglercentral health status need a topic distinct from `cmd` — *who* signs and the
+  trust-anchor pipeline are decided in decision 2. Tracked as issue #27.
+- **The exact allow-pattern for canonical `site`/`node`/`point` identifiers** and where it's
+  enforced — decision 1's third precondition decides *that* they must be validated and lists the
+  forbidden characters; the precise regex/charset is implementation detail. Tracked as issue #25.
+- **The "unresolved intent" audit reconciliation window** — decision 1 decides the intent/outcome
+  audit split and that Security must be able to query unmatched intents; the exact bounded window
+  before an unmatched intent is surfaced is left open. Tracked as issue #26.
 - **The mediated MQTT write endpoint's enforcement substrate** — namespaces+LSM vs. a microVM, the
-  same choice ADR 0003's Open questions left open for Engineer — and how tightly its case-check
-  couples to `system-database` in practice; the containment *shape* itself (sandbox, egress
-  allowlist, audited denials) is decided in decision 1, not open.
-- **Exact site-claim field** (SAN vs. OU vs. a new extension) and the **exact EMQX directive** that
-  binds connection identity to the certificate rather than the client-supplied MQTT ClientID —
-  decision 1 requires both to exist, but the precise config (and confirming the EMQX version in use
-  actually supports it) needs verification against a live host, the same caveat
-  `skills/mqtt-tls-broker`'s own SKILL.md already carries. Also needs the reissuance rollout plan for
-  nodes provisioned before this ADR.
+  same choice ADR 0003's Open questions left open for Engineer; the containment *shape* itself
+  (sandbox, egress allowlist, audited denials) is decided in decision 1, not open. Tracked as
+  issue #28.
+- **Exact site-claim field, exact EMQX directive for cert-derived ACL identity, and MQTT5/broker
+  max-expiry verification** — decision 1 requires all three to exist, but the precise config (and
+  confirming the target EMQX version supports it) needs verification against a live host, plus a
+  cert-reissuance rollout plan for nodes provisioned before this ADR. Tracked as issue #24 — blocks
+  activating `cmd/#` for any real node, even though it doesn't block this ADR's Proposed status.
 - **`mqtt-tls-broker`'s telemetry-side gap** (`openaut/+/${clientid}/#`, which wildcards site *and*
   still trusts client-supplied ClientID) is untouched by this ADR (decision 1's "legacy limitation"
   note) — still worth fixing broker-wide, ideally by applying the *same* cert-derived-identity
-  mechanism decision 1 introduces rather than a second bespoke fix; tracked as its own follow-up,
-  not blocking this ADR.
+  mechanism decision 1 introduces once issue #24 lands. Tracked as issue #29.
 - **The interlock mechanism itself** (hardware limit switches, PLC-level clamps, etc.) is
   per-equipment and out of scope here — this ADR only establishes that HLV depends on one existing.
+  Already tracked in issue #13.
