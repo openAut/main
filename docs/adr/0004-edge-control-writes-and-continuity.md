@@ -123,9 +123,11 @@ existing one.
      **Every attempt is audited, not just successful ones — and the write fails closed if the audit
      sink is unreachable before the endpoint acts.** Before step 1 is evaluated, the endpoint writes a
      synchronous **intent** entry (command digest, case/profile-id, site/node/point) to the append-only
-     audit sink; if that write fails, the endpoint stops there — it never proceeds to step 1, 2, or 3 —
-     the same fail-closed posture as decision 2's "discard on failed validation", not a silent
-     write-without-a-trail. Once the intent entry is confirmed written, step 1 rejections (out-of-scope
+     audit sink, as structured, individually-encoded fields — never concatenated into one free-text
+     string — so a request carrying a not-yet-canonicalized identifier (decision 1's third precondition
+     above) can't corrupt the audit record itself even before that validation has run against it; if the
+     write fails, the endpoint stops there — it never proceeds to step 1, 2, or 3 — the same fail-closed
+     posture as decision 2's "discard on failed validation", not a silent write-without-a-trail. Once the intent entry is confirmed written, step 1 rejections (out-of-scope
      case, not `approved`), step 2 failures (proxy declines to issue), step 3 failures (broker publish
      error), and step 3 success each write a matching **outcome** entry to the same sink, referencing the
      intent entry. An endpoint that only logged what it *did* would leave Security blind to probing or a
@@ -204,12 +206,15 @@ existing one.
 
    **Signing identity and key custody — a minimum decision, not fully deferred:** the **mediated MQTT
    write endpoint** (decision 1), not Engineer, holds the signing capability, and it does so the same
-   way it holds its publish credential — by requesting use of it per-request from the credential
-   proxy / PAP-governed signing service, never holding the private key as a standing secret of its
-   own. Engineer never has access to the raw signing key, consistent with ADR 0003's "never raw
-   credentials in opencode's context". The edge node verifies against a trust anchor distributed
-   through the **same signed-artifact pipeline** already used for code deploys (ADR 0001) — this is
-   not a second, separately-invented PKI. Exact key rotation cadence and the canonical field
+   way it holds its publish credential — by requesting use of it per-request from the **same
+   credential/signing proxy already counted among the endpoint's four allowed egress destinations in
+   decision 1** (it is one service performing two related functions — issuing short-lived publish
+   credentials and signing command envelopes — not two separate destinations; "PAP-governed" describes
+   who authors that service's policy, not a second network endpoint), never holding the private key as
+   a standing secret of its own. Engineer never has access to the raw signing key, consistent with ADR
+   0003's "never raw credentials in opencode's context". The edge node verifies against a trust anchor
+   distributed through the **same signed-artifact pipeline** already used for code deploys (ADR 0001) —
+   this is not a second, separately-invented PKI. Exact key rotation cadence and the canonical field
    encoding are left to Open questions, but *who* signs and *where trust is anchored* are decided
    here.
 
