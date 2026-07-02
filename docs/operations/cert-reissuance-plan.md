@@ -38,13 +38,19 @@ operator's laptop).
 
 ## Steps
 
-1. **Inventory.** Enumerate existing node certs and their current CN -- from the CA's issued-certificate
-   log if one exists, or by reading `${cert_common_name}` off each broker session if it doesn't. Cross-reference
-   against Systemdatabas's node registry to get each node's canonical `site`/`node` values.
+1. **Inventory.** Systemdatabas's node registry is the *primary* inventory source -- it lists every
+   provisioned node whether or not it happens to be online right now, which a CA-issued-certificate
+   log or a snapshot of currently-connected broker sessions cannot guarantee (an offline, retired, or
+   rarely-connecting node would silently fall out of the migration list if either of those were used
+   as the primary source). Use the CA log and/or `${cert_common_name}` off active broker sessions only
+   as *supplementary* cross-checks, not the list of what needs migrating. Track each registered node
+   against an explicit status -- e.g. `pending` / `new cert issued` / `verified` / `old cert revoked`
+   -- so "done" is a checkable state per node, not an assumption once the loop finishes.
 2. **Validate target identifiers.** For each node, confirm its `site`/`node` pair from Systemdatabas
-   passes issue #25's per-segment canonical-id pattern *before* it's used to build a new CN. This is
-   the exact injection surface the live verification proved exploitable (an unvalidated `+` granted
-   cross-tenant read access) -- validate here, not just at the broker.
+   passes the per-segment canonical-id pattern from issue #25 *before* it's used to build a new CN.
+   This is the exact injection surface the live verification proved exploitable, as demonstrated in
+   issue #25 (an unvalidated `+` granted cross-tenant read access) -- validate here, not just at the
+   broker.
 3. **Issue new certs.** Mint one new client cert per node with `CN=<site>/<node>` (single literal `/`,
    both segments individually valid), signed by the existing CA -- no new PKI needed. Issued through
    the case-approved credential channel described above, not a one-off `gen-certs.sh` run by an
@@ -63,9 +69,12 @@ operator's laptop).
    just that it was installed.
 6. **Revoke the old cert.** Once the new cert is confirmed working and the node is confirmed running on
    it, revoke the old one and log the revocation to the append-only audit sink.
-7. **Security visibility.** Security (the audit trust domain) should be able to see at any time which
-   nodes are migrated and which are pending -- a query against the CA's issued-cert log / Systemdatabas,
-   not new tooling.
+7. **Security visibility.** This is a requirement, not an aspiration: Security (the audit trust domain)
+   must be able to see, at any time, which nodes are migrated and which are pending, via an
+   owner-governed source (Systemdatabas / the CA's issued-cert log) -- not new tooling, but not
+   optional either. Issuance, cutover verification, and revocation (steps 3, 5, and 6) each write
+   their own entry to the append-only audit sink, the same discipline ADR 0004 decision 1 already
+   requires for the mediated MQTT write endpoint's own actions.
 
 ## Failure mode
 
