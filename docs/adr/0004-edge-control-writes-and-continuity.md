@@ -97,16 +97,52 @@ existing one.
             mode ADR 0002 already forecloses for policy itself. These identifiers must also be
             **stable canonical IDs, not free-text display names**: a display name can change without
             notice, and a permission profile's scope must not follow it implicitly. `site`, `node`, and
-            `point` are each validated *individually* against an allow-pattern before they are ever
-            used — none of the three may contain an MQTT wildcard (`+`, `#`), a topic separator (`/`),
-            NUL/control characters, or a broker-reserved leading `$`. Because Community Edition's
+            `point` are each validated *individually* against a **canonical-id allow-pattern**, applied
+            with a full-string match (e.g. Python `re.fullmatch(..., flags=re.ASCII)`, not `search`) so
+            partial matches can't slip through, and never silently normalized (`Site-01` is rejected,
+            not rewritten to `site-01` — silent rewriting would make Systemdatabas and topology diverge
+            from what was actually requested):
+            ```
+            ^(?=.{1,63}$)[a-z0-9]+(?:[._-][a-z0-9]+)*$
+            ```
+            1–63 characters, lowercase ASCII letters/digits only, with `.`/`_`/`-` allowed strictly
+            *one at a time, between* two alphanumerics — never leading, trailing, or consecutive
+            (`a..b`, `a-_b`, and `a.-b` are all rejected, not just `-a` or `a-`) — which by construction
+            forbids an MQTT wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters,
+            whitespace, a broker-reserved leading `$`, and Unicode/homoglyph confusables. **Validated at two
+            enforcement points, defense in depth, neither trusting the other:** (1) Systemdatabas at
+            equipment-profile write time — stops bad data at the source and keeps topology consistent
+            — and (2) the mediated MQTT write endpoint at request time, as the last fail-closed check
+            before a topic string, ACL scope, or signed command envelope is built from these segments;
+            the endpoint may not assume every upstream writer already validated. Cert-issuance time is
+            a *third*, already-decided instance of the same check — not a new checkpoint — since CN
+            construction is exactly precondition 1's `<site>/<node>` build step, formalized in
+            [`docs/operations/cert-reissuance-plan.md`](../operations/cert-reissuance-plan.md) step 2.
+            `site`/`node`/`point` are security-bearing segments, never UI text — a BACnet object name,
+            vendor point name, or any other display label belongs in a separate `display_name`-style
+            field that this pattern does not govern and permission-profile scope must never follow
+            implicitly. Because Community Edition's
             `${cert_common_name}` carries `site` and `node` together as one CN string (precondition 1),
             per-character validation of each segment is not sufficient on its own — the CN also needs
             a **structural** check that *replaces* what would otherwise have been two independent
-            per-field checks under a SAN-based, Enterprise-only mechanism: it must equal exactly
-            `<site>/<node>` — one literal `/` separating two non-empty, individually-valid segments,
-            constructed at cert-issuance time by the asset-owner/Systemdatabas process, never accepted
-            as a free-form string from a certificate request. **This is a verified, not theoretical,
+            per-field checks under a SAN-based, Enterprise-only mechanism:
+            ```
+            ^(?=[a-z0-9._-]{1,63}/)(?P<site>[a-z0-9]+(?:[._-][a-z0-9]+)*)/(?=[a-z0-9._-]{1,63}$)(?P<node>[a-z0-9]+(?:[._-][a-z0-9]+)*)$
+            ```
+            (two length lookaheads, one per segment, since a single trailing `$`-anchored lookahead
+            can't bound both halves of a compound value independently — each named group still uses
+            the same no-consecutive-separator segment pattern as the per-field regex above). **This
+            regex must be applied with the same full-string match discipline as the per-field pattern
+            above (`fullmatch`, not `match`/`search`)** — with `match`/`search`, `$` can match just
+            before a trailing newline rather than true end-of-string, silently accepting a CN of
+            `site/node\n`; verified empirically that `fullmatch` correctly rejects this while
+            `match`/`search` do not. This applies to both segment length lookaheads, not only the
+            final `$`.
+            One literal `/` separating two non-empty segments that each independently match the
+            per-segment pattern above, constructed at cert-issuance time by the asset-owner/Systemdatabas
+            process, never accepted as a free-form string from a certificate request. `/` is forbidden
+            *inside* `site`, `node`, or `point` individually — it exists only as the fixed separator in
+            this one compound field. **This is a verified, not theoretical,
             requirement** ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)):
             a CN of a single unvalidated character (`+`) reproducibly granted cross-tenant read access
             to another node's topic by being live-interpreted as an MQTT wildcard once substituted into
@@ -385,9 +421,6 @@ open-ended prose, so each gets its own owner and can close independently of this
 - **Exact canonical field encoding** for the signed command envelope, key-rotation cadence, and
   whether acks/reglercentral health status need a topic distinct from `cmd` — *who* signs and the
   trust-anchor pipeline are decided in decision 2. Tracked as issue #27.
-- **The exact allow-pattern for canonical `site`/`node`/`point` identifiers** and where it's
-  enforced — decision 1's third precondition decides *that* they must be validated and lists the
-  forbidden characters; the precise regex/charset is implementation detail. Tracked as issue #25.
 - **The "unresolved intent" audit reconciliation window** — decision 1 decides the intent/outcome
   audit split and that Security must be able to query unmatched intents; the exact bounded window
   before an unmatched intent is surfaced is left open. Tracked as issue #26.
