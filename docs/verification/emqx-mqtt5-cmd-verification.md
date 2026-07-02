@@ -10,15 +10,21 @@ ADR 0004's decision 1 left "exact site-claim field (SAN vs OU vs a new extension
 
 **What Community Edition actually supports** (confirmed live, not from docs alone): the built-in ACL file format supports a placeholder `${cert_common_name}` — the client certificate's whole Common Name substituted verbatim into a topic pattern. There is no built-in way to extract two separate fields (site, node) from one certificate in CE.
 
-**Working CE mechanism, verified:** set the certificate's CN to the combined `<site>/<node>` path segment itself (e.g. `CN=A/n1`), and use a single ACL rule:
+**Working CE mechanism, verified:** set the certificate's CN to the combined `<site>/<node>` path segment itself (e.g. `CN=A/n1`), and the broker can bind ACL scope to it via a single rule:
 ```
 {allow, all, subscribe, ["cmd-test/${cert_common_name}/#"]}.
-{allow, all, publish,   ["cmd-test/${cert_common_name}/#"]}.
 {deny,  all, all,       ["cmd-test/#"]}.
 ```
 This finding is now reflected directly in [ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 1's precondition 1–2 (updated in the same PR as this document) — **the site-claim field is the certificate CN, not a SAN or OU**, for a Community Edition deployment. This verification report is evidence for that decision, not itself the normative source; the ADR is. (If Enterprise Edition is ever adopted, the SAN-based `client_attrs_init` mechanism would give genuinely separate `${client_attrs.site}`/`${client_attrs.node}` placeholders — worth reconsidering then, but not needed for the CE precondition.)
 
+**Important scope note — the test setup below also grants `publish` on the node's own cert-derived scope, and that part is a lab shortcut, not the production design.** ADR 0004 decision 1 is explicit that subscribe is node-wide by design (a node needs to receive commands for all its own points) but **publish is per-request, mediated, and case-scoped** — issued through the mediated MQTT write endpoint, never a standing grant on a node's own certificate. The tests below use a symmetric `{allow, all, publish, [...]}` rule purely to exercise the `${cert_common_name}` substitution mechanism itself from both directions (does identity-scoping work at all, in either direction) — it is **not** a template for how a real deployment should grant publish rights. Copying this ACL verbatim into a production config would grant every node standing, unmediated publish rights to its own `cmd/#` subtree, bypassing the case-approval and credential-proxy flow decision 1 requires.
+
 ## Test 1 — cert-derived identity, positive/negative scope
+
+The lab ACL adds a **test-only** publish rule alongside the subscribe rule shown above, purely to exercise `${cert_common_name}` substitution in both directions -- not a recommendation to grant standing publish on a node's own cert (see the scope note above):
+```
+{allow, all, publish, ["cmd-test/${cert_common_name}/#"]}.
+```
 
 | # | Test | Result |
 |---|------|--------|
@@ -77,4 +83,4 @@ Confirms ADR 0004's decision 2/precondition: a late-reconnecting node must never
 - [x] EMQX cert-to-identity ACL binding: **verified working** in CE via `${cert_common_name}`, positive and negative cases both confirmed.
 - [x] MQTT5 message expiry: **verified working**, but confirmed **not the default** -- `mqtt.message_expiry_interval` must be explicitly set as part of rollout, not assumed.
 - [ ] Cert-reissuance rollout plan: still a planning task, not a technical verification -- unchanged, tracked in issue #24.
-- **New, not previously tracked:** the wildcard-injection proof above should be treated as confirming, not just motivating, issue #25 -- recommend escalating its priority given a live exploit now exists in writing. Also new: issue #25's per-segment character validation needs a companion **structural** check on the combined CN (exactly one `/`, two non-empty valid segments) -- character-filtering alone is not sufficient for the `${cert_common_name}`-as-whole-string ACL pattern this verification confirms is the working CE mechanism.
+- **New findings for issue #25** (posted there, not re-litigated here): the wildcard-injection test above is a confirmed exploit, not a hypothesis, and the per-character validation it originally proposed needs a companion **structural** check on the combined CN (exactly one `/`, two non-empty valid segments) -- character-filtering alone is not sufficient for the `${cert_common_name}`-as-whole-string ACL pattern this verification confirms is the working CE mechanism.

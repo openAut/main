@@ -67,7 +67,8 @@ existing one.
        - **Precondition, not a follow-up:** before `cmd/#` is activated for *any* node, three things
          must all be true, not just documented as intent:
          1. **Site-claim field, verified against a live EMQX 5.8.9 Community Edition instance**
-            (`docs/verification/emqx-mqtt5-cmd-verification.md`): the node's cert carries a **site
+            ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)):
+            the node's cert carries a **site
             claim as part of the Common Name (CN)** — the CN is the combined, canonical
             `<site>/<node>` identifier itself (e.g. `CN=A/n1`), not a separate SAN or OU field.
             SAN-based extraction of `site` and `node` as two independent claims was the original
@@ -98,23 +99,24 @@ existing one.
             notice, and a permission profile's scope must not follow it implicitly. `site`, `node`, and
             `point` are each validated *individually* against an allow-pattern before they are ever
             used — none of the three may contain an MQTT wildcard (`+`, `#`), a topic separator (`/`),
-            NUL/control characters, or a broker-reserved leading `$`. The certificate's CN is then a
-            **separate, additional structural check**, not just the concatenation of two
-            already-valid segments: it must equal exactly `<site>/<node>` — one literal `/`
-            separating two non-empty, individually-valid segments, constructed at cert-issuance time
-            by the asset-owner/Systemdatabas process, never accepted as a free-form string from a
-            certificate request. **This is a verified, not theoretical, requirement**
-            (`docs/verification/emqx-mqtt5-cmd-verification.md`): a CN of a single unvalidated
-            character (`+`) reproducibly granted cross-tenant read access to another node's topic by
-            being live-interpreted as an MQTT wildcard once substituted into
+            NUL/control characters, or a broker-reserved leading `$`. Because Community Edition's
+            `${cert_common_name}` carries `site` and `node` together as one CN string (precondition 1),
+            per-character validation of each segment is not sufficient on its own — the CN also needs
+            a **structural** check that *replaces* what would otherwise have been two independent
+            per-field checks under a SAN-based, Enterprise-only mechanism: it must equal exactly
+            `<site>/<node>` — one literal `/` separating two non-empty, individually-valid segments,
+            constructed at cert-issuance time by the asset-owner/Systemdatabas process, never accepted
+            as a free-form string from a certificate request. **This is a verified, not theoretical,
+            requirement** ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)):
+            a CN of a single unvalidated character (`+`) reproducibly granted cross-tenant read access
+            to another node's topic by being live-interpreted as an MQTT wildcard once substituted into
             `cmd/${cert_common_name}/#`, and a CN missing the node segment entirely (e.g. just `A`)
             would silently widen a grant from node-scope to site-scope — both are precisely the
             failure modes this precondition exists to close, not edge cases to defer. Without this,
             a value taken unvalidated from an equipment profile could widen a subscribe/publish grant
             beyond the single point it was meant to scope, or forge a different node's topic. This
-            applies uniformly to the cert-derived
-            `site`/`node` claims and to the `point` segment, which has no certificate to anchor it and
-            so depends entirely on this check.
+            applies uniformly to the cert-derived CN's `site`/`node` segments and to the `point`
+            segment, which has no certificate to anchor it and so depends entirely on this check.
          Nodes whose certs predate this ADR need reissuing as part of rollout. The pre-existing
          telemetry-side gap (`openaut/+/${clientid}/#`, which wildcards site *and* still trusts
          client-supplied ClientID) is a separate, lower-severity, read-only legacy issue, tracked on
@@ -392,7 +394,9 @@ open-ended prose, so each gets its own owner and can close independently of this
   (sandbox, egress allowlist, audited denials) is decided in decision 1, not open. Tracked as
   issue #28.
 - **Site-claim field, EMQX directive, and MQTT5/broker max-expiry: verified** against a live EMQX
-  5.8.9 Community Edition instance (`docs/verification/emqx-mqtt5-cmd-verification.md`) — decision
+  5.8.9 Community Edition instance
+  ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md))
+  — decision
   1's precondition 1–2 text above now reflects the result (CN via `${cert_common_name}`, not a
   separate SAN/OU claim, which needs Enterprise Edition). What's **still open**: the cert-reissuance
   rollout plan for nodes provisioned before this ADR, and re-verifying against the actual target
