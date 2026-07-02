@@ -73,7 +73,8 @@ existing one.
             other config) — never trusted from a client-supplied MQTT ClientID, and
          3. `site`, `node`, and `point` are **canonical, asset-owner/Systemdatabas-owned identifiers,
             referenced (not minted) by PAP-authored permission profiles** — PAP owns role/policy
-            definitions and signed permission profiles (`CONTEXT.md`, ADR 0002), not equipment naming;
+            definitions and signed permission profiles ([`CONTEXT.md`](../../CONTEXT.md),
+            [`0002-access-control-and-roles`](0002-access-control-and-roles.md)), not equipment naming;
             a profile may scope a case to `site=A`/`node=B`/`point=C`, but the topology identifiers
             themselves come from the same asset-owner/Systemdatabas case-and-approval flow that already
             governs node onboarding, exactly as decision 1's case-approval bullet requires for every
