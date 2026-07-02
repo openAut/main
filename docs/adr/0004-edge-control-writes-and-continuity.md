@@ -131,8 +131,14 @@ existing one.
             ```
             (two length lookaheads, one per segment, since a single trailing `$`-anchored lookahead
             can't bound both halves of a compound value independently — each named group still uses
-            the same no-consecutive-separator segment pattern as the per-field regex above)
-            one literal `/` separating two non-empty segments that each independently match the
+            the same no-consecutive-separator segment pattern as the per-field regex above). **This
+            regex must be applied with the same full-string match discipline as the per-field pattern
+            above (`fullmatch`, not `match`/`search`)** — with `match`/`search`, `$` can match just
+            before a trailing newline rather than true end-of-string, silently accepting a CN of
+            `site/node\n`; verified empirically that `fullmatch` correctly rejects this while
+            `match`/`search` do not. This applies to both segment length lookaheads, not only the
+            final `$`.
+            One literal `/` separating two non-empty segments that each independently match the
             per-segment pattern above, constructed at cert-issuance time by the asset-owner/Systemdatabas
             process, never accepted as a free-form string from a certificate request. `/` is forbidden
             *inside* `site`, `node`, or `point` individually — it exists only as the fixed separator in
