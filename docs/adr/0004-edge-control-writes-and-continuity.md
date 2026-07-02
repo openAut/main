@@ -71,15 +71,25 @@ existing one.
             peer-certificate-to-identity binding (exact directive to confirm against the deployed
             EMQX version, same "verify against a live host" caveat the skill already carries for its
             other config) — never trusted from a client-supplied MQTT ClientID, and
-         3. `site`, `node`, and `point` are **canonical, PAP-/profile-owned identifiers** — validated
-            against an allow-pattern before they are ever concatenated into a topic string, an ACL
-            rule, or the signed command envelope (decision 2). None of the three may contain an MQTT
-            wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters, or a broker-reserved
-            leading `$`. Without this, a value taken unvalidated from an equipment profile could widen
-            a subscribe/publish grant beyond the single point it was meant to scope, or forge a
-            different node's topic. This applies uniformly to the cert-derived `site`/`node` claims and
-            to the `point` segment, which has no certificate to anchor it and so depends entirely on
-            this check.
+         3. `site`, `node`, and `point` are **canonical, asset-owner/Systemdatabas-owned identifiers,
+            referenced (not minted) by PAP-authored permission profiles** — PAP owns role/policy
+            definitions and signed permission profiles (`CONTEXT.md`, ADR 0002), not equipment naming;
+            a profile may scope a case to `site=A`/`node=B`/`point=C`, but the topology identifiers
+            themselves come from the same asset-owner/Systemdatabas case-and-approval flow that already
+            governs node onboarding, exactly as decision 1's case-approval bullet requires for every
+            other writable-point action. Letting a profile mint its own identifier would let an
+            operational actor indirectly widen its own scope through local naming — the same failure
+            mode ADR 0002 already forecloses for policy itself. These identifiers must also be
+            **stable canonical IDs, not free-text display names**: a display name can change without
+            notice, and a permission profile's scope must not follow it implicitly. All three are
+            validated against an allow-pattern before they are ever concatenated into a topic string,
+            an ACL rule, or the signed command envelope (decision 2). None of the three may contain an
+            MQTT wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters, or a
+            broker-reserved leading `$`. Without this, a value taken unvalidated from an equipment
+            profile could widen a subscribe/publish grant beyond the single point it was meant to
+            scope, or forge a different node's topic. This applies uniformly to the cert-derived
+            `site`/`node` claims and to the `point` segment, which has no certificate to anchor it and
+            so depends entirely on this check.
          Nodes whose certs predate this ADR need reissuing as part of rollout. The pre-existing
          telemetry-side gap (`openaut/+/${clientid}/#`, which wildcards site *and* still trusts
          client-supplied ClientID) is a separate, lower-severity, read-only legacy issue, tracked on
