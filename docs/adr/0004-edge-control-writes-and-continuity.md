@@ -62,20 +62,29 @@ existing one.
          (worst case is a stale/ambiguous reading); **not** tolerable for a channel that grants
          subscribe rights to commands, where it would let a node read another node's setpoints by
          simply connecting with that node's ClientID.
-       - **Precondition, not a follow-up:** before `cmd/#` is activated for *any* node, two things
-         must both be true, not just documented as intent:
+       - **Precondition, not a follow-up:** before `cmd/#` is activated for *any* node, three things
+         must all be true, not just documented as intent:
          1. the node's cert carries a **site claim** (SAN/OU field set at issuance, alongside the
             existing CN-as-node-id), and
          2. the broker is configured so the identity used in ACL evaluation (`${cert_site}`,
             `${cert_node}`) is **read from the certificate itself** at the TLS layer — via EMQX's
             peer-certificate-to-identity binding (exact directive to confirm against the deployed
             EMQX version, same "verify against a live host" caveat the skill already carries for its
-            other config) — never trusted from a client-supplied MQTT ClientID.
+            other config) — never trusted from a client-supplied MQTT ClientID, and
+         3. `site`, `node`, and `point` are **canonical, PAP-/profile-owned identifiers** — validated
+            against an allow-pattern before they are ever concatenated into a topic string, an ACL
+            rule, or the signed command envelope (decision 2). None of the three may contain an MQTT
+            wildcard (`+`, `#`), a topic separator (`/`), NUL/control characters, or a broker-reserved
+            leading `$`. Without this, a value taken unvalidated from an equipment profile could widen
+            a subscribe/publish grant beyond the single point it was meant to scope, or forge a
+            different node's topic. This applies uniformly to the cert-derived `site`/`node` claims and
+            to the `point` segment, which has no certificate to anchor it and so depends entirely on
+            this check.
          Nodes whose certs predate this ADR need reissuing as part of rollout. The pre-existing
          telemetry-side gap (`openaut/+/${clientid}/#`, which wildcards site *and* still trusts
          client-supplied ClientID) is a separate, lower-severity, read-only legacy issue, tracked on
-         its own schedule — but its existence means this precondition should really be verified
-         once, for the broker as a whole, not re-litigated per topic.
+         its own schedule — but its existence means precondition 1–2 should really be verified once,
+         for the broker as a whole, not re-litigated per topic.
        - Publish to `cmd/#` is granted **per request, not as a standing account** — see write
          identity below; there is no static `{allow, {user, ...}, publish, ["cmd/#"]}` rule.
    - **Write identity: Engineer, via a fourth mediated endpoint — not a new actor.**
@@ -101,7 +110,9 @@ existing one.
      2. **requests**, rather than mints itself, a **short-lived, case-scoped** publish credential
         limited to exactly `cmd/<site>/<node>/<point>` — the one point the case approved, never the
         node-wide `cmd/<site>/<node>/#` — from the **same credential proxy** ADR 0003 §3 already
-        defines for Engineer's SSH secrets — issuance is authorized against PAP-authored signed
+        defines for Engineer's SSH secrets (that proxy issues any short-lived, scoped credential
+        Engineer or this endpoint needs, not only SSH ones) — issuance is authorized against
+        PAP-authored signed
         permission profiles (PAP owns the *policy*, not operational minting; the proxy is the
         mechanism that enforces it, for this credential exactly as for Engineer's own). A case that
         legitimately covers multiple points gets multiple point-scoped credentials, not one
@@ -110,16 +121,21 @@ existing one.
      3. publishes the setpoint.
 
      **Every attempt is audited, not just successful ones — and the write fails closed if the audit
-     entry can't be written.** Step 1 rejections (out-of-scope case, not `approved`), step 2 failures
-     (proxy declines to issue), and step 3 failures (broker publish error) each write their own entry
-     to the append-only audit sink — case/profile-id, site/node/point, decision, and failure reason —
-     the same as a successful publish. An endpoint that only logged what it *did* would leave Security
-     blind to probing or a compromise attempt that never got past step 1 or 2. If the audit sink itself
-     is unreachable, the endpoint **does not proceed to step 2 or 3** — an unauditable write is treated
-     as equivalent to an unauthorized one, the same fail-closed posture as decision 2's "discard on
-     failed validation", not a silent write-without-a-trail. (Step 1's own rejection can still be
-     logged locally / retried once the sink recovers, since it is itself a negative outcome, not a
-     write.)
+     sink is unreachable before the endpoint acts.** Before step 1 is evaluated, the endpoint writes a
+     synchronous **intent** entry (command digest, case/profile-id, site/node/point) to the append-only
+     audit sink; if that write fails, the endpoint stops there — it never proceeds to step 1, 2, or 3 —
+     the same fail-closed posture as decision 2's "discard on failed validation", not a silent
+     write-without-a-trail. Once the intent entry is confirmed written, step 1 rejections (out-of-scope
+     case, not `approved`), step 2 failures (proxy declines to issue), step 3 failures (broker publish
+     error), and step 3 success each write a matching **outcome** entry to the same sink, referencing the
+     intent entry. An endpoint that only logged what it *did* would leave Security blind to probing or a
+     compromise attempt that never got past step 1 or 2. This intent/outcome split exists because the
+     sink can still become unreachable *after* the intent write succeeds — mid credential-request or
+     mid-publish — at which point the write may have already happened with no outcome entry to show for
+     it; claiming that case can still be "prevented" would overstate what a post-hoc log write can
+     guarantee. Instead, an intent entry with no matching outcome within a bounded window is a distinct,
+     explicitly-defined audit state — **unresolved intent** — that Security must be able to query and
+     alert on, rather than a silently-dropped gap.
 
      Two different blast radii, not one claim: a **leaked per-request credential** is scoped to a
      single writable point by construction (point 2) — it is only ever valid for the one
@@ -209,11 +225,17 @@ existing one.
    interval` at or below decision 2's own freshness window as a second, broker-side backstop — the
    node's own signature/freshness check (above) is still the primary defense and must not be relied
    on alone, but the broker configuration needs to be exactly as explicit as the retained-message
-   prohibition, not merely implied by it. A late-joining or reconnecting subscriber must never receive
-   a stale command from *any* broker-side store — retained, queued, or otherwise — instead of relying
-   purely on the node's own validated local state. This keeps the loop regulating unaffected by an
-   outage anywhere above it in the chain, and this is the same discipline as the existing
-   store-and-forward spool, applied to the inbound side.
+   prohibition, not merely implied by it. `message expiry interval` is MQTT 5 semantics: **cmd/#
+   requires MQTT 5 on both publisher and broker configuration**, with the broker enforcing a maximum
+   expiry rather than trusting a publisher-set value — this is a fourth precondition, alongside the
+   cert-claim and identifier-canonicalization ones above, to verify against the deployed EMQX version
+   before `cmd/#` is activated for any node; if the deployed fleet cannot be moved off MQTT 3.1.1, the
+   node's own signature/freshness check becomes the *only* defense against a queued stale command and
+   this decision must be revisited before rollout, not assumed away. A late-joining or reconnecting
+   subscriber must never receive a stale command from *any* broker-side store — retained, queued, or
+   otherwise — instead of relying purely on the node's own validated local state. This keeps the loop
+   regulating unaffected by an outage anywhere above it in the chain, and this is the same discipline
+   as the existing store-and-forward spool, applied to the inbound side.
 
 **3. Central revocation of an already-applied setpoint during a partition is accepted as impossible
    by design**, not solved by a protocol. It is a direct consequence of decisions 1–2: there is no
@@ -310,6 +332,12 @@ existing one.
   site/node/point/value/case-id/sequence/timestamp — *who* signs and the trust-anchor pipeline are
   decided in decision 2, only the encoding and key-rotation cadence are open), and whether
   acks/reglercentral health status need a topic distinct from `cmd`.
+- **The exact allow-pattern for canonical `site`/`node`/`point` identifiers** (decision 1's third
+  precondition decides *that* they must be validated and lists the forbidden characters; the precise
+  regex/charset and where it's enforced — Systemdatabas on profile write vs. the endpoint on each
+  request, ideally both — is implementation detail) and the **"unresolved intent" reconciliation
+  window** (decision 1 decides the intent/outcome audit split and that Security must be able to query
+  unmatched intents; the exact bounded window before an unmatched intent is surfaced is left open).
 - **The mediated MQTT write endpoint's enforcement substrate** — namespaces+LSM vs. a microVM, the
   same choice ADR 0003's Open questions left open for Engineer — and how tightly its case-check
   couples to `system-database` in practice; the containment *shape* itself (sandbox, egress
