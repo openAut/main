@@ -63,6 +63,87 @@ done*. Advisor/Engineer/Security describe the trust boundaries those jobs must r
 ◀── DEFAULT  = the two choices baked into this skill pack
 ```
 
+## Deployment topology — which servers, and what goes on each
+
+The layer diagram above shows trust domains, not a rack list. This section maps it onto physical/
+virtual hosts. Two footprints exist in the docs today and they are **not** the same: what this pack
+currently provisions (matches `config.env.example`, Advisor only) and the fuller target ADR 0001 /
+ADR 0003 describe once Engineer and Security ship. The gap is called out rather than papered over.
+
+### Current pack scope (Advisor only)
+
+| Host (env var in `config.env.example`) | Example | Installs | Defined in |
+|---|---|---|---|
+| `SANDBOX_HOST` | `dgx-spark.local` | NemoClaw (Advisor) + OpenShell sandbox; Teams webhook bridge co-located | `nemoclaw-provision`, `bridges/teams-webhook` |
+| `NEMOTRON_HOST` | `192.168.1.43` (GX10 — Bertil/test box) | vLLM + Nemotron 3 Super + TLS reverse proxy | `nemoclaw-sandbox-policy` |
+| `EMQX_HOST` = `TSDB_HOST` (same host in the reference config) | `192.168.1.10` — the "AI-tier"/"Lokal AI-server" host | EMQX (mutual-TLS broker) + Telegraf ingest + TimescaleDB/PostgreSQL + Systemdatabas schema | `mqtt-tls-broker`, `timeseries-stack`, `system-database` |
+| `FORGE_HOST` | `192.168.1.20` | Forgejo | `forge-stack`, `forge-governance` |
+| `EDGE_HOST` (one per field segment) | `192.168.1.50` | IOT2050 field poller | `edge-iot2050` |
+
+```mermaid
+flowchart LR
+    subgraph EDGE["EDGE_HOST(s) — IOT2050"]
+        IOT["field poller<br/>BACnet / Modbus / M-Bus / KNX / DALI / LoRaWAN"]
+    end
+
+    subgraph AITIER["EMQX_HOST = TSDB_HOST<br/>'Lokal AI-server'"]
+        EMQX["EMQX<br/>(mutual-TLS broker)"]
+        TELE["Telegraf"]
+        TSDB["TimescaleDB / PostgreSQL<br/>+ Systemdatabas schema"]
+        EMQX --> TELE --> TSDB
+    end
+
+    subgraph SANDBOXH["SANDBOX_HOST"]
+        ADV["Advisor<br/>NemoClaw + OpenShell sandbox"]
+        TB["Teams bridge<br/>(co-located)"]
+    end
+
+    subgraph GPU["NEMOTRON_HOST"]
+        PROXY["TLS reverse proxy"] --> VLLM["vLLM +<br/>Nemotron 3 Super"]
+    end
+
+    subgraph FORGEH["FORGE_HOST"]
+        FORGE["Forgejo"]
+    end
+
+    IOT -->|mutual-TLS MQTT| EMQX
+    ADV -->|reads telemetry / cases| TSDB
+    ADV -->|TLS, single allow-listed inference dest| PROXY
+    ADV -->|reads verified docs, read-only| FORGE
+    ADV --> TB
+    TB -->|webhook| TEAMS["Microsoft Teams / Power BI<br/>(external, Layer 4)"]
+```
+
+### Full target posture (ADR 0001 §5 / ADR 0003 — not yet in `config.env.example`)
+
+Once Engineer and Security ship, two more hosts join, plus two supporting components, and production
+swaps the model box:
+
+| Host / component | Installs | Why it's a separate host | Defined in |
+|---|---|---|---|
+| Engineer host (management plane) | opencode + an Engineer-specific sandbox policy (same Landlock/seccomp/netns primitives as Advisor's OpenShell, different policy) | Different trust domain from Advisor, deliberately different stack and host (ADR 0001 §5) | ADR 0001 §4, ADR 0003 |
+| Security host (isolated) | Security instance — read-only SSH, passive/listen-only Teams observation (no bot or chat surface of its own), passive MQTT/log watch | Must audit Engineer without being silenceable by it | ADR 0001 §5, ADR 0003 §4 |
+| Credential proxy | mints short-lived, case-scoped credentials | No raw SSH/inference secrets ever sit in an agent's context | ADR 0003 §3 |
+| Append-only audit sink | external collector | Engineer can write to it but can never mute or read it back | ADR 0003 §4 |
+
+Production also swaps `NEMOTRON_HOST` from the GX10 (Nemotron 3 Super, Bertil/test only) for a dedicated
+**Nemotron 3 Ultra** box. "Air-gapped" here scopes to what ADR 0001 actually decides: dependency/package
+ingress is resolved at build time from a signed, reviewed release — the perimeter fetches nothing from
+public upstreams, and only that release crosses the boundary (ADR 0001 §3, §7). It does not mean Advisor
+loses its Teams channel; Teams/Power BI stays the approved Layer-4 notification path shown above, not a
+public-upstream dependency source.
+
+> **Hard rule, not a lab shortcut:** Advisor and Engineer must never share a host, sandbox instance, or
+> sandbox policy bundle (ADR 0003, "alternatives considered" — rejects exactly this co-residency).
+> "Policy bundle" here means the Landlock/seccomp/netns sandbox confinement, distinct from the
+> PAP-signed *permission profile* that scopes Engineer's case-driven authority (ADR 0001 §9). Security
+> is a separate instance for the same reason — its whole job is auditing the other two without being
+> silenceable by them (see this doc's own opening summary and Trust boundary 6, above) — so all three
+> stay on separate hosts even at lab scale. A lab/rehearsal setup (see [`docs/LAB.md`](LAB.md)) can
+> still colocate the *data backbone* — EMQX, TimescaleDB, and the Systemdatabas schema on one box, as
+> `config.env.example` already does; that colocation is a cost optimization, the Advisor/Engineer/
+> Security split is not.
+
 ## What this pack provisions
 
 | Skill | Layer | Responsibility |
