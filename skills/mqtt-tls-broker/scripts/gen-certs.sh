@@ -72,6 +72,13 @@ case "${1:-}" in
   ca) ca ;;
   broker)
     [ -n "${2:-}" ] || { echo "usage: gen-certs.sh broker <hostname-or-ip>" >&2; exit 1; }
+    # leaf() now writes $2 into an openssl config file, not just -subj -- reject anything that
+    # could break out of the config file's CN line (newline, brackets, '=') or the filename it's
+    # also used as, rather than assume this argument is trusted just because it's operator-supplied.
+    if [ "${#2}" -lt 1 ] || [ "${#2}" -gt 253 ] || [[ ! "$2" =~ ^[A-Za-z0-9](-*[A-Za-z0-9.:])*$ ]]; then
+      echo "invalid hostname-or-ip '$2': must be 1-253 chars, alnum/'.'/'-'/':' only, no leading '-' or control chars" >&2
+      exit 1
+    fi
     ca
     if [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then san="IP:$2"; else san="DNS:$2"; fi
     leaf broker "$2" "$2" "$san" ;;
@@ -88,8 +95,12 @@ case "${1:-}" in
       echo "invalid site/node combination '$cn': combined CN is ${#cn} chars, exceeds the 64-char X.509 commonName limit (RFC 5280)" >&2
       exit 1
     fi
-    name="$2-$3"    # filename can't contain '/'
-    leaf clients "$name" "$cn" "DNS:$name" ;;
+    # One directory per site, one file per node -- not "$2-$3" concatenated into a single
+    # filename. Both site and node may themselves contain '-' (validate_id allows it), so
+    # concatenation is not injective: site=a-b/node=c and site=a/node=b-c both produce
+    # "a-b-c", silently overwriting one node's cert/key with another's. A directory per site
+    # is unambiguous because neither segment can contain '/' (validate_id rejects it).
+    leaf "clients/$2" "$3" "$cn" "DNS:$2-$3" ;;
   *)
     echo "usage: gen-certs.sh {ca | broker <host> | client <site> <node-id>}" >&2; exit 1 ;;
 esac

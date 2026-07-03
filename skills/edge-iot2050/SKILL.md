@@ -28,12 +28,15 @@ The broker skill generates a per-node cert whose **CN = the combined `$EDGE_SITE
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID"
 ```
 
-Copy the CA + the node's cert/key to the IOT2050 (keys stay 600, owned by the service user). The cert
-files are named `<site>-<node>` (a filename can't contain the CN's `/`):
+Copy the CA + the node's cert/key to the IOT2050 (keys stay 600, owned by the service user). Cert files
+live under **one directory per site, one file per node** — `clients/<site>/<node>.{crt,key}` — not a
+concatenated `<site>-<node>` filename, since both segments may themselves contain `-` and a
+concatenated name is not collision-free (`site=a-b/node=c` and `site=a/node=b-c` would otherwise both
+produce `a-b-c`):
 
 ```bash
 ssh "$EDGE_SSH_USER@$EDGE_HOST" "mkdir -p /etc/openaut/certs && chmod 700 /etc/openaut/certs"
-scp "$MQTT_CA_CERT" "$PKI_DIR/clients/$EDGE_SITE-$EDGE_NODE_ID.crt" "$PKI_DIR/clients/$EDGE_SITE-$EDGE_NODE_ID.key" \
+scp "$MQTT_CA_CERT" "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.crt" "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.key" \
     "$EDGE_SSH_USER@$EDGE_HOST:/etc/openaut/certs/"
 ```
 

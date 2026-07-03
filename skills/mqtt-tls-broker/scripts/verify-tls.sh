@@ -11,10 +11,12 @@ set -a; . "$ROOT/config.env"; set +a
 
 PKI="${PKI_DIR:-$ROOT/pki}"
 TOPIC="openaut/${EDGE_SITE}/${EDGE_NODE_ID}/selftest/ping"
-# gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID" names the cert files "<site>-<node>"
-# (CN inside is the combined "<site>/<node>" -- see acl.conf and ADR 0004 decision 1).
-CLIENT_CRT="$PKI/clients/${EDGE_SITE}-${EDGE_NODE_ID}.crt"
-CLIENT_KEY="$PKI/clients/${EDGE_SITE}-${EDGE_NODE_ID}.key"
+# gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID" lays cert files out one directory per site,
+# one file per node -- not a concatenated "<site>-<node>" name, which isn't collision-free
+# since both segments may themselves contain '-' (CN inside is the combined "<site>/<node>",
+# see acl.conf and ADR 0004 decision 1).
+CLIENT_CRT="$PKI/clients/${EDGE_SITE}/${EDGE_NODE_ID}.crt"
+CLIENT_KEY="$PKI/clients/${EDGE_SITE}/${EDGE_NODE_ID}.key"
 
 echo "== Subscribe (5s) over TLS to $TOPIC =="
 timeout 5 mosquitto_sub -h "$EMQX_HOST" -p "$EMQX_TLS_PORT" \
