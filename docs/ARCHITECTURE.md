@@ -122,13 +122,16 @@ swaps the model box:
 | Host / component | Installs | Why it's a separate host | Defined in |
 |---|---|---|---|
 | Engineer host (management plane) | opencode + an Engineer-specific sandbox policy (same Landlock/seccomp/netns primitives as Advisor's OpenShell, different policy) | Different trust domain from Advisor, deliberately different stack and host (ADR 0001 §5) | ADR 0001 §4, ADR 0003 |
-| Security host (isolated) | Security instance — read-only SSH, listen-only Teams, passive MQTT/log watch | Must audit Engineer without being silenceable by it | ADR 0001 §5, ADR 0003 §4 |
+| Security host (isolated) | Security instance — read-only SSH, passive/listen-only Teams observation (no bot or chat surface of its own), passive MQTT/log watch | Must audit Engineer without being silenceable by it | ADR 0001 §5, ADR 0003 §4 |
 | Credential proxy | mints short-lived, case-scoped credentials | No raw SSH/inference secrets ever sit in an agent's context | ADR 0003 §3 |
 | Append-only audit sink | external collector | Engineer can write to it but can never mute or read it back | ADR 0003 §4 |
 
 Production also swaps `NEMOTRON_HOST` from the GX10 (Nemotron 3 Super, Bertil/test only) for a dedicated
-**Nemotron 3 Ultra** box, and the whole perimeter above runs **air-gapped** — Main stays a cloud
-development environment, and only a signed, reviewed release crosses the air gap in (ADR 0001).
+**Nemotron 3 Ultra** box. "Air-gapped" here scopes to what ADR 0001 actually decides: dependency/package
+ingress is resolved at build time from a signed, reviewed release — the perimeter fetches nothing from
+public upstreams, and only that release crosses the boundary (ADR 0001 §3, §7). It does not mean Advisor
+loses its Teams channel; Teams/Power BI stays the approved Layer-4 notification path shown above, not a
+public-upstream dependency source.
 
 > **Hard rule, not a lab shortcut:** Advisor and Engineer must never share a host, sandbox instance, or
 > sandbox policy bundle (ADR 0003, "alternatives considered" — rejects exactly this co-residency).
