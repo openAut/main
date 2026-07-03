@@ -1,10 +1,31 @@
 #!/usr/bin/env bash
 # Minimal PKI for openAut MQTT mutual TLS.
-#   gen-certs.sh ca                      -> internal CA under $PKI_DIR/ca
-#   gen-certs.sh broker <hostname-or-ip> -> server cert under $PKI_DIR/broker
-#   gen-certs.sh client <node-id>        -> client cert (CN=node-id) under $PKI_DIR/clients
+#   gen-certs.sh ca                        -> internal CA under $PKI_DIR/ca
+#   gen-certs.sh broker <hostname-or-ip>   -> server cert under $PKI_DIR/broker
+#   gen-certs.sh client <site> <node-id>   -> client cert (CN=<site>/<node-id>) under $PKI_DIR/clients
+# CN is the combined site/node identifier EMQX's ${cert_common_name} ACL placeholder keys
+# on (see skills/mqtt-tls-broker/assets/acl.conf, ADR 0004 decision 1, and
+# docs/verification/emqx-mqtt5-cmd-verification.md) -- each segment is validated below
+# before it is ever put in a certificate; an unvalidated segment is a proven
+# wildcard-injection vector, not a theoretical one.
 # Sources ../../../config.env for PKI_DIR. Uses openssl. Keys are chmod 600.
 set -euo pipefail
+
+# Canonical-id pattern (ADR 0004 decision 1, precondition 3): 1-63 lowercase ASCII
+# alnum chars, with '.', '_', '-' allowed only singly between two alnums -- never
+# leading, trailing, or consecutive. Rejects MQTT wildcards (+, #), '/', whitespace,
+# control chars, and a leading '$' by construction.
+validate_id() {  # validate_id <value> <label, e.g. "site" or "node">
+  local val="$1" label="$2"
+  if [ "${#val}" -lt 1 ] || [ "${#val}" -gt 63 ]; then
+    echo "invalid $label '$val': must be 1-63 characters" >&2
+    exit 1
+  fi
+  if [[ ! "$val" =~ ^[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+    echo "invalid $label '$val': must match ^[a-z0-9]+([._-][a-z0-9]+)*\$ (lowercase ascii letters/digits, '.', '_', '-' only, never leading/trailing/consecutive)" >&2
+    exit 1
+  fi
+}
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
@@ -45,9 +66,13 @@ case "${1:-}" in
     if [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then san="IP:$2"; else san="DNS:$2"; fi
     leaf broker "$2" "$2" "$san" ;;
   client)
-    [ -n "${2:-}" ] || { echo "usage: gen-certs.sh client <node-id>" >&2; exit 1; }
+    [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: gen-certs.sh client <site> <node-id>" >&2; exit 1; }
     ca
-    leaf clients "$2" "$2" "DNS:$2" ;;  # CN = node id; EMQX ACL keys on this
+    validate_id "$2" site
+    validate_id "$3" node
+    cn="$2/$3"      # combined <site>/<node> -- what ${cert_common_name} substitutes in acl.conf
+    name="$2-$3"    # filename can't contain '/'
+    leaf clients "$name" "$cn" "DNS:$name" ;;
   *)
-    echo "usage: gen-certs.sh {ca | broker <host> | client <node-id>}" >&2; exit 1 ;;
+    echo "usage: gen-certs.sh {ca | broker <host> | client <site> <node-id>}" >&2; exit 1 ;;
 esac

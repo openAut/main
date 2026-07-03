@@ -11,7 +11,6 @@ listeners.ssl.openaut {
     ## Require a valid client certificate — this is what makes it MUTUAL TLS.
     verify     = verify_peer
     fail_if_no_peer_cert = true
-    ## Use the client cert's Common Name as the MQTT client id the ACL keys on.
     versions   = ["tlsv1.3", "tlsv1.2"]
   }
 }

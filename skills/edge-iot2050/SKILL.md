@@ -21,22 +21,26 @@ the topic schema). Assumes `config.env` is sourced.
 
 ## Step 1 — Issue and deploy the node's client certificate
 
-The broker skill generates a per-node cert whose **CN = `$EDGE_NODE_ID`**:
+The broker skill generates a per-node cert whose **CN = the combined `$EDGE_SITE/$EDGE_NODE_ID`**
+(the broker ACL keys on this whole CN via `${cert_common_name}`, not on MQTT ClientID):
 
 ```bash
-bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_NODE_ID"
+bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID"
 ```
 
-Copy the CA + the node's cert/key to the IOT2050 (keys stay 600, owned by the service user):
+Copy the CA + the node's cert/key to the IOT2050 (keys stay 600, owned by the service user). The cert
+files are named `<site>-<node>` (a filename can't contain the CN's `/`):
 
 ```bash
 ssh "$EDGE_SSH_USER@$EDGE_HOST" "mkdir -p /etc/openaut/certs && chmod 700 /etc/openaut/certs"
-scp "$MQTT_CA_CERT" "$PKI_DIR/clients/$EDGE_NODE_ID.crt" "$PKI_DIR/clients/$EDGE_NODE_ID.key" \
+scp "$MQTT_CA_CERT" "$PKI_DIR/clients/$EDGE_SITE-$EDGE_NODE_ID.crt" "$PKI_DIR/clients/$EDGE_SITE-$EDGE_NODE_ID.key" \
     "$EDGE_SSH_USER@$EDGE_HOST:/etc/openaut/certs/"
 ```
 
 The node authenticates to EMQX **with this cert** — the broker ACL then confines it to
-`openaut/$EDGE_SITE/$EDGE_NODE_ID/#`. A stolen node can never publish as another node.
+`openaut/$EDGE_SITE/$EDGE_NODE_ID/#`. A stolen node can never publish as another node, and a node
+cannot widen its own scope by presenting a different MQTT ClientID at connect time (identity is read
+from the certificate at the TLS layer).
 
 ## Step 2 — Install the edge agent
 

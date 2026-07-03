@@ -41,11 +41,18 @@ them under `$PKI_DIR` (keep that directory out of git — it is in `.gitignore`)
 ```bash
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh ca
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh broker "$EMQX_HOST"
-bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_NODE_ID"
+bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID"
 ```
 
-The client cert's **Common Name = the edge node id** — EMQX uses that CN as the MQTT client identity
-the ACL keys on. Distribute the client cert + key to the node via [`edge-iot2050`](../edge-iot2050/SKILL.md).
+The client cert's **Common Name = the combined `<site>/<node>` identifier** (e.g. `CN=karsamala/iot2050-ahu-01`)
+— EMQX's `${cert_common_name}` ACL placeholder substitutes that whole CN, read at the TLS layer from
+the certificate itself, never from the client-supplied MQTT ClientID. Community Edition has no
+built-in way to pull `site` and `node` out as two separate fields (that needs Enterprise Edition's
+SAN-extraction mechanism), so `gen-certs.sh` validates each segment against a canonical-id pattern
+(1–63 lowercase ASCII chars, `.`/`_`/`-` only singly between alnums) and joins them itself — an
+unvalidated segment substituted into an ACL topic pattern is a proven wildcard-injection vector, not a
+theoretical one (see `docs/verification/emqx-mqtt5-cmd-verification.md` in the main repo). Distribute
+the client cert + key to the node via [`edge-iot2050`](../edge-iot2050/SKILL.md).
 
 ## Step 2 — Install EMQX
 
@@ -91,17 +98,26 @@ to confirm `ssl:openaut` is running and `tcp:default` is stopped/blocked.
 
 ## Step 4 — ACL: scope each node to its own topics
 
-Use cert-CN-based authorization so `iot2050-ahu-01` can only publish under
-`openaut/<site>/iot2050-ahu-01/#`, and the AI-tier consumer can subscribe to `openaut/#` read-only.
+Use cert-CN-based authorization so `karsamala/iot2050-ahu-01` can only publish under
+`openaut/karsamala/iot2050-ahu-01/#`, and the AI-tier consumer can subscribe to `openaut/#` read-only.
 See `assets/acl.conf`:
 
 ```
-%% edge nodes: publish only under their own node prefix (CN = client id)
-{allow, all, publish, ["openaut/${site}/${clientid}/#"]}.
+%% edge nodes: publish only under their own site/node prefix (CN, read at the TLS layer —
+%% never the client-supplied MQTT ClientID)
+{allow, all, publish, ["openaut/${cert_common_name}/#"]}.
 %% telemetry consumer (TimescaleDB ingest) and agents: subscribe read-only
 {allow, {user, "ingest"}, subscribe, ["openaut/#"]}.
 {deny, all}.
 ```
+
+`${cert_common_name}` — not `${clientid}` and not a `${site}`/`+` wildcard — is what closes the
+identity gap: MQTT ClientID is client-supplied and was never actually bound to the certificate on this
+listener config, and a `+` wildcard on site let any node publish under *any* site's prefix. Verified
+live against EMQX 5.8.9 Community Edition
+([`docs/verification/emqx-mqtt5-cmd-verification.md`](../../docs/verification/emqx-mqtt5-cmd-verification.md))
+— the same mechanism the `cmd/#` write channel in
+[ADR 0004](../../docs/adr/0004-edge-control-writes-and-continuity.md) uses.
 
 ## Step 5 — Verify over TLS
 
@@ -117,10 +133,13 @@ It publishes a test message as the node's client cert and subscribes as the cons
 | Control | Check | Framework |
 |---|---|---|
 | Encryption in transit | only `:8883` mutual-TLS reachable; `:1883` closed | IEC 62443 SR 4.1, CRA Annex I |
-| Strong device identity | per-node client cert, CN-bound ACL | IEC 62443 SR 1.x, NIS2 Art. 21 |
-| Least privilege | nodes publish own prefix only; consumer read-only | IEC 62443 SR 7.x |
+| Strong device identity | per-node client cert, `${cert_common_name}`-bound ACL — never client-supplied ClientID | IEC 62443 SR 1.x, NIS2 Art. 21 |
+| Least privilege | nodes publish own site/node prefix only; consumer read-only | IEC 62443 SR 7.x |
+| Input validation | site/node segments validated against a canonical-id pattern before cert issuance (proven wildcard-injection vector otherwise) | IEC 62443 SR 3.x, CRA Annex I |
 | Key custody | CA/keys in `$PKI_DIR`, gitignored, 600 perms | ISO 27001 A.8 |
 
-> **Live behaviour is unverified until an EMQX host is available.** EMQX install/listener syntax
-> differs across 5.x releases — the invariants (mutual TLS, CN-bound ACL, no plaintext) are what to
-> preserve.
+> **Cert-derived ACL identity verified live** against EMQX 5.8.9 Community Edition
+> (`docs/verification/emqx-mqtt5-cmd-verification.md` in the main repo) — `${cert_common_name}`
+> correctly scopes publish to a node's own site/node prefix and cannot be bypassed by a spoofed MQTT
+> ClientID. EMQX install/listener syntax still varies across 5.x releases — the invariants (mutual TLS,
+> cert-derived ACL, no plaintext) are what to preserve if adapting these steps to a different version.
