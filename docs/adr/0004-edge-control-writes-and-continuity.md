@@ -373,7 +373,14 @@ existing one.
 **6. Canonical command envelope encoding, ack/health topics, key rotation (resolves #27).**
    - **Wire format: COSE_Sign1 over deterministic CBOR** (RFC 8949) — not a bespoke delimited or JSON
      format. This avoids delimiter/escaping ambiguity, gives a stable canonical byte representation to
-     sign, and stays compact for MQTT/edge transport. Signature algorithm: **Ed25519/EdDSA**.
+     sign, and stays compact for MQTT/edge transport. Signature algorithm: **Ed25519/EdDSA**, alg label
+     in the **COSE protected header** (`alg: EdDSA`), and `kid` (key id, the key-set-version this ack
+     will later reference — key custody below) is likewise **always in the protected header, never
+     unprotected** — the protected header is covered by the signature itself, so a verifier can trust
+     which key is claimed without that claim being forgeable independent of the signature. A verifier
+     rejects any COSE_Sign1 message carrying unprotected headers at all in `v1`: an unprotected header
+     is, by COSE's own design, not integrity-protected, and this envelope has no legitimate use for
+     one.
    - **Payload: a fixed-length, explicitly versioned CBOR array**, domain-separated by a literal type
      tag as element 0 so a future `v2` is a distinct format, never a silent reinterpretation of `v1`:
      1. `"openaut.mqtt.cmd.v1"` — message type / domain separator
@@ -384,8 +391,11 @@ existing one.
      6. `value` — canonical value. `real` is a CBOR text string, never a binary float, in a fixed
         decimal normal form: optional leading `-`; at least one digit before the point with no leading
         zero (except a lone `0`); if a fractional part is present, at least one digit after the point
-        with no trailing zeros beyond what the value needs; no exponent notation. `"1"`, `"1.5"`,
-        `"-0.2"` are valid; `"1.0"`, `"01"`, `"1.50"`, `"1e0"` are not. A signer or verifier that
+        with no trailing zeros beyond what the value needs; no exponent notation; **zero is `"0"` only —
+        `"-0"` and any negative-zero variant (`"-0.0"`, `"-0.00"`, etc.) are invalid**, since allowing
+        both would let two different byte strings signify the identical numeric value, exactly what
+        this normal form exists to prevent. `"1"`, `"1.5"`, `"-0.2"`, `"0"` are valid; `"1.0"`, `"01"`,
+        `"1.50"`, `"1e0"`, `"-0"` are not. A signer or verifier that
         receives a value not already in this exact form **rejects it** — it does not normalize on
         receipt, which would let two different byte strings silently mean the same signed value
         (deterministic CBOR makes the *bytes* deterministic; it does not by itself define a canonical
