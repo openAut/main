@@ -339,11 +339,15 @@ existing one.
 **5. Unresolved-intent reconciliation window (resolves #26).** Decision 1 established the
    intent/outcome audit split and that an unmatched intent is a distinct audit state Security must be
    able to query; the window itself is now decided rather than left open:
-   - **Default window: 120 seconds** from the intent entry's `created_at` to a matching `outcome`
-     entry (`outcome.intent_id`). Still unmatched after that is **unresolved intent** — a queryable
-     audit state, not a silently-dropped gap.
-   - Evaluated against the **audit sink's own ingestion time**, not the endpoint's local clock, so
-     sink ingest lag cannot itself manufacture a false unresolved-intent alert.
+   - **Default window: 120 seconds**, measured **entirely in the audit sink's own timestamps, never
+     the endpoint's local clock**: the sink stamps every entry with its own receipt time on ingestion
+     (`intent_ingested_at`, `outcome_ingested_at`) independent of whatever `created_at` the endpoint put
+     in the entry's payload. The window is `outcome_ingested_at − intent_ingested_at ≤ 120s`; an intent
+     with no matching outcome within 120 seconds **of its own ingestion time** is **unresolved intent**
+     — a queryable audit state, not a silently-dropped gap. Using the endpoint's `created_at` instead
+     would let a late-arriving intent (endpoint clock skew, or the intent write itself queued behind
+     other sink traffic) start the clock before the sink ever saw it, manufacturing a false
+     unresolved-intent alert for an intent that was actually ingested on time.
    - **Ownership:** the window is **PAP-/governance-owned, signed release configuration** — not
      Engineer-configurable, not adjustable by an operational permission profile — the same
      no-self-granted-authority rule ADR 0003 §5 puts on Engineer's own policy.
@@ -371,8 +375,15 @@ existing one.
      3. `node` — decision 1's canonical node id
      4. `point` — decision 1's canonical writable-point id
      5. `value_type` — `bool | int | real | enum | string`
-     6. `value` — canonical value (reals encoded as decimal text, not binary float, to avoid
-        signer/verifier round-trip ambiguity)
+     6. `value` — canonical value. `real` is a CBOR text string, never a binary float, in a fixed
+        decimal normal form: optional leading `-`; at least one digit before the point with no leading
+        zero (except a lone `0`); if a fractional part is present, at least one digit after the point
+        with no trailing zeros beyond what the value needs; no exponent notation. `"1"`, `"1.5"`,
+        `"-0.2"` are valid; `"1.0"`, `"01"`, `"1.50"`, `"1e0"` are not. A signer or verifier that
+        receives a value not already in this exact form **rejects it** — it does not normalize on
+        receipt, which would let two different byte strings silently mean the same signed value
+        (deterministic CBOR makes the *bytes* deterministic; it does not by itself define a canonical
+        decimal form for what those bytes represent)
      7. `engineering_unit` — e.g. `"degC"`, `"percent"`, or `null`
      8. `value_profile` — the point's range/clamp/scaling profile id (decision 2), or `null`; named
         distinctly from `permission_profile_id` (field 10) so the envelope never conflates the two
@@ -385,19 +396,27 @@ existing one.
      Unknown or extra fields are rejected in `v1`, not silently ignored — the same
      validate-don't-tolerate-drift discipline decision 1's identifier canonicalization already applies
      to `site`/`node`/`point`.
-   - **Acks and reglercentral health get their own topics, same envelope family, never folded into
-     `cmd`:**
+   - **Acks and reglercentral health get their own sibling topics, same envelope family, never folded
+     into `cmd`, and following decision 1's already-decided namespace shape (sibling top-level
+     namespaces, point-scoped, not nested under `openaut/<site>/<node>/#`):**
      ```
-     openaut/{site}/{node}/cmd
-     openaut/{site}/{node}/ack
-     openaut/{site}/{node}/health
+     cmd/<site>/<node>/<point>       (decision 1 — unchanged by this decision)
+     ack/<site>/<node>/<point>
+     health/<site>/<node>
      ```
-     `ack` is published by the **edge node**, not the mediated endpoint; it references the received
-     command by digest + `seq` and carries a status code and timestamp. `health` is its own message
-     type (`"openaut.mqtt.health.v1"`), not an empty/synthetic command. Separating these keeps `cmd/#`'s
-     publish ACL (decision 1: short-lived, per-request, point-scoped credential only) from ever needing
-     to also permit node-originated writes to the same topic, and keeps Security/Advisor consumption of
-     ack/health from implying any command-publish right.
+     Keeping `<point>` in the `cmd` topic itself — not only inside the signed payload — is what makes
+     decision 1's "point-scoped, not node-wide" publish credential actually enforceable at the broker:
+     the short-lived credential the endpoint requests (decision 1 step 2) is scoped to the literal topic
+     string `cmd/<site>/<node>/<point>`, so the broker's own ACL denies a publish to any other point
+     even before the signed envelope inside it is ever checked — a payload-only `point` field could not
+     do that, since MQTT topic-level ACL has no visibility into a message's body. `ack` is published by
+     the **edge node**, not the mediated endpoint, per point, referencing the received command by digest
+     + `seq` and carrying a status code and timestamp; `health` is node-wide, not per-point (the same
+     granularity as the existing `openaut/<site>/<node>/$status` telemetry LWT), and is its own message
+     type (`"openaut.mqtt.health.v1"`), not an empty/synthetic command. Three separate sibling namespaces
+     — not `cmd`/`ack`/`health` as sub-paths of one shared prefix — for the same reason decision 1 put
+     `cmd` outside `openaut/#` to begin with: it keeps each namespace's ACL a simple, independent
+     allow-rule rather than requiring order-dependent exclusions within a shared prefix.
    - **Key custody and rotation**, building on decision 2's "the endpoint requests signing use
      per-request from the credential/signing proxy, never holds the key standing":
      - the operational signing key is rotated on a **maximum 90-day cadence**, plus immediately on
@@ -416,14 +435,17 @@ existing one.
 **7. Mediated MQTT write endpoint's sandbox enforcement substrate (resolves #28).**
    - **Default: namespaces + LSM** — `netns` + Landlock + seccomp, with systemd-level hardening
      (`ProtectSystem`, `NoNewPrivileges`, capability drops, etc.) where it fits — the same kernel
-     **primitives** ADR 0003 decision 1 already commits Engineer's sandbox to reusing (own policy
-     bundle, not Engineer's, not shared). **This does not resolve ADR 0003's own "Enforcement
-     substrate" Open question for Engineer's sandbox** — that item stays open there; this decision is
-     scoped to the mediated MQTT write endpoint only, and reaches the same default independently,
-     because decision 1 defines the endpoint as a small, deterministic write-mediator — not a shell,
-     not a general agent runtime, not executing untrusted or dynamic code — so a microVM's operational
-     cost (image lifecycle, patching, network bridging, audit/log forwarding, HA) is not bought back by
-     a proportionate security gain for this specific endpoint.
+     **primitives** ADR 0003 decision 1 names for Engineer's own sandbox (own policy bundle, not
+     Engineer's, not shared). **Scope note, not a claim about ADR 0003's status:** this decision covers
+     only the mediated MQTT write endpoint. ADR 0003 decision 1 already names these primitives for
+     Engineer, but ADR 0003's own Open questions section separately still lists "Enforcement substrate:
+     namespaces+LSM vs. microVM" for Engineer's sandbox — an apparent tension inside ADR 0003 itself
+     that this ADR does not attempt to adjudicate or resolve either way. This decision reaches the
+     namespaces+LSM default on its own terms, independent of however that tension in ADR 0003 is
+     eventually settled, because decision 1 above defines the endpoint as a small, deterministic
+     write-mediator — not a shell, not a general agent runtime, not executing untrusted or dynamic code
+     — so a microVM's operational cost (image lifecycle, patching, network bridging, audit/log
+     forwarding, HA) is not bought back by a proportionate security gain for this specific endpoint.
    - **microVM (Firecracker/Kata-class) stays available as an explicit, opt-in, higher-assurance
      deployment profile** — not the default — for an asset owner who requires a stronger isolation
      boundary, or for a future revision of the endpoint that executes more dynamic/untrusted logic than
