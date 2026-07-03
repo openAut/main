@@ -342,12 +342,20 @@ existing one.
    - **Default window: 120 seconds**, measured **entirely in the audit sink's own timestamps, never
      the endpoint's local clock**: the sink stamps every entry with its own receipt time on ingestion
      (`intent_ingested_at`, `outcome_ingested_at`) independent of whatever `created_at` the endpoint put
-     in the entry's payload. The window is `outcome_ingested_at − intent_ingested_at ≤ 120s`; an intent
-     with no matching outcome within 120 seconds **of its own ingestion time** is **unresolved intent**
-     — a queryable audit state, not a silently-dropped gap. Using the endpoint's `created_at` instead
-     would let a late-arriving intent (endpoint clock skew, or the intent write itself queued behind
-     other sink traffic) start the clock before the sink ever saw it, manufacturing a false
-     unresolved-intent alert for an intent that was actually ingested on time.
+     in the entry's payload. The window is **`intent_ingested_at ≤ outcome_ingested_at ≤
+     intent_ingested_at + 120s`** — a closed interval with both bounds, not merely `outcome_ingested_at
+     − intent_ingested_at ≤ 120s`, which a negative difference (an outcome the sink happened to ingest
+     *before* its matching intent — queue reordering, retry, or a correlation error) would satisfy
+     trivially and wrongly count as resolved. An outcome whose `outcome_ingested_at` is earlier than its
+     intent's `intent_ingested_at` is **not** a valid resolution: it is treated as out-of-order/orphaned
+     and does **not** clear the intent's unresolved state on its own — Security surfaces it as a
+     distinct anomaly (a résolution claiming to predate its own request is itself worth flagging) rather
+     than silently accepting it. An intent with no *validly-ordered* matching outcome within the closed
+     interval above is **unresolved intent** — a queryable audit state, not a silently-dropped gap.
+     Using the endpoint's `created_at` instead of `intent_ingested_at` for the lower bound would let a
+     late-arriving intent (endpoint clock skew, or the intent write itself queued behind other sink
+     traffic) start the clock before the sink ever saw it, manufacturing a false unresolved-intent alert
+     for an intent that was actually ingested on time.
    - **Ownership:** the window is **PAP-/governance-owned, signed release configuration** — not
      Engineer-configurable, not adjustable by an operational permission profile — the same
      no-self-granted-authority rule ADR 0003 §5 puts on Engineer's own policy.
@@ -428,7 +436,17 @@ existing one.
      the short-lived credential the endpoint requests (decision 1 step 2) is scoped to the literal topic
      string `cmd/<site>/<node>/<point>`, so the broker's own ACL denies a publish to any other point
      even before the signed envelope inside it is ever checked — a payload-only `point` field could not
-     do that, since MQTT topic-level ACL has no visibility into a message's body. `ack` is published by
+     do that, since MQTT topic-level ACL has no visibility into a message's body. **This makes two
+     independent claims about `site`/`node`/`point` exist side by side — the topic the message arrived
+     on, and fields 2–4 of the verified payload — and a node must not trust either alone: after
+     COSE_Sign1 verification succeeds, the node compares the topic's `site`/`node`/`point` against the
+     payload's `site`/`node`/`point` fields and rejects the message on any mismatch, before acting on it
+     or emitting an `ack`.** Without this check, broker ACL scoping and payload content could
+     legitimately diverge — e.g. a case-scoped credential valid for one point publishing a signed
+     payload naming a different point — and nothing downstream would catch it; the two checks close
+     different gaps (topic ACL stops an unauthorized *publish*, this comparison stops an authorized
+     publish from *claiming* a different target than it was scoped for) and neither substitutes for the
+     other. `ack` is published by
      the **edge node**, not the mediated endpoint, per point, referencing the received command by
      **digest = SHA-256 over the complete COSE_Sign1 byte sequence as published on
      `cmd/<site>/<node>/<point>`** (protected headers, payload, and signature together — the exact bytes
