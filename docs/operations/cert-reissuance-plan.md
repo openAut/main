@@ -60,9 +60,11 @@ operator's laptop).
    both segments individually valid), signed by the existing CA -- no new PKI needed. Issued through
    the case-approved credential channel described above, not a one-off `gen-certs.sh` run by an
    operator and not bundled into a Main code release.
-4. **Overlap window.** Deploy the new cert to the node alongside the old one; both stay valid for a
-   bounded window (a normal maintenance window is enough -- there's no technical reason it needs to be
-   long). During overlap:
+4. **Overlap window.** Deploy the new cert to the node alongside the old one; both stay
+   cryptographically unexpired and installed for a bounded window (a normal maintenance window is
+   enough -- there's no technical reason it needs to be long) -- **but only the new `<site>/<node>` cert
+   is authorized by the post-#29 ACL.** "Overlap" here means the old cert is still present on the node
+   as a fallback during cutover, not that it is still usable for anything. During overlap:
    - **post-#29, the *old* (node-only-CN) cert no longer works for telemetry either** -- `acl.conf`
      keys the publish rule on `${cert_common_name}` for `openaut/#` too now, not just `cmd/#`, so an
      old-format cert is denied both. The node must switch to the new cert to keep publishing telemetry

@@ -49,12 +49,22 @@ leaf() {  # role dir, name, CN, extfile-SAN
   local dir="$1" name="$2" cn="$3" san="$4"
   mkdir -p "$PKI/$dir"
   openssl genrsa -out "$PKI/$dir/$name.key" 2048
-  openssl req -new -key "$PKI/$dir/$name.key" -subj "/O=openAut/CN=$cn" -out "$PKI/$dir/$name.csr"
+  # CSR subject is built via a config file, not `-subj "/O=.../CN=$cn"`. -subj parses '/' as the
+  # RDN delimiter, so a CN containing a literal '/' (the <site>/<node> format ADR 0004 requires)
+  # breaks CSR generation outright -- verified empirically (openssl 3.5.5: "Missing '=' after RDN
+  # type string"), not a theoretical concern. A config file sets CN as one literal value with no
+  # delimiter parsing, so it works the same whether or not the CN contains '/'.
+  local cnf="$PKI/$dir/$name.csr.cnf"
+  {
+    printf '[req]\ndistinguished_name = dn\nprompt = no\nutf8 = yes\n\n[dn]\n'
+    printf 'O = openAut\nCN = %s\n' "$cn"
+  } > "$cnf"
+  openssl req -new -key "$PKI/$dir/$name.key" -config "$cnf" -out "$PKI/$dir/$name.csr"
   printf 'subjectAltName=%s\n' "$san" > "$PKI/$dir/$name.ext"
   openssl x509 -req -in "$PKI/$dir/$name.csr" -CA "$PKI/ca/ca.crt" -CAkey "$PKI/ca/ca.key" \
     -CAcreateserial -days "$DAYS" -sha256 -extfile "$PKI/$dir/$name.ext" -out "$PKI/$dir/$name.crt"
   chmod 600 "$PKI/$dir/$name.key"
-  rm -f "$PKI/$dir/$name.csr" "$PKI/$dir/$name.ext"
+  rm -f "$PKI/$dir/$name.csr" "$PKI/$dir/$name.ext" "$cnf"
   echo "$dir cert -> $PKI/$dir/$name.crt (CN=$cn)"
 }
 
@@ -71,6 +81,13 @@ case "${1:-}" in
     validate_id "$2" site
     validate_id "$3" node
     cn="$2/$3"      # combined <site>/<node> -- what ${cert_common_name} substitutes in acl.conf
+    # Per-segment validation allows up to 63+1+63=127 chars combined, but X.509 commonName is
+    # capped at 64 chars (RFC 5280 ub-common-name) for interoperability -- some CAs/clients
+    # enforce this strictly. Check the combined CN here rather than fail deep inside openssl.
+    if [ "${#cn}" -gt 64 ]; then
+      echo "invalid site/node combination '$cn': combined CN is ${#cn} chars, exceeds the 64-char X.509 commonName limit (RFC 5280)" >&2
+      exit 1
+    fi
     name="$2-$3"    # filename can't contain '/'
     leaf clients "$name" "$cn" "DNS:$name" ;;
   *)

@@ -51,8 +51,12 @@ built-in way to pull `site` and `node` out as two separate fields (that needs En
 SAN-extraction mechanism), so `gen-certs.sh` validates each segment against a canonical-id pattern
 (1–63 lowercase ASCII chars, `.`/`_`/`-` only singly between alnums) and joins them itself — an
 unvalidated segment substituted into an ACL topic pattern is a proven wildcard-injection vector, not a
-theoretical one (see `docs/verification/emqx-mqtt5-cmd-verification.md` in the main repo). Distribute
-the client cert + key to the node via [`edge-iot2050`](../edge-iot2050/SKILL.md).
+theoretical one (see `docs/verification/emqx-mqtt5-cmd-verification.md` in the main repo). The combined
+CN is also checked against the **64-character X.509 `commonName` limit** (RFC 5280) — two 63-character
+segments would otherwise pass per-segment validation but still produce a CN too long for
+interoperable certs; `gen-certs.sh` rejects that combination before calling `openssl` rather than
+failing deep inside CSR generation. Distribute the client cert + key to the node via
+[`edge-iot2050`](../edge-iot2050/SKILL.md).
 
 ## Step 2 — Install EMQX
 
