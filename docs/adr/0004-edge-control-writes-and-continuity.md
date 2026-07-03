@@ -227,10 +227,8 @@ existing one.
      ADR 0003 §5 puts on Engineer applies here too), and **deny-by-default egress to exactly four
      destinations**: Systemdatabas (case-approval checks), the credential/signing proxy, the MQTT
      broker, and the append-only audit sink — no reachability to Advisor, Security, the PAP network,
-     or the public internet, mirroring ADR 0003 §2's shape for Engineer. What's still genuinely open
-     is the **enforcement substrate** for that sandbox (namespaces+LSM vs. microVM) — tracked in Open
-     questions, the same way ADR 0003 §Open-questions left that same choice open for Engineer while
-     still deciding Engineer *would* be sandboxed.
+     or the public internet, mirroring ADR 0003 §2's shape for Engineer. The **enforcement substrate**
+     for that sandbox (namespaces+LSM vs. microVM) is decided in decision 7 below.
 
      **ADR 0003 §2 is amended by this decision**, not silently widened: its three named endpoints are
      now four (see the corresponding edit to `0003-engineer-runtime-containment.md` §2, made alongside
@@ -338,6 +336,200 @@ existing one.
    more mediated endpoint, the same shape as the two that already exist, that a threat model must
    treat as such rather than assume away because "nothing changed".
 
+**5. Unresolved-intent reconciliation window (resolves #26).** Decision 1 established the
+   intent/outcome audit split and that an unmatched intent is a distinct audit state Security must be
+   able to query; the window itself is now decided rather than left open:
+   - **Default window: 120 seconds**, measured **entirely in the audit sink's own timestamps, never
+     the endpoint's local clock**: the sink stamps every entry with its own receipt time on ingestion
+     (`intent_ingested_at`, `outcome_ingested_at`) independent of whatever `created_at` the endpoint put
+     in the entry's payload. The window is **`intent_ingested_at ≤ outcome_ingested_at ≤
+     intent_ingested_at + 120s`** — a closed interval with both bounds, not merely `outcome_ingested_at
+     − intent_ingested_at ≤ 120s`, which a negative difference (an outcome the sink happened to ingest
+     *before* its matching intent — queue reordering, retry, or a correlation error) would satisfy
+     trivially and wrongly count as resolved. An outcome whose `outcome_ingested_at` is earlier than its
+     intent's `intent_ingested_at` is **not** a valid resolution: it is treated as out-of-order/orphaned
+     and does **not** clear the intent's unresolved state on its own — Security surfaces it as a
+     distinct anomaly (a résolution claiming to predate its own request is itself worth flagging) rather
+     than silently accepting it. An intent with no *validly-ordered* matching outcome within the closed
+     interval above is **unresolved intent** — a queryable audit state, not a silently-dropped gap.
+     Using the endpoint's `created_at` instead of `intent_ingested_at` for the lower bound would let a
+     late-arriving intent (endpoint clock skew, or the intent write itself queued behind other sink
+     traffic) start the clock before the sink ever saw it, manufacturing a false unresolved-intent alert
+     for an intent that was actually ingested on time.
+   - **Ownership:** the window is **PAP-/governance-owned, signed release configuration** — not
+     Engineer-configurable, not adjustable by an operational permission profile — the same
+     no-self-granted-authority rule ADR 0003 §5 puts on Engineer's own policy.
+   - **Detection:** Security-domain polling of the audit sink, interval **30 seconds**, for intents
+     older than the window with no matching outcome. Polling is the decided *first* implementation;
+     native sink-side alerting may replace it later without changing the semantics above.
+   - **Escalation:** unresolved past the base window raises a Security alert; unresolved past **5
+     minutes** raises its severity, since the write may already have happened with no verifiable
+     outcome.
+   - An alert carries at minimum: `intent_id`, `case_id`, permission-profile id, `site`/`node`/`point`,
+     requested value, actor identity, **`intent_ingested_at` (the sink-stamped time the window is
+     actually measured from), the computed deadline (`intent_ingested_at + 120s`), the current sink
+     time at alert generation, and `outcome_ingested_at` if a late outcome does eventually arrive** —
+     and, separately and clearly labeled as informative only, the endpoint-reported `created_at`. Since
+     the window's semantics are defined entirely by sink-ingestion time (above), an alert that surfaced
+     only `created_at` would push Security toward debugging against the wrong clock; `created_at` is
+     useful context (e.g. for spotting endpoint clock skew) but never the field the 120 s/30 s/5 min
+     numbers in this decision are computed from.
+   - This decides the number, its ownership, detection cadence, and escalation shape. It does not
+     itself build the Security-side poller — that is implementation work, the same status as the
+     endpoint build in decision 1.
+
+**6. Canonical command envelope encoding, ack/health topics, key rotation (resolves #27).**
+   - **Wire format: COSE_Sign1 over deterministic CBOR** (RFC 8949) — not a bespoke delimited or JSON
+     format. This avoids delimiter/escaping ambiguity, gives a stable canonical byte representation to
+     sign, and stays compact for MQTT/edge transport. Signature algorithm: **Ed25519/EdDSA**, alg label
+     in the **COSE protected header** (`alg: EdDSA`), and `kid` (key id, the key-set-version this ack
+     will later reference — key custody below) is likewise **always in the protected header, never
+     unprotected** — the protected header is covered by the signature itself, so a verifier can trust
+     which key is claimed without that claim being forgeable independent of the signature. A verifier
+     rejects any COSE_Sign1 message carrying unprotected headers at all in `v1`: an unprotected header
+     is, by COSE's own design, not integrity-protected, and this envelope has no legitimate use for
+     one.
+   - **Payload: a fixed-length, explicitly versioned CBOR array**, domain-separated by a literal type
+     tag as element 0 so a future `v2` is a distinct format, never a silent reinterpretation of `v1`:
+     1. `"openaut.mqtt.cmd.v1"` — message type / domain separator
+     2. `site` — decision 1's canonical site id
+     3. `node` — decision 1's canonical node id
+     4. `point` — decision 1's canonical writable-point id
+     5. `value_type` — `bool | int | real | enum | string`
+     6. `value` — canonical value. `real` is a CBOR text string, never a binary float, in a fixed
+        decimal normal form: optional leading `-`; at least one digit before the point with no leading
+        zero (except a lone `0`); if a fractional part is present, at least one digit after the point
+        with no trailing zeros beyond what the value needs; no exponent notation; **zero is `"0"` only —
+        `"-0"` and any negative-zero variant (`"-0.0"`, `"-0.00"`, etc.) are invalid**, since allowing
+        both would let two different byte strings signify the identical numeric value, exactly what
+        this normal form exists to prevent. `"1"`, `"1.5"`, `"-0.2"`, `"0"` are valid; `"1.0"`, `"01"`,
+        `"1.50"`, `"1e0"`, `"-0"` are not. A signer or verifier that
+        receives a value not already in this exact form **rejects it** — it does not normalize on
+        receipt, which would let two different byte strings silently mean the same signed value
+        (deterministic CBOR makes the *bytes* deterministic; it does not by itself define a canonical
+        decimal form for what those bytes represent). A verifier checks the field is **valid UTF-8
+        first**, before applying the decimal-normal-form check above — a malformed byte sequence must
+        fail cleanly at the encoding check, not reach pattern-matching against invalid input
+     7. `engineering_unit` — e.g. `"degC"`, `"percent"`, or `null`
+     8. `value_profile` — the point's range/clamp/scaling profile id (decision 2), or `null`; named
+        distinctly from `permission_profile_id` (field 10) so the envelope never conflates the two
+        profile concepts this ADR and `CONTEXT.md` already keep separate
+     9. `case_id` — the approved Systemdatabas case (decision 1 step 1)
+     10. `permission_profile_id` — the PAP-authored profile the case was approved under
+     11. `seq` — monotonic per `(site, node)`, decision 2's anti-replay counter
+     12. `ts_ms` — Unix epoch milliseconds, decision 2's freshness field
+
+     Unknown or extra fields are rejected in `v1`, not silently ignored — the same
+     validate-don't-tolerate-drift discipline decision 1's identifier canonicalization already applies
+     to `site`/`node`/`point`.
+   - **Acks and reglercentral health get their own sibling topics, same envelope family, never folded
+     into `cmd`, and following decision 1's already-decided namespace shape (sibling top-level
+     namespaces, not nested under `openaut/<site>/<node>/#`; `cmd` and `ack` are point-scoped, `health`
+     is node-scoped — see below):**
+     ```
+     cmd/<site>/<node>/<point>       (decision 1 — unchanged by this decision)
+     ack/<site>/<node>/<point>
+     health/<site>/<node>
+     ```
+     Keeping `<point>` in the `cmd` topic itself — not only inside the signed payload — is what makes
+     decision 1's "point-scoped, not node-wide" publish credential actually enforceable at the broker:
+     the short-lived credential the endpoint requests (decision 1 step 2) is scoped to the literal topic
+     string `cmd/<site>/<node>/<point>`, so the broker's own ACL denies a publish to any other point
+     even before the signed envelope inside it is ever checked — a payload-only `point` field could not
+     do that, since MQTT topic-level ACL has no visibility into a message's body. **This makes two
+     independent claims about `site`/`node`/`point` exist side by side — the topic the message arrived
+     on, and fields 2–4 of the verified payload — and a node must not trust either alone: after
+     COSE_Sign1 verification succeeds, the node compares the topic's `site`/`node`/`point` against the
+     payload's `site`/`node`/`point` fields and rejects the message on any mismatch, before acting on it
+     or emitting an `ack`.** Without this check, broker ACL scoping and payload content could
+     legitimately diverge — e.g. a case-scoped credential valid for one point publishing a signed
+     payload naming a different point — and nothing downstream would catch it; the two checks close
+     different gaps (topic ACL stops an unauthorized *publish*, this comparison stops an authorized
+     publish from *claiming* a different target than it was scoped for) and neither substitutes for the
+     other. `ack` is published by
+     the **edge node**, not the mediated endpoint, per point, referencing the received command by
+     **digest = SHA-256 over the complete COSE_Sign1 byte sequence as published on
+     `cmd/<site>/<node>/<point>`** (protected headers, payload, and signature together — the exact bytes
+     the node received and verified, not a re-serialization of it, which could differ byte-for-byte from
+     the original even if semantically equivalent) plus `seq`, a status code, and a timestamp; the ack
+     **always** carries the `kid` (key id) the node matched — not only when a rotation happened, since
+     the node has no reliable way to know whether Security considers a rotation "recent enough" to
+     matter, and an always-present `kid` is what actually lets Security correlate accepted commands to
+     key versions during the active/previous-key overlap window (key custody below) without depending on
+     the node's own judgment call. `health` is node-wide, not per-point (the same granularity as the
+     existing `openaut/<site>/<node>/$status` telemetry LWT), and is its own message type
+     (`"openaut.mqtt.health.v1"`), not an empty/synthetic command. Three separate sibling namespaces
+     — not `cmd`/`ack`/`health` as sub-paths of one shared prefix — for the same reason decision 1 put
+     `cmd` outside `openaut/#` to begin with: it keeps each namespace's ACL a simple, independent
+     allow-rule rather than requiring order-dependent exclusions within a shared prefix.
+   - **`ack`/`health` are authenticated and authorized at the broker, not left implicit.** Without
+     this, a compromised or misconfigured client could publish forged acks and mask a failed or
+     unconfirmed write, or spoof health for a node it isn't. Broker ACL binds publish on both to the
+     node's own cert-derived identity — `{allow, all, publish, ["ack/${cert_common_name}/#"]}` and
+     `{allow, all, publish, ["health/${cert_common_name}"]}` — the same `${cert_common_name}` mechanism
+     decision 1 already uses for `cmd/#` subscribe and the `mqtt-tls-broker` telemetry fix uses for
+     `openaut/#` publish, never a node-supplied ClientID: only the node whose certificate carries a
+     given `<site>/<node>` CN can publish an ack or health message claiming that identity. This closes
+     the forgery concern at the transport layer, the same guarantee telemetry already has. **Left open,
+     not claimed decided here:** whether `ack`/`health` additionally need their own
+     application-layer-signed envelope (distinct from `cmd`'s, since `cmd` is signed by the mediated
+     endpoint via the credential/signing proxy, while `ack`/`health` would need to be signed by the
+     *node* — a different signer with its own key-custody question this ADR has not addressed). Broker
+     ACL identity binding is a real, sufficient answer to the forgery scenario above by itself; a second,
+     content-level signature would raise its own key-management question this decision does not resolve
+     and should not be assumed away.
+   - **Key custody and rotation**, building on decision 2's "the endpoint requests signing use
+     per-request from the credential/signing proxy, never holds the key standing" — **two distinct
+     paths, not one rotation policy covering both:**
+     - **Routine rotation** (non-compromised key, planned): **maximum 90-day cadence**. A verifier
+       accepts the **active key and the immediately-previous key** for a short overlap (target: 14
+       days, or until no in-flight command references the old key, whichever is shorter) — never an
+       unbounded multi-key trust set. This overlap exists purely to drain in-flight commands signed
+       moments before rotation; it is not a general-purpose grace period.
+     - **Emergency revocation** (suspected compromise, change of controlling contractor, or contract
+       end): the old key is **removed from the verifier's trust set immediately** — no 14-day overlap,
+       no "immediately-previous key" exception. A revocation is a **separate, signed key-set-version
+       artifact** (riding the same signed-artifact pipeline as the trust anchor itself), not merely
+       "rotate early" — rotating early without an explicit revocation would silently fall back into the
+       routine-rotation overlap rule above and keep honoring the compromised key for up to 14 more
+       days, which is exactly the gap this split closes. Any command already in flight, signed with the
+       revoked key, that a node has not yet verified is rejected once the node picks up the new
+       key-set — this is a deliberate fail-closed tradeoff (a legitimate in-flight command can be
+       resubmitted; a compromised one cannot be un-published).
+     - Both paths are **PAP-/governance-owned, signed release configuration** — the same non-self-grant
+       rule as decision 5's window; neither Engineer nor the mediated endpoint can trigger, delay, or
+       widen either path.
+     - the **trust anchor** (public key / key-set) rides the same signed-artifact pipeline as code
+       deploys (ADR 0001); the **private operational key** never leaves the credential/signing proxy,
+       consistent with decision 2's "Engineer never has access to the raw signing key."
+   - This decides the encoding, field list, topic split, and rotation policy. It does not itself
+     produce interoperable encoder/decoder implementations or a rotation runbook — implementation and
+     operations work, tracked the same way decision 1's endpoint build is.
+
+**7. Mediated MQTT write endpoint's sandbox enforcement substrate (resolves #28).**
+   - **Default: namespaces + LSM** — `netns` + Landlock + seccomp, with systemd-level hardening
+     (`ProtectSystem`, `NoNewPrivileges`, capability drops, etc.) where it fits. **This decision covers
+     only the mediated MQTT write endpoint** — it does not restate, revise, or otherwise make any claim
+     about Engineer's own sandbox substrate, which is ADR 0003's decision to own. The endpoint reaches
+     this default because decision 1 above defines it as a small, deterministic write-mediator — not a
+     shell, not a general agent runtime, not executing untrusted or dynamic code — so a microVM's
+     operational cost (image lifecycle, patching, network bridging, audit/log forwarding, HA) is not
+     bought back by a proportionate security gain for this specific endpoint.
+   - **microVM (Firecracker/Kata-class) stays available as an explicit, opt-in, higher-assurance
+     deployment profile** — not the default — for an asset owner who requires a stronger isolation
+     boundary, or for a future revision of the endpoint that executes more dynamic/untrusted logic than
+     today's fixed validate → request-credential → publish sequence. A microVM profile must still honor
+     decision 1's exact four-destination egress allowlist and owner-/PAP-governed lifecycle; substrate
+     choice does not loosen either.
+   - **Regardless of substrate**, per-write authorization stays **online and short-lived, not a
+     long-lived cache**: each write checks a fresh Systemdatabas case-approval, or a short-lived signed
+     decision token, before decision 1 step 2. If a cache is ever introduced for availability, it must
+     be case-scoped, bounded in **minutes, not hours**, revocation-aware where feasible, and
+     **fail-closed** for any write attempted once the cached authorization is stale.
+   - This decides the substrate default and the online-authorization discipline, not an implementation
+     — building/hardening the chosen sandbox profile is tracked the same way the endpoint's build is
+     (decision 1 Consequences).
+
 ## Consequences
 
 - `edge-iot2050` needs a new writable-point mode: subscribe to its own `cmd/<site>/<node>/#` prefix,
@@ -365,12 +557,23 @@ existing one.
   capability living outside CONTEXT.md's three-trust-domain model. Its minimum containment shape
   (dedicated sandbox/service account, owner-/PAP-governed lifecycle, deny-by-default egress to exactly
   Systemdatabas + credential proxy + broker + audit sink, full audit of denied/failed attempts too)
-  is decided by decision 1; only the enforcement substrate is separate work, tracked in Open questions.
+  is decided by decision 1; the enforcement substrate is decided in decision 7.
 - This ADR does not invent the interlock mechanism itself — that stays a per-equipment engineering
   task — it only establishes that HLV *requires* one wherever the held value could be unsafe.
 - Decision 1's case-gate is now confirmed (same gate as `deploy`); implementation must not ship the
   ACL change until the mediator's case-check is actually wired end to end, or it would create an
   ungated write path despite the gate being decided on paper.
+- The **audit sink and Security tooling** need a query for "intent older than 120 s with no matching
+  outcome" (decision 5) — a new Security-side capability, not a change to Engineer or the endpoint.
+- The command envelope needs an actual **COSE_Sign1/deterministic-CBOR encoder and decoder** on both
+  the mediated endpoint (signer) and `edge-iot2050` (verifier), plus the `ack`/`health` message types
+  and topics (decision 6) — none of this exists today; the decision fixes the format, not the code.
+- The credential/signing proxy needs an operational **90-day key-rotation runbook** with the
+  active/previous-key overlap behaviour decision 6 specifies, plus the ability to revoke/replace a
+  compromised key out of cadence.
+- The mediated MQTT write endpoint's deployment manifest needs the **namespaces+LSM sandbox profile**
+  (decision 7) as its default build target; a microVM profile is optional follow-on work, not required
+  before first rollout.
 
 ## Alternatives considered
 
@@ -418,16 +621,14 @@ Each item below is decided *that* it must happen and, where applicable, its shap
 none are blocking for this ADR's Proposed status. Tracked as separate issues rather than left as
 open-ended prose, so each gets its own owner and can close independently of this document:
 
-- **Exact canonical field encoding** for the signed command envelope, key-rotation cadence, and
-  whether acks/reglercentral health status need a topic distinct from `cmd` — *who* signs and the
-  trust-anchor pipeline are decided in decision 2. Tracked as issue #27.
-- **The "unresolved intent" audit reconciliation window** — decision 1 decides the intent/outcome
-  audit split and that Security must be able to query unmatched intents; the exact bounded window
-  before an unmatched intent is surfaced is left open. Tracked as issue #26.
-- **The mediated MQTT write endpoint's enforcement substrate** — namespaces+LSM vs. a microVM, the
-  same choice ADR 0003's Open questions left open for Engineer; the containment *shape* itself
-  (sandbox, egress allowlist, audited denials) is decided in decision 1, not open. Tracked as
-  issue #28.
+- ~~**Exact canonical field encoding** for the signed command envelope, key-rotation cadence, and
+  whether acks/reglercentral health status need a topic distinct from `cmd`.~~ **Resolved by decision
+  6 above.** Was tracked as issue #27.
+- ~~**The "unresolved intent" audit reconciliation window.**~~ **Resolved by decision 5 above** (120 s
+  default, PAP-owned, 30 s Security polling, 5 min escalation). Was tracked as issue #26.
+- ~~**The mediated MQTT write endpoint's enforcement substrate.**~~ **Resolved by decision 7 above**
+  (namespaces+LSM default, microVM opt-in), scoped to this endpoint only — Engineer's own sandbox
+  substrate is ADR 0003's decision to own, not restated or revised here. Was tracked as issue #28.
 - **Site-claim field, EMQX directive, and MQTT5/broker max-expiry: verified** against a live EMQX
   5.8.9 Community Edition instance
   ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md))
