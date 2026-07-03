@@ -131,13 +131,15 @@ Production also swaps `NEMOTRON_HOST` from the GX10 (Nemotron 3 Super, Bertil/te
 development environment, and only a signed, reviewed release crosses the air gap in (ADR 0001).
 
 > **Hard rule, not a lab shortcut:** Advisor and Engineer must never share a host, sandbox instance, or
-> sandbox policy bundle (ADR 0003, "alternatives considered" — rejected precisely because it collapses
-> this separation). "Policy bundle" here means the Landlock/seccomp/netns sandbox confinement, distinct
-> from the PAP-signed *permission profile* that scopes Engineer's case-driven authority (ADR 0001 §9).
-> A lab/rehearsal setup (see [`docs/LAB.md`](LAB.md)) can colocate the data backbone — EMQX,
-> TimescaleDB, and the Systemdatabas schema on one box, as `config.env.example` already does — but
-> Advisor, Engineer, and Security stay on separate hosts even at lab scale; that separation is the
-> control, not an optimization to relax under resource pressure.
+> sandbox policy bundle (ADR 0003, "alternatives considered" — rejects exactly this co-residency).
+> "Policy bundle" here means the Landlock/seccomp/netns sandbox confinement, distinct from the
+> PAP-signed *permission profile* that scopes Engineer's case-driven authority (ADR 0001 §9). Security
+> is a separate instance for the same reason — its whole job is auditing the other two without being
+> silenceable by them (see this doc's own opening summary and Trust boundary 6, above) — so all three
+> stay on separate hosts even at lab scale. A lab/rehearsal setup (see [`docs/LAB.md`](LAB.md)) can
+> still colocate the *data backbone* — EMQX, TimescaleDB, and the Systemdatabas schema on one box, as
+> `config.env.example` already does; that colocation is a cost optimization, the Advisor/Engineer/
+> Security split is not.
 
 ## What this pack provisions
 
