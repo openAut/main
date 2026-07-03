@@ -358,8 +358,14 @@ existing one.
      minutes** raises its severity, since the write may already have happened with no verifiable
      outcome.
    - An alert carries at minimum: `intent_id`, `case_id`, permission-profile id, `site`/`node`/`point`,
-     requested value, actor identity, `created_at`, and the last logged sub-step if any — enough for
-     Security to act without re-deriving state from raw sink records.
+     requested value, actor identity, **`intent_ingested_at` (the sink-stamped time the window is
+     actually measured from), the computed deadline (`intent_ingested_at + 120s`), the current sink
+     time at alert generation, and `outcome_ingested_at` if a late outcome does eventually arrive** —
+     and, separately and clearly labeled as informative only, the endpoint-reported `created_at`. Since
+     the window's semantics are defined entirely by sink-ingestion time (above), an alert that surfaced
+     only `created_at` would push Security toward debugging against the wrong clock; `created_at` is
+     useful context (e.g. for spotting endpoint clock skew) but never the field the 120 s/30 s/5 min
+     numbers in this decision are computed from.
    - This decides the number, its ownership, detection cadence, and escalation shape. It does not
      itself build the Security-side poller — that is implementation work, the same status as the
      endpoint build in decision 1.
@@ -398,7 +404,8 @@ existing one.
      to `site`/`node`/`point`.
    - **Acks and reglercentral health get their own sibling topics, same envelope family, never folded
      into `cmd`, and following decision 1's already-decided namespace shape (sibling top-level
-     namespaces, point-scoped, not nested under `openaut/<site>/<node>/#`):**
+     namespaces, not nested under `openaut/<site>/<node>/#`; `cmd` and `ack` are point-scoped, `health`
+     is node-scoped — see below):**
      ```
      cmd/<site>/<node>/<point>       (decision 1 — unchanged by this decision)
      ack/<site>/<node>/<point>
@@ -410,21 +417,40 @@ existing one.
      string `cmd/<site>/<node>/<point>`, so the broker's own ACL denies a publish to any other point
      even before the signed envelope inside it is ever checked — a payload-only `point` field could not
      do that, since MQTT topic-level ACL has no visibility into a message's body. `ack` is published by
-     the **edge node**, not the mediated endpoint, per point, referencing the received command by digest
-     + `seq` and carrying a status code and timestamp; `health` is node-wide, not per-point (the same
-     granularity as the existing `openaut/<site>/<node>/$status` telemetry LWT), and is its own message
-     type (`"openaut.mqtt.health.v1"`), not an empty/synthetic command. Three separate sibling namespaces
+     the **edge node**, not the mediated endpoint, per point, referencing the received command by
+     **digest = SHA-256 over the complete COSE_Sign1 byte sequence as published on
+     `cmd/<site>/<node>/<point>`** (protected headers, payload, and signature together — the exact bytes
+     the node received and verified, not a re-serialization of it, which could differ byte-for-byte from
+     the original even if semantically equivalent) plus `seq`, a status code, and a timestamp; if the
+     signing key was rotated (see key custody below), the ack also carries the `kid` (key id) the
+     verifying node matched, so Security can tell which key version accepted a given command. `health`
+     is node-wide, not per-point (the same granularity as the existing `openaut/<site>/<node>/$status`
+     telemetry LWT), and is its own message type (`"openaut.mqtt.health.v1"`), not an empty/synthetic
+     command. Three separate sibling namespaces
      — not `cmd`/`ack`/`health` as sub-paths of one shared prefix — for the same reason decision 1 put
      `cmd` outside `openaut/#` to begin with: it keeps each namespace's ACL a simple, independent
      allow-rule rather than requiring order-dependent exclusions within a shared prefix.
    - **Key custody and rotation**, building on decision 2's "the endpoint requests signing use
-     per-request from the credential/signing proxy, never holds the key standing":
-     - the operational signing key is rotated on a **maximum 90-day cadence**, plus immediately on
-       suspected compromise, change of controlling contractor, or contract end — a release-cycle
-       policy value, PAP-/governance-owned, the same non-self-grant rule as decision 5's window;
-     - a verifier accepts the **active key and the immediately-previous key** for a short overlap
-       (target: 14 days, or until no in-flight command references the old key, whichever is shorter) —
-       never an unbounded multi-key trust set;
+     per-request from the credential/signing proxy, never holds the key standing" — **two distinct
+     paths, not one rotation policy covering both:**
+     - **Routine rotation** (non-compromised key, planned): **maximum 90-day cadence**. A verifier
+       accepts the **active key and the immediately-previous key** for a short overlap (target: 14
+       days, or until no in-flight command references the old key, whichever is shorter) — never an
+       unbounded multi-key trust set. This overlap exists purely to drain in-flight commands signed
+       moments before rotation; it is not a general-purpose grace period.
+     - **Emergency revocation** (suspected compromise, change of controlling contractor, or contract
+       end): the old key is **removed from the verifier's trust set immediately** — no 14-day overlap,
+       no "immediately-previous key" exception. A revocation is a **separate, signed key-set-version
+       artifact** (riding the same signed-artifact pipeline as the trust anchor itself), not merely
+       "rotate early" — rotating early without an explicit revocation would silently fall back into the
+       routine-rotation overlap rule above and keep honoring the compromised key for up to 14 more
+       days, which is exactly the gap this split closes. Any command already in flight, signed with the
+       revoked key, that a node has not yet verified is rejected once the node picks up the new
+       key-set — this is a deliberate fail-closed tradeoff (a legitimate in-flight command can be
+       resubmitted; a compromised one cannot be un-published).
+     - Both paths are **PAP-/governance-owned, signed release configuration** — the same non-self-grant
+       rule as decision 5's window; neither Engineer nor the mediated endpoint can trigger, delay, or
+       widen either path.
      - the **trust anchor** (public key / key-set) rides the same signed-artifact pipeline as code
        deploys (ADR 0001); the **private operational key** never leaves the credential/signing proxy,
        consistent with decision 2's "Engineer never has access to the raw signing key."
