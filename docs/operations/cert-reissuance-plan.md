@@ -6,14 +6,19 @@ isn't designed ad hoc under time pressure later.
 
 ## Scope: which certs need reissuing
 
-[`skills/mqtt-tls-broker`](../../skills/mqtt-tls-broker/SKILL.md)'s documented convention (as of this
-writing) issues client certs with **CN = node id only** (e.g. `CN=iot2050-ahu-01`), no site segment.
-[ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 1, verified against a live
-broker ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)), requires CN to be the combined,
-structurally-validated `<site>/<node>` identifier before a node can be granted `cmd/#`. Any cert
-issued under the old convention -- which is every cert issued by `gen-certs.sh` today -- needs
-reissuing before its node can receive setpoint writes. Telemetry (`openaut/#` publish) is unaffected;
-that's the separate, lower-severity, already-tracked gap in issue #29.
+**Superseded by issue #29's fix, noted here rather than silently left stale:** this plan originally
+assumed `skills/mqtt-tls-broker`'s client certs carried **CN = node id only** (e.g.
+`CN=iot2050-ahu-01`), no site segment, and that telemetry (`openaut/#` publish) would be unaffected by
+a cert-format migration driven only by `cmd/#` rollout. Issue #29 changed that: `gen-certs.sh` and
+`assets/acl.conf` now both require and key on the combined `<site>/<node>` CN
+*for telemetry as well as `cmd/#`* — there is no longer a lower-severity telemetry path that tolerates
+the old node-only CN format. [ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 1,
+verified against a live broker
+([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)),
+requires the same structurally-validated `<site>/<node>` CN either way. Any cert issued under the old,
+node-only convention needs reissuing for **both** telemetry and `cmd/#` — not just to gain `cmd/#`
+access as originally scoped here. Since openAut has no deployed fleet yet, this affects rollout
+planning, not a live migration.
 
 ## Principle: owner-governed credential issuance, separate from the code-release pipeline
 
@@ -55,10 +60,31 @@ operator's laptop).
    both segments individually valid), signed by the existing CA -- no new PKI needed. Issued through
    the case-approved credential channel described above, not a one-off `gen-certs.sh` run by an
    operator and not bundled into a Main code release.
-4. **Overlap window.** Deploy the new cert to the node alongside the old one; both stay valid for a
-   bounded window (a normal maintenance window is enough -- there's no technical reason it needs to be
-   long). During overlap:
-   - the *old* cert can still be used for telemetry, same as today -- unaffected, tracked separately in issue #29;
+4. **Overlap window.** Deploy the new cert to the node alongside the old one; both stay
+   cryptographically unexpired and installed for a bounded window (a normal maintenance window is
+   enough -- there's no technical reason it needs to be long). During overlap:
+   - **Precision, not just intent: what the post-#29 ACL alone guarantees vs. what requires
+     revocation.** `${cert_common_name}` is substituted *literally* into the topic pattern -- the ACL
+     has no way to structurally verify a CN is a real, canonical `<site>/<node>` pair (that check only
+     ever happens at cert-issuance time, per ADR 0004 decision 1 precondition 3 -- this is the same
+     limitation the wildcard-injection finding in
+     [`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)
+     already established for `cmd/#`). A still-valid old-format cert (e.g. `CN=iot2050-ahu-01`, no
+     `/`) is **not silently denied everything** by the new ACL rule: it can still publish to
+     `openaut/iot2050-ahu-01/#` -- a topic under the node id read as if it were a site name, not the
+     canonical `openaut/<real-site>/<real-node>/#` telemetry path any consumer actually expects, and
+     not `cmd/#` (which decision 1's structural CN check does correctly exclude on its own). "The old
+     cert loses telemetry" is therefore only fully true **once the old cert is revoked** -- until
+     revocation (step 6), it retains a live, TLS-authenticated connection that can still publish
+     *something*, just not to the topic path anything downstream is reading. Plan text and any future
+     tooling must not claim the ACL alone achieves a hard cutover;
+   - **Consequence for a staged, node-by-node rollout (this plan's actual shape):** while other nodes
+     are still mid-migration, their still-valid old-format certs are exactly in this state -- live,
+     but publishing under a topic no consumer subscribes to. That is an acceptable transitional gap
+     (no consumer reads it, so no telemetry is misattributed), but it is a gap, not a guarantee, and it
+     depends on no real site ever being named identically to some node's bare id -- worth a naming-
+     convention note for whoever runs Systemdatabas onboarding, not a new ACL rule (the ACL cannot fix
+     this itself, per the paragraph above);
    - the *old* cert never gets `cmd/#` access, under any circumstances -- this isn't a special-case
      rule to remember, it falls out automatically: `cmd/#` is only ever granted to a cert whose CN
      already passes the two-segment structural check (ADR 0004 decision 1, precondition 3), and an
@@ -78,14 +104,15 @@ operator's laptop).
 
 ## Failure mode
 
-If a node's new-cert deployment fails, it falls back to its old cert for telemetry only -- it never
-had `cmd/#` to lose, so there's no operational cliff. It just stays in "pending migration" until the
-deployment issue is fixed and retried.
+If a node's new-cert deployment fails, it falls back to its still-valid old cert -- which, per step 4's
+precision note above, still holds a live broker connection but cannot publish to the canonical
+`openaut/<site>/<node>/#` telemetry path or `cmd/#` (it never had `cmd/#` to lose). There is no
+operational cliff -- no consumer stops receiving data it was actually reading -- but the node's own
+telemetry does go dark from the consumer's point of view, the same as any node stuck pre-migration. It
+just stays in "pending migration" until the deployment issue is fixed and retried.
 
 ## Out of scope here
 
 - The interlock mechanism (tracked in issue #13).
-- The telemetry-side ACL gap itself (tracked in issue #29) -- this plan only confirms old-format certs
-  stay confined to it during overlap, it doesn't fix the gap.
 - Building the actual inventory/issuance tooling -- this is the procedure; scripting it is separate
   follow-on work once there's a real fleet to run it against.
