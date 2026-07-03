@@ -62,15 +62,29 @@ operator's laptop).
    operator and not bundled into a Main code release.
 4. **Overlap window.** Deploy the new cert to the node alongside the old one; both stay
    cryptographically unexpired and installed for a bounded window (a normal maintenance window is
-   enough -- there's no technical reason it needs to be long) -- **but only the new `<site>/<node>` cert
-   is authorized by the post-#29 ACL.** "Overlap" here means the old cert is still present on the node
-   as a fallback during cutover, not that it is still usable for anything. During overlap:
-   - **post-#29, the *old* (node-only-CN) cert no longer works for telemetry either** -- `acl.conf`
-     keys the publish rule on `${cert_common_name}` for `openaut/#` too now, not just `cmd/#`, so an
-     old-format cert is denied both. The node must switch to the new cert to keep publishing telemetry
-     at all; there is no longer a grace period where the old cert quietly keeps working. Plan the
-     overlap window (and the order nodes are migrated in) with that in mind -- a node stuck on its old
-     cert during overlap goes telemetry-dark, it doesn't just miss out on `cmd/#`;
+   enough -- there's no technical reason it needs to be long). During overlap:
+   - **Precision, not just intent: what the post-#29 ACL alone guarantees vs. what requires
+     revocation.** `${cert_common_name}` is substituted *literally* into the topic pattern -- the ACL
+     has no way to structurally verify a CN is a real, canonical `<site>/<node>` pair (that check only
+     ever happens at cert-issuance time, per ADR 0004 decision 1 precondition 3 -- this is the same
+     limitation the wildcard-injection finding in
+     [`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md)
+     already established for `cmd/#`). A still-valid old-format cert (e.g. `CN=iot2050-ahu-01`, no
+     `/`) is **not silently denied everything** by the new ACL rule: it can still publish to
+     `openaut/iot2050-ahu-01/#` -- a topic under the node id read as if it were a site name, not the
+     canonical `openaut/<real-site>/<real-node>/#` telemetry path any consumer actually expects, and
+     not `cmd/#` (which decision 1's structural CN check does correctly exclude on its own). "The old
+     cert loses telemetry" is therefore only fully true **once the old cert is revoked** -- until
+     revocation (step 6), it retains a live, TLS-authenticated connection that can still publish
+     *something*, just not to the topic path anything downstream is reading. Plan text and any future
+     tooling must not claim the ACL alone achieves a hard cutover;
+   - **Consequence for a staged, node-by-node rollout (this plan's actual shape):** while other nodes
+     are still mid-migration, their still-valid old-format certs are exactly in this state -- live,
+     but publishing under a topic no consumer subscribes to. That is an acceptable transitional gap
+     (no consumer reads it, so no telemetry is misattributed), but it is a gap, not a guarantee, and it
+     depends on no real site ever being named identically to some node's bare id -- worth a naming-
+     convention note for whoever runs Systemdatabas onboarding, not a new ACL rule (the ACL cannot fix
+     this itself, per the paragraph above);
    - the *old* cert never gets `cmd/#` access, under any circumstances -- this isn't a special-case
      rule to remember, it falls out automatically: `cmd/#` is only ever granted to a cert whose CN
      already passes the two-segment structural check (ADR 0004 decision 1, precondition 3), and an
@@ -90,9 +104,12 @@ operator's laptop).
 
 ## Failure mode
 
-If a node's new-cert deployment fails, it falls back to its old cert for telemetry only -- it never
-had `cmd/#` to lose, so there's no operational cliff. It just stays in "pending migration" until the
-deployment issue is fixed and retried.
+If a node's new-cert deployment fails, it falls back to its still-valid old cert -- which, per step 4's
+precision note above, still holds a live broker connection but cannot publish to the canonical
+`openaut/<site>/<node>/#` telemetry path or `cmd/#` (it never had `cmd/#` to lose). There is no
+operational cliff -- no consumer stops receiving data it was actually reading -- but the node's own
+telemetry does go dark from the consumer's point of view, the same as any node stuck pre-migration. It
+just stays in "pending migration" until the deployment issue is fixed and retried.
 
 ## Out of scope here
 
