@@ -389,7 +389,9 @@ existing one.
         receives a value not already in this exact form **rejects it** — it does not normalize on
         receipt, which would let two different byte strings silently mean the same signed value
         (deterministic CBOR makes the *bytes* deterministic; it does not by itself define a canonical
-        decimal form for what those bytes represent)
+        decimal form for what those bytes represent). A verifier checks the field is **valid UTF-8
+        first**, before applying the decimal-normal-form check above — a malformed byte sequence must
+        fail cleanly at the encoding check, not reach pattern-matching against invalid input
      7. `engineering_unit` — e.g. `"degC"`, `"percent"`, or `null`
      8. `value_profile` — the point's range/clamp/scaling profile id (decision 2), or `null`; named
         distinctly from `permission_profile_id` (field 10) so the envelope never conflates the two
@@ -421,15 +423,33 @@ existing one.
      **digest = SHA-256 over the complete COSE_Sign1 byte sequence as published on
      `cmd/<site>/<node>/<point>`** (protected headers, payload, and signature together — the exact bytes
      the node received and verified, not a re-serialization of it, which could differ byte-for-byte from
-     the original even if semantically equivalent) plus `seq`, a status code, and a timestamp; if the
-     signing key was rotated (see key custody below), the ack also carries the `kid` (key id) the
-     verifying node matched, so Security can tell which key version accepted a given command. `health`
-     is node-wide, not per-point (the same granularity as the existing `openaut/<site>/<node>/$status`
-     telemetry LWT), and is its own message type (`"openaut.mqtt.health.v1"`), not an empty/synthetic
-     command. Three separate sibling namespaces
+     the original even if semantically equivalent) plus `seq`, a status code, and a timestamp; the ack
+     **always** carries the `kid` (key id) the node matched — not only when a rotation happened, since
+     the node has no reliable way to know whether Security considers a rotation "recent enough" to
+     matter, and an always-present `kid` is what actually lets Security correlate accepted commands to
+     key versions during the active/previous-key overlap window (key custody below) without depending on
+     the node's own judgment call. `health` is node-wide, not per-point (the same granularity as the
+     existing `openaut/<site>/<node>/$status` telemetry LWT), and is its own message type
+     (`"openaut.mqtt.health.v1"`), not an empty/synthetic command. Three separate sibling namespaces
      — not `cmd`/`ack`/`health` as sub-paths of one shared prefix — for the same reason decision 1 put
      `cmd` outside `openaut/#` to begin with: it keeps each namespace's ACL a simple, independent
      allow-rule rather than requiring order-dependent exclusions within a shared prefix.
+   - **`ack`/`health` are authenticated and authorized at the broker, not left implicit.** Without
+     this, a compromised or misconfigured client could publish forged acks and mask a failed or
+     unconfirmed write, or spoof health for a node it isn't. Broker ACL binds publish on both to the
+     node's own cert-derived identity — `{allow, all, publish, ["ack/${cert_common_name}/#"]}` and
+     `{allow, all, publish, ["health/${cert_common_name}"]}` — the same `${cert_common_name}` mechanism
+     decision 1 already uses for `cmd/#` subscribe and the `mqtt-tls-broker` telemetry fix uses for
+     `openaut/#` publish, never a node-supplied ClientID: only the node whose certificate carries a
+     given `<site>/<node>` CN can publish an ack or health message claiming that identity. This closes
+     the forgery concern at the transport layer, the same guarantee telemetry already has. **Left open,
+     not claimed decided here:** whether `ack`/`health` additionally need their own
+     application-layer-signed envelope (distinct from `cmd`'s, since `cmd` is signed by the mediated
+     endpoint via the credential/signing proxy, while `ack`/`health` would need to be signed by the
+     *node* — a different signer with its own key-custody question this ADR has not addressed). Broker
+     ACL identity binding is a real, sufficient answer to the forgery scenario above by itself; a second,
+     content-level signature would raise its own key-management question this decision does not resolve
+     and should not be assumed away.
    - **Key custody and rotation**, building on decision 2's "the endpoint requests signing use
      per-request from the credential/signing proxy, never holds the key standing" — **two distinct
      paths, not one rotation policy covering both:**
@@ -460,18 +480,13 @@ existing one.
 
 **7. Mediated MQTT write endpoint's sandbox enforcement substrate (resolves #28).**
    - **Default: namespaces + LSM** — `netns` + Landlock + seccomp, with systemd-level hardening
-     (`ProtectSystem`, `NoNewPrivileges`, capability drops, etc.) where it fits — the same kernel
-     **primitives** ADR 0003 decision 1 names for Engineer's own sandbox (own policy bundle, not
-     Engineer's, not shared). **Scope note, not a claim about ADR 0003's status:** this decision covers
-     only the mediated MQTT write endpoint. ADR 0003 decision 1 already names these primitives for
-     Engineer, but ADR 0003's own Open questions section separately still lists "Enforcement substrate:
-     namespaces+LSM vs. microVM" for Engineer's sandbox — an apparent tension inside ADR 0003 itself
-     that this ADR does not attempt to adjudicate or resolve either way. This decision reaches the
-     namespaces+LSM default on its own terms, independent of however that tension in ADR 0003 is
-     eventually settled, because decision 1 above defines the endpoint as a small, deterministic
-     write-mediator — not a shell, not a general agent runtime, not executing untrusted or dynamic code
-     — so a microVM's operational cost (image lifecycle, patching, network bridging, audit/log
-     forwarding, HA) is not bought back by a proportionate security gain for this specific endpoint.
+     (`ProtectSystem`, `NoNewPrivileges`, capability drops, etc.) where it fits. **This decision covers
+     only the mediated MQTT write endpoint** — it does not restate, revise, or otherwise make any claim
+     about Engineer's own sandbox substrate, which is ADR 0003's decision to own. The endpoint reaches
+     this default because decision 1 above defines it as a small, deterministic write-mediator — not a
+     shell, not a general agent runtime, not executing untrusted or dynamic code — so a microVM's
+     operational cost (image lifecycle, patching, network bridging, audit/log forwarding, HA) is not
+     bought back by a proportionate security gain for this specific endpoint.
    - **microVM (Firecracker/Kata-class) stays available as an explicit, opt-in, higher-assurance
      deployment profile** — not the default — for an asset owner who requires a stronger isolation
      boundary, or for a future revision of the endpoint that executes more dynamic/untrusted logic than
@@ -584,9 +599,8 @@ open-ended prose, so each gets its own owner and can close independently of this
 - ~~**The "unresolved intent" audit reconciliation window.**~~ **Resolved by decision 5 above** (120 s
   default, PAP-owned, 30 s Security polling, 5 min escalation). Was tracked as issue #26.
 - ~~**The mediated MQTT write endpoint's enforcement substrate.**~~ **Resolved by decision 7 above**
-  for this endpoint specifically (namespaces+LSM default, microVM opt-in) — this does **not** resolve
-  the same question ADR 0003's own Open questions still lists for Engineer's sandbox, which remains
-  open there. Was tracked as issue #28.
+  (namespaces+LSM default, microVM opt-in), scoped to this endpoint only — Engineer's own sandbox
+  substrate is ADR 0003's decision to own, not restated or revised here. Was tracked as issue #28.
 - **Site-claim field, EMQX directive, and MQTT5/broker max-expiry: verified** against a live EMQX
   5.8.9 Community Edition instance
   ([`docs/verification/emqx-mqtt5-cmd-verification.md`](../verification/emqx-mqtt5-cmd-verification.md))
