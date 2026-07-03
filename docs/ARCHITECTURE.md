@@ -108,8 +108,8 @@ flowchart LR
 
     IOT -->|mutual-TLS MQTT| EMQX
     ADV -->|reads telemetry / cases| TSDB
-    ADV -->|TLS, egress-locked, only dest| PROXY
-    ADV -->|reads docs, proposes PRs| FORGE
+    ADV -->|TLS, single allow-listed inference dest| PROXY
+    ADV -->|reads verified docs, read-only| FORGE
     ADV --> TB
     TB -->|webhook| TEAMS["Microsoft Teams / Power BI<br/>(external, Layer 4)"]
 ```
@@ -131,8 +131,10 @@ Production also swaps `NEMOTRON_HOST` from the GX10 (Nemotron 3 Super, Bertil/te
 development environment, and only a signed, reviewed release crosses the air gap in (ADR 0001).
 
 > **Hard rule, not a lab shortcut:** Advisor and Engineer must never share a host, sandbox instance, or
-> policy profile (ADR 0003, "alternatives considered" — rejected precisely because it collapses this
-> separation). A lab/rehearsal setup (see [`docs/LAB.md`](LAB.md)) can colocate the data backbone — EMQX,
+> sandbox policy bundle (ADR 0003, "alternatives considered" — rejected precisely because it collapses
+> this separation). "Policy bundle" here means the Landlock/seccomp/netns sandbox confinement, distinct
+> from the PAP-signed *permission profile* that scopes Engineer's case-driven authority (ADR 0001 §9).
+> A lab/rehearsal setup (see [`docs/LAB.md`](LAB.md)) can colocate the data backbone — EMQX,
 > TimescaleDB, and the Systemdatabas schema on one box, as `config.env.example` already does — but
 > Advisor, Engineer, and Security stay on separate hosts even at lab scale; that separation is the
 > control, not an optimization to relax under resource pressure.
