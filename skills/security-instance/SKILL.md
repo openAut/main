@@ -57,7 +57,8 @@ untrusted input like any other field data (check source, schema, timestamp, prov
 
 - `fdd` findings (rule-based fault diagnoses)
 - `anomaly-correlation` findings (alarm correlation, silent-drift detection)
-- detector provenance/version/timestamp; missing or stale detector output
+- `fdd`/`anomaly-correlation` provenance/version/timestamp per finding; missing or stale output from
+  either of them (there is no third detector — "detector" here always means one of these two)
 
 **Own security controls** — policy, identity, and audit invariants that are Security's alone to watch:
 
@@ -66,11 +67,13 @@ untrusted input like any other field data (check source, schema, timestamp, prov
 - Engineer actions without approved cases, or outside an active case/permission-profile scope
 - Forge pushes, branch protection changes, failed CI on deployable artifacts, suspicious binaries, or secrets
 - SSH anomalies: unusual user, time, source, command, or failed attempts
-- MQTT/OT identity and policy anomalies: unknown or unexpected client IDs, topic/ACL violations,
-  retained messages on sensitive topics, credential-proxy misuse, or a write/poll rate that breaks a
-  signed permission profile — malformed protocol patterns or an unfamiliar device are a *security*
-  signal when they indicate an unauthorized or spoofed actor; a *process* anomaly on otherwise
-  legitimate traffic is `fdd`/`anomaly-correlation`'s finding to make, consumed above instead
+- MQTT/OT identity and policy anomalies:
+  - unknown or unexpected client IDs, topic/ACL violations, retained messages on sensitive topics
+  - credential-proxy misuse
+  - a write/poll rate that breaks a signed permission profile
+  - malformed protocol patterns or an unfamiliar device, when they indicate an unauthorized or spoofed
+    actor (a *security* signal) — a *process* anomaly on otherwise legitimate traffic is
+    `fdd`/`anomaly-correlation`'s finding to make instead, consumed above, not re-detected here
 - Engineer/opencode sandbox violations: attempts by Engineer to reach networks its policy denies —
   the public internet, the Advisor network, the Security network, or the PAP network (ADR 0003 §2's
   deny-by-default egress list is scoped to Engineer's sandbox specifically, not a general policy for
