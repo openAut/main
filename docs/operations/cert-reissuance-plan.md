@@ -4,6 +4,10 @@ Closes the last open item on issue #24. Not a live migration in progress -- open
 with no deployed fleet yet -- this is the decided procedure for when a real fleet exists, so rollout
 isn't designed ad hoc under time pressure later.
 
+Covers reissuing individual node client certs under the existing CA. For rotating the CA itself (root
+or intermediate), see [`ca-rotation-plan.md`](ca-rotation-plan.md) -- a separate procedure, since a CA
+rotation forces reissuance of every cert this plan would otherwise handle one node at a time.
+
 ## Scope: which certs need reissuing
 
 **Superseded by issue #29's fix, noted here rather than silently left stale:** this plan originally
