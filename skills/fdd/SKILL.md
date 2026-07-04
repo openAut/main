@@ -85,6 +85,18 @@ ORDER BY ts;
 - **Energy lens** — simultaneous heating/cooling, bypassed heat recovery, and short cycling are both
   faults and waste; flag them for the Energisamordnare agent too.
 
+## Runtime discipline
+
+The LLM explains findings; it is not the authority for diagnosis, classification, decisions, or actions. The rule-based FDD logic above
+produces the finding and evidence deterministically — the LLM may summarize evidence, explain likely
+causes, and draft recommendations for human review, but generated text is never the authority for
+classification, control action, setpoint write, or deployment. Any future path that lets an `fdd`
+finding trigger a write, deploy, or override must go through the Driftstekniker → Advisor → approved
+Systemdatabas case → Engineer path (see
+[`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md)), not a widened permissions block
+here. This mirrors the discipline [`security-instance`](../security-instance/SKILL.md) already states
+("the LLM is not the sole gatekeeper").
+
 > **Live behaviour is unverified until field data flows.** Thresholds (Δ, N minutes, starts/hour) are
 > site-specific — calibrate against each unit's baseline. The rule structure and mode-awareness are
 > the durable part.
