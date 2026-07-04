@@ -179,7 +179,11 @@ The deterministic authorities the forge + CI do **not** cover:
   decision on store-and-forward vs. central revocation (they currently conflict: a node designed to
   keep running during a network partition cannot be centrally revoked precisely when it matters most).
 - **Security as the orchestrator of purpose-built OT detectors**, not the detector itself.
-- **SPOF / reproducibility / PKI rotation** named as explicit operational risks with owners.
+- **SPOF / reproducibility / PKI rotation** named as explicit operational risks with owners. See
+  [`docs/operations/spof-risk-register.md`](operations/spof-risk-register.md) (SPOF/reproducibility),
+  [`docs/operations/ca-rotation-plan.md`](operations/ca-rotation-plan.md) (CA), and
+  [`docs/operations/credential-proxy-key-rotation-plan.md`](operations/credential-proxy-key-rotation-plan.md)
+  (credential/signing proxy) — split from #13 as issues #43, #44, #41.
 
 ---
 
