@@ -7,9 +7,9 @@ reissues — a different, higher-blast-radius credential than any single node's 
 signing key). Not a live migration — openAut is concept-stage with no deployed fleet or CA yet — this
 is the decided procedure for when a real CA and fleet exist.
 
-**Forge/Systemdatabas TLS rotation is explicitly not covered here** — the Forge and its System
-database (`openaut/system-db`, #42) don't exist yet, so a TLS-rotation procedure for infrastructure
-that isn't built would be invented, not decided. That piece stays blocked on #42/Forge deployment; see
+**Forge/Systemdatabas TLS rotation is explicitly not covered here** — the Forge and its Systemdatabas
+(`openaut/system-db`, #42) don't exist yet, so a TLS-rotation procedure for infrastructure that isn't
+built would be invented, not decided. That piece stays blocked on #42/Forge deployment; see
 "Out of scope here" below.
 
 ## Rotation objects
@@ -32,8 +32,13 @@ that isn't built would be invented, not decided. That piece stays blocked on #42
 ## Ownership
 
 Per [ADR 0002](../adr/0002-access-control-and-roles.md), the CA is not an Engineer-operational
-concern — it is policy/trust-anchor material, owned the same way ADR 0004 decision 6 owns the
-credential/signing proxy's key-rotation policy:
+concern — it is policy/trust-anchor material. Ownership here follows the same shape as
+[ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 6's ownership of the
+credential/signing proxy's key-rotation policy (owner/governance-triggered, non-self-grant) — an
+analogy for consistency, not a claim that decision 6 itself decides CA rotation; decision 6's actual
+scope is the command-envelope signing key, covered separately in
+[`credential-proxy-key-rotation-plan.md`](credential-proxy-key-rotation-plan.md). The CA's ownership
+rule below rests on ADR 0002's PAP/non-self-grant model directly:
 
 - **Owner/governance authority** (asset owner or owner-appointed release authority): the only party
   that triggers, approves, or widens a CA rotation.
@@ -77,10 +82,19 @@ node's reissuance is delayed.
 - **Confirmed CA compromise, no rollback:** a compromised CA cannot be "rolled back to" — the new CA
   becomes the sole trust anchor immediately (emergency path), and every certificate the compromised CA
   issued must be treated as untrustworthy pending reissuance, not just the ones known to be affected.
-- **Revocation propagation:** CRL/OCSP (or equivalent) endpoints, if used, must reflect the new trust
-  state before dual-trust ends; a verifier that only checks the trust bundle and not revocation status
-  during the overlap window would otherwise still accept a certificate the compromised CA issued after
-  the compromise was identified.
+- **Revocation propagation — routine rotation only.** During a *routine* rotation's dual-trust overlap
+  (step 2), CRL/OCSP (or equivalent) endpoints, if used, should reflect the new trust state before
+  dual-trust ends, as ordinary overlap hygiene — a verifier that only checks the trust bundle and not
+  revocation status could otherwise accept an old-CA-issued certificate that was separately revoked
+  for an unrelated reason during the overlap window.
+- **CA compromise is not a revocation-propagation problem — do not rely on CRL/OCSP for it.** On
+  confirmed or suspected CA compromise, the compromised CA is removed as a trusted anchor immediately
+  (per "Confirmed CA compromise, no rollback" above) — full stop, not conditional on CRL/OCSP being
+  up to date. Waiting for or depending on revocation status while continuing to trust the compromised
+  CA would mean relying on leaf-certificate revocation to contain a **root-of-trust** compromise, which
+  it cannot do: the compromised CA can mint new, unrevoked leaf certificates faster than any CRL/OCSP
+  process can catch them. Dual-trust never continues on the strength of "revocation looks current" once
+  compromise is confirmed.
 
 ## Audit
 
