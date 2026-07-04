@@ -19,11 +19,11 @@ säkerhetsansvarig, or an equivalent designated function at the deploying Region
 
 | Risk | Component/topology | Environment | Current exposure | Operational consequence | Owner | Status | Next review | Linked issue/ADR |
 |---|---|---|---|---|---|---|---|---|
-| Single EMQX broker instance, no failover | MQTT broker (`claw`, lab/dev) | Lab/test | One instance; broker outage stops all telemetry ingest and command mediation | Telemetry gap; edge nodes fall back to store-and-forward (per `edge-iot2050`) until broker returns — no data loss, but no live visibility | driftansvarig | Accepted | At next architecture review | #13 |
-| Single inference host, no failover — **environment-specific, see ADR 0001** | LLM inference | **Test/lab:** GX10 / Nemotron 3 Super. **Production:** Nemotron 3 Ultra endpoint | One instance per environment; inference outage loses Advisor/Engineer LLM capability in that environment | AI-generated insights, recommendations, and reports are affected. Regulation itself does **not** stop: per `CONTEXT.md`, the *reglercentral* or field device holds Hold Last Value / fail-safe behaviour independent of inference availability (ADR 0004 decision 2) — "control stops" is not the correct framing unless a specific writable point actually lacks local continuity | platform/release-ansvarig | Accepted | At next architecture review | ADR 0001 |
+| Single EMQX broker instance, no failover | MQTT broker (`claw`, lab/dev) | Lab/test | One instance; broker outage stops all telemetry ingest and command mediation | Telemetry delayed while each node's local store-and-forward buffer holds (per `edge-iot2050`); risk of loss if an outage outlasts `OPENAUT_SPOOL_MAX_ROWS` (default 100,000 rows — oldest dropped first once full). Mediated writes/commands (`cmd/#`) are also unavailable for the duration, not just telemetry. Local HLV/reglercentral continuity at the field device is unaffected — see the inference-host row below for the same caveat | driftansvarig | Accepted | At next architecture review | #13 |
+| Single inference host, no failover — **environment-specific, see ADR 0001** | LLM inference | **Test/lab:** GX10 / Nemotron 3 Super. **Production:** Nemotron 3 Ultra endpoint | One instance per environment; inference outage loses Advisor/Engineer LLM capability in that environment | AI-generated insights, recommendations, and reports are affected. Regulation itself does **not** stop: per `CONTEXT.md`, the *reglercentral* or field device holds Hold Last Value / fail-safe behaviour independent of inference availability ([ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 2) — "control stops" is not the correct framing unless a specific writable point actually lacks local continuity | platform/release-ansvarig | Accepted | At next architecture review | ADR 0001 |
 | `claw` co-locates gateway, broker, Telegraf, InfluxDB, Grafana on one host | Lab/dev infrastructure (`claw`) | Lab/test | Single host failure loses monitoring, alerting, and broker simultaneously | Full observability + control-plane gap in the lab environment until the host is restored | driftansvarig | Accepted | At next architecture review | #13 |
 | Release reproducibility depends on the pinned-manifest/refresh/build/signing pipeline being maintained | Main release pipeline | All | `refresh` (online, human-reviewed) → `build` (deterministic, offline-capable) → signed release with SBOM is the only path across the air gap (ADR 0001 §2, §7). If this pipeline degrades or is bypassed, reproducibility and SBOM accuracy degrade with it | Loss of ability to reproduce exactly what was deployed, and of the CRA/NIS2-relevant SBOM/attestation trail. **Not** mitigated by letting internal instances reach public upstreams directly — ADR 0001 §7 explicitly rejects that as reopening egress and destroying reproducibility | platform/release-ansvarig | Accepted | At next architecture review | ADR 0001 §2, §7 |
-| Forge as single point of truth for code/docs/CI, once built | Forge (not yet deployed) | Future (post-#42) | N/A — Forge doesn't exist yet | To be assessed once Forge topology is defined; flagged here so it isn't silently forgotten when #42 unblocks | platform/release-ansvarig | Not yet applicable | On Forge deployment | #42 |
+| Forge as a single operational dependency for Main's code/docs/CI, once built — **Main stays the source of truth** (ADR 0001 §1); this row is about Forge's *availability*, not a second source of truth | Forge (not yet deployed) | Future (post-#42) | N/A — Forge doesn't exist yet | To be assessed once Forge topology is defined; flagged here so it isn't silently forgotten when #42 unblocks | platform/release-ansvarig | Not yet applicable | On Forge deployment | #42 |
 
 ## Notes on specific rows
 
@@ -32,14 +32,19 @@ säkerhetsansvarig, or an equivalent designated function at the deploying Region
   states production runs on **Nemotron 3 Ultra**; GX10/Super is explicitly "for Bertil/test only."
   Both are real SPOF rows, but they are **different environments with different owners and different
   blast radius** — conflating them would misstate which risk applies to a live deployment.
-- **OT consequence wording is deliberate**: per `CONTEXT.md` and ADR 0004 decision 2, loss of inference
-  affects AI-layer insight/reporting, not the regulated physical process itself (Hold Last Value /
-  fail-safe is independent of inference availability). This register should not claim "control stops"
-  unless a specific writable point is documented as lacking local continuity — see
+- **OT consequence wording is deliberate**: per `CONTEXT.md` and
+  [ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 2, loss of inference affects
+  AI-layer insight/reporting, not the regulated physical process itself (Hold Last Value / fail-safe is
+  independent of inference availability). This register should not claim "control stops" unless a
+  specific writable point is documented as lacking local continuity — see
   [`docs/patterns/physical-plc-interlock.md`](../patterns/physical-plc-interlock.md).
 - **Reproducibility risk is scoped to pipeline maintenance, not upstream access**: ADR 0001 §7
   explicitly rejects "internal instances reaching public upstreams" as a fix for anything — this
   register must not be read as proposing that.
+- **Forge row is deliberately not called "single point of truth"**: [ADR 0001](../adr/0001-delivery-and-trust-model.md)
+  §1 decides Main is the single source of truth; a Forge outage is an operational-availability risk for
+  Main's hosting/CI, not a second source-of-truth claim competing with ADR 0001. Wording it as "single
+  point of truth" would reopen the exact ambiguity ADR 0001 closed.
 
 ## Maintaining this register
 
