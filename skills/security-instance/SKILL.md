@@ -1,6 +1,6 @@
 ---
 name: security-instance
-description: Define and provision the separate openAut Security instance — read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, local Forge watch-only monitoring, prompt/social-engineering detection, OT anomaly detection, isolated security alerts, and compliance reporting. Use when aligning openAut/main with the public security architecture or watching Forge changes, CI, secrets, and deploy artifacts.
+description: Define and provision the separate openAut Security instance — read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, local Forge watch-only monitoring, prompt/social-engineering detection, OT/MQTT identity and policy anomaly detection (correlating `fdd`/`anomaly-correlation` findings rather than re-detecting process faults itself), isolated security alerts, and compliance reporting. Use when aligning openAut/main with the public security architecture or watching Forge changes, CI, secrets, and deploy artifacts.
 permissions:
   knowledge_only: true
   exec: none
@@ -34,15 +34,50 @@ and isolated alerting.
 | Forge | read-only/watch-only org access; no merge, branch protection, token, or artifact write permission. |
 | LLM | generative model explains already-classified findings; it is not the sole gatekeeper. |
 
+## Security as consumer and correlator
+
+`fdd` and `anomaly-correlation` already own rule-based fault/anomaly detection over OT telemetry.
+Security does not re-implement that logic as its own "baseline/anomaly rules for OT and MQTT
+behavior" — a second, independent OT-detector would be exactly the circularity the architecture
+review flagged risk of (nothing verifies Security's own detection logic if Security is also *a*
+detector). Security **consumes** `fdd`/`anomaly-correlation` findings and classifies their *security*
+relevance by correlating them with audit, identity, permission profile, Systemdatabas case,
+network policy, and credential proxy events — it does not decide whether a process is faulty, only
+whether a finding (or its absence) indicates a policy, identity, or access problem.
+
+A residual category stays Security's own: anomalies that are about **who is acting**, not **what
+broke** — an unauthorized write, a client polling/writing outside its case scope, a spoofed identity.
+
 ## What Security watches
+
+**Consumes detector findings** — read-only, from `fdd`/`anomaly-correlation`'s own output, treated as
+untrusted input like any other field data (check source, schema, timestamp, provenance):
+
+- `fdd` findings (rule-based fault diagnoses)
+- `anomaly-correlation` findings (alarm correlation, silent-drift detection)
+- `fdd`/`anomaly-correlation` provenance/version/timestamp per finding; missing or stale output from
+  either of them (there is no third detector — "detector" here always means one of these two)
+
+**Own security controls** — policy, identity, and audit invariants that are Security's alone to watch:
 
 - prompt injection and social-engineering attempts in Teams/document content
 - Advisor responses that leak topology, secrets, or unsafe action instructions
-- Engineer actions without approved cases
+- Engineer actions without approved cases, or outside an active case/permission profile scope
 - Forge pushes, branch protection changes, failed CI on deployable artifacts, suspicious binaries, or secrets
 - SSH anomalies: unusual user, time, source, command, or failed attempts
-- MQTT anomalies: unknown client IDs, topic violations, retained messages on sensitive topics
-- OT protocol anomalies: malformed Modbus/BACnet patterns, rogue devices, abnormal polling/write rates
+- MQTT/OT identity and policy anomalies:
+  - unknown or unexpected client IDs, topic/ACL violations, retained messages on sensitive topics
+  - credential proxy misuse
+  - a write/poll rate that breaks a signed permission profile
+  - malformed protocol patterns or an unfamiliar device, when they indicate an unauthorized or spoofed
+    actor (a *security* signal) — a *process* anomaly on otherwise legitimate traffic is
+    `fdd`/`anomaly-correlation`'s finding to make instead, consumed above, not re-detected here
+- Engineer/opencode sandbox violations: attempts to reach anything outside the signed Engineer
+  policy, including off-case edge nodes or VLANs, the MQTT broker itself, the public internet,
+  Advisor/Security/PAP networks, or any infrastructure endpoint other than the four policy-owned
+  case-bound endpoints named by ADR 0003 §2 and ADR 0004: the credential proxy, mediated inference
+  endpoint, append-only audit sink, and mediated MQTT write endpoint
+- PAP/permission profile modification attempts by operational actors
 - compliance timers: NIS2 24h/72h, CRA vulnerability reporting, AI Act logging/transparency checks
 
 ## Detection pipeline
@@ -57,7 +92,9 @@ and isolated alerting.
 2. **Classify**
    - use deterministic checks for obvious policy violations
    - use non-generating classifiers/guards for prompt/social-engineering content where available
-   - use baseline/anomaly rules for OT and MQTT behavior
+   - consume classified findings from `fdd` and `anomaly-correlation`; classify their *security*
+     relevance by correlating them with audit, identity, permission profile, Systemdatabas case,
+     network policy, and credential proxy events — do not re-derive OT/process anomalies here
 
 3. **Explain**
    - use NemoClaw/LLM only to summarize evidence and map it to risks/compliance obligations
