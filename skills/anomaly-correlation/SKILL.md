@@ -73,7 +73,7 @@ adjacency list in config and extend over time.
 
 ## Runtime discipline
 
-The LLM explains findings; it is not the authority for diagnosis, classification, decisions, or actions. The correlation/anomaly logic above
+The LLM explains findings; it is not the authority for diagnosis, classification, decisions, or actions. The anomaly correlation logic above
 produces the finding and evidence deterministically — the LLM may summarize evidence, explain likely
 causes, and draft recommendations for human review, but generated text is never the authority for
 classification, control action, setpoint write, or deployment. Any future path that lets an

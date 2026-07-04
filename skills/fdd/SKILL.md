@@ -87,7 +87,7 @@ ORDER BY ts;
 
 ## Runtime discipline
 
-The LLM explains findings; it is not the authority for diagnosis, classification, decisions, or actions. The rule-based AFD logic above
+The LLM explains findings; it is not the authority for diagnosis, classification, decisions, or actions. The rule-based FDD logic above
 produces the finding and evidence deterministically — the LLM may summarize evidence, explain likely
 causes, and draft recommendations for human review, but generated text is never the authority for
 classification, control action, setpoint write, or deployment. Any future path that lets an `fdd`
