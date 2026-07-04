@@ -41,7 +41,7 @@ exactly the gap the ADR splits the two paths to close.
   never leaves the credential/signing proxy** (ADR 0004 decision 2 — Engineer never has raw signing
   key access).
 
-### 2. Emergency revocation (suspected compromise, controlling-contractor change, or contract end)
+### 2. Emergency revocation (suspected compromise, external control contractor / styrentreprenör change, or contract end)
 
 - The old key is **removed from the verifier's trust set immediately** — **no 14-day overlap, no
   "immediately-previous key" exception.** This is the opposite of path 1's overlap, not a shorter
@@ -52,15 +52,28 @@ exactly the gap the ADR splits the two paths to close.
 - Any command already in flight, signed with the revoked key, that a node has not yet verified is
   **rejected** once the node picks up the new key-set. This is a deliberate fail-closed tradeoff: a
   legitimate in-flight command can be resubmitted; a compromised one cannot be un-published.
+- **Unreachable/stale nodes are not exempt.** A node that hasn't picked up the new key-set yet still
+  holds the compromised key in its trust set. Until it confirms the current key-set version, it is
+  treated as **unsafe for writes**: the mediated MQTT write endpoint must not send it new commands,
+  and any command it did receive signed under the revoked key stays rejected on that node's own
+  verification once it does reconnect and pick up the new key-set (monotonic key-set version check —
+  a node never accepts a key-set older than the highest version it has already seen). "Every reachable
+  node" in the audit step below is a floor, not the finish line: a node stays flagged unsafe-for-writes
+  in Systemdatabas until it is confirmed on the current version, however long that takes.
 
 ## Roles and governance
 
 Both paths are **PAP-/governance-owned, signed release configuration** (ADR 0004 decision 6) — the
-same non-self-grant rule as ADR 0004 decision 5's audit window. Concretely:
+same non-self-grant rule as ADR 0004 decision 5's audit window. **The two paths' bounds are themselves
+fixed by ADR 0004 decision 6, not set per-incident by whoever triggers them**: routine rotation's
+overlap is capped at 14 days (or drain, whichever is shorter) and can't be widened; emergency
+revocation has no overlap and can't be delayed or given one. Owner/governance authority decides
+*whether* and *when* to trigger a path within those fixed bounds — it does not get to loosen the
+bounds themselves, which would defeat the reason the two paths are split in the first place.
 
 - **Owner/governance authority** (asset owner or owner-appointed release authority): the only party
-  that triggers, delays, or widens either path. Neither Engineer nor the mediated MQTT write endpoint
-  can self-trigger a rotation or revocation.
+  that triggers routine rotation or declares emergency revocation. Neither Engineer nor the mediated
+  MQTT write endpoint can self-trigger either path.
 - **Engineer**: may execute case-scoped technical steps under an approved Systemdatabas case (e.g.
   deploying the new signed key-set artifact), but never mints, holds, or edits key material directly,
   and never modifies PAP/permission-profile configuration to grant itself rotation authority.
@@ -86,7 +99,9 @@ same non-self-grant rule as ADR 0004 decision 5's audit window. Concretely:
 
 ### Emergency revocation
 
-1. **Trigger.** Owner/governance authority declares compromise, contractor change, or contract end.
+1. **Trigger.** Owner/governance authority declares compromise, external control contractor
+   (styrentreprenör) change, or contract end. Declaring emergency revocation is itself what starts the
+   fixed no-overlap procedure below — there is no separate decision to add or skip an overlap.
 2. **Generate + publish revocation artifact.** A new active key is generated, and a signed
    key-set-version artifact recording the revocation rides the signed-artifact pipeline — this is not
    the routine-rotation mechanism run early.
@@ -94,9 +109,14 @@ same non-self-grant rule as ADR 0004 decision 5's audit window. Concretely:
    node picks up the new key-set — no overlap.
 4. **In-flight handling.** Any command signed with the revoked key that a node has not yet verified is
    rejected (fail-closed); the sender may resubmit a legitimate command under the new key.
-5. **Audit.** Log to the append-only sink: who declared the revocation, reason category (compromise /
-   contractor change / contract end), key IDs (revoked/new), and the timestamp the revoked key was
-   confirmed removed from every reachable node's trust set.
+5. **Unreachable-node handling.** Nodes that haven't picked up the new key-set are flagged
+   unsafe-for-writes in Systemdatabas and excluded from the mediated MQTT write endpoint's send list
+   until they confirm the current key-set version (monotonic check) — not assumed safe just because
+   they were unreachable during the incident.
+6. **Audit.** Log to the append-only sink: who declared the revocation, reason category (compromise /
+   external-control-contractor change / contract end), key IDs (revoked/new), the timestamp the
+   revoked key was confirmed removed from every *reachable* node's trust set, and the list of nodes
+   still pending confirmation (this list, not just the reachable count, is what closes the incident).
 
 ## Controls before/after
 
@@ -104,8 +124,12 @@ same non-self-grant rule as ADR 0004 decision 5's audit window. Concretely:
   private operational key never leaves the credential/signing proxy (routine or emergency path alike).
 - Engineer has no direct access to key material under either path; all access is mediated by the
   credential/signing proxy per ADR 0004 decision 2.
-- Verify, after any rotation or revocation, that old envelopes still correctly fail
-  freshness/range/case checks and cannot become a replay path once their signing key is retired.
+- Verify, after any rotation or revocation, two separate things rather than treating them as one
+  check: (1) an envelope signed with a retired or revoked key is rejected by **key/trust-set
+  validation** specifically, not incidentally by freshness/range/case checks, and (2) an envelope that
+  *is* still signed by a trusted key (e.g. legitimately re-signed during routine overlap) still has to
+  separately pass freshness/range/case validation — trust in the signing key is necessary, not
+  sufficient, and must not be conflated with the command's own validity.
 - Do not confuse this runbook's scope with the edge-node/MQTT-broker client-cert topology
   (`cert-reissuance-plan.md`) or the CA rotation covered in `ca-rotation-plan.md` — different
   credential, different procedure.
