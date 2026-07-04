@@ -60,23 +60,33 @@ safety_relevance_rationale: "Comfort-only zone setpoint; bounded by local DDC mi
 
 | Field | Meaning |
 |---|---|
-| `continuity_mode` | What happens to this point on comms loss — matches ADR 0004 decision 2's HLV requirement, or a documented deviation (`fail_safe`, `device_native`) with its own equipment-profile justification. |
-| `safety_relevant` | The scope decision above, made explicit per point. |
-| `unsafe_hlv_hazard` | What could go wrong if HLV holds a bad value with no interlock — the reason `interlock_required` is true. |
-| `interlock_reference` | Points at the actual independent mechanism (limit switch, PLC clamp, high-limit cutout, VFD-native trip) — not a description of intent, a reference to what exists. |
-| `interlock_owner` | Who is accountable for the mechanism existing and being tested — an asset-owner or commissioned contractor, not Advisor/Engineer/Security (they're trust domains, not accountable parties; see [`docs/operations/spof-risk-register.md`](../operations/spof-risk-register.md) for the same convention). |
-| `commissioning_evidence` | FAT/SAT record that the interlock was actually tested, not just specified. |
-| `reviewed_in_case` | Ties the point's safety assessment to a Systemdatabas case, so it's audited like any other approved change, not a standing exception. |
+| `continuity_mode` | What happens to this point on comms loss — `hlv` (ADR 0004 decision 2's default), or a documented deviation (`fail_safe`, `device_native`) with its own equipment-profile justification. **This document's interlock requirement below applies to `continuity_mode: hlv` specifically** — `fail_safe` reverts to a defined safe default on its own and `device_native` delegates continuity to the field device's own logic, so neither carries the same "a held value could be unsafe" hazard HLV does. Either still needs `safety_relevant` assessed and, if true, its own recorded justification for why the deviation from HLV is safe (reuse `unsafe_hlv_hazard`'s slot to record *why fail-safe/device-native is the safe choice here* instead). |
+| `safety_relevant` | The scope decision above, made explicit per point, independent of `continuity_mode`. |
+| `unsafe_hlv_hazard` | For `continuity_mode: hlv`: what could go wrong if HLV holds a bad value with no interlock — the reason `interlock_required` is true. For `fail_safe`/`device_native`: repurposed to record why that deviation is the safe choice for this point. |
+| `interlock_required` | Whether an independent physical/PLC interlock is required — true whenever `safety_relevant: true` **and** `continuity_mode: hlv`. |
+| `interlock_reference` | Required when `interlock_required: true`. Points at the actual independent mechanism (limit switch, PLC clamp, high-limit cutout, VFD-native trip) — not a description of intent, a reference to what exists. |
+| `interlock_type` | Required when `interlock_required: true`. Short classification of the mechanism (e.g. `plc_clamp`, `physical_limit`, `vfd_native_trip`), for filtering/auditing across many points without parsing `interlock_reference`'s free text. |
+| `interlock_owner` | Required when `interlock_required: true`. Who is accountable for the mechanism existing and being tested — an asset-owner or commissioned contractor, not Advisor/Engineer/Security (they're trust domains, not accountable parties; see [`docs/operations/spof-risk-register.md`](../operations/spof-risk-register.md) for the same convention). |
+| `commissioning_evidence` | Required when `interlock_required: true`. FAT/SAT record that the interlock was actually tested, not just specified. |
+| `comm_loss_restart_behavior` | Optional but recommended for `hlv`/`device_native` points: what the field device or edge node actually does across a restart during comms loss (e.g. "DDC holds BACnet priority array value until timeout"), so the documented behaviour can be checked against reality at commissioning. |
+| `safety_relevance_rationale` | Required when `safety_relevant: false`, in place of the interlock fields above — see the non-safety-relevant example below. |
+| `reviewed_in_case` | Always required. Ties the point's safety assessment to a Systemdatabas case, so it's audited like any other approved change, not a standing exception. |
 
 ## Gating rule
 
-A safety-relevant writable point must not be activated for Engineer write/deploy until:
+A writable point must not be activated for Engineer write/deploy until:
 
-1. `safety_relevant` has been assessed (not left blank/default),
-2. where true: `interlock_required`, `interlock_reference`, and `commissioning_evidence` are all
+1. `safety_relevant` has been assessed (not left blank/default), for every `continuity_mode`,
+2. where `safety_relevant: true` **and** `continuity_mode: hlv`: `interlock_required: true`,
+   `interlock_reference`, `interlock_type`, `interlock_owner`, and `commissioning_evidence` are all
    filled in,
-3. where false: `safety_relevance_rationale` is filled in,
-4. the assessment is tied to a `reviewed_in_case`.
+3. where `safety_relevant: true` **and** `continuity_mode` is `fail_safe` or `device_native`: the
+   equipment-profile justification for why that deviation is safe is recorded (reusing
+   `unsafe_hlv_hazard`'s slot, per the field table above) — this document does not require the same
+   physical-interlock fields for these modes, since the HLV-specific hazard doesn't apply, but it does
+   require the deviation to be explicit and reviewed, not silently assumed safe,
+4. where `safety_relevant: false`: `safety_relevance_rationale` is filled in,
+5. in every case, the assessment is tied to a `reviewed_in_case`.
 
 Engineer executes an approved case; it does not get to waive or self-certify the interlock
 requirement — that decision belongs to whoever owns the equipment profile and the Systemdatabas case
