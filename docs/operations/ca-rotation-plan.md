@@ -1,11 +1,21 @@
 # CA rotation plan
 
 Split from #13 (checklist item 5, PKI-rotation part) as issue #44. Covers the **root/intermediate CA
-itself** that signs the MQTT client certs [`cert-reissuance-plan.md`](cert-reissuance-plan.md)
-reissues — a different, higher-blast-radius credential than any single node's cert. Distinct from
+itself** — the certificate authority that issues the MQTT client certificates
+[`cert-reissuance-plan.md`](cert-reissuance-plan.md) reissues — a credential with a higher blast
+radius than any single node's certificate. Distinct from
 [`credential-proxy-key-rotation-plan.md`](credential-proxy-key-rotation-plan.md) (the command-envelope
 signing key). Not a live migration — openAut is concept-stage with no deployed fleet or CA yet — this
 is the decided procedure for when a real CA and fleet exist.
+
+**Scope assumption, stated explicitly rather than left implicit:** this plan assumes the CA is (or
+will be provisioned as) a **client-auth-only CA** — it issues MQTT edge-node client certificates and
+nothing else. If the same CA also issues broker/server-side TLS certificates or other non-client
+leaves, every certificate chained to it is affected by a rotation or compromise, not just node client
+certs, and this plan's "batch reissuance = client certs only" shape would be incomplete for those other
+leaves. That decision (client-auth-only vs. a shared CA) belongs to whoever provisions the CA at
+deployment time; if a shared CA is chosen instead, this plan needs a follow-up pass to inventory and
+rotate the non-client leaves too, not just extend `cert-reissuance-plan.md`'s scope silently.
 
 **Forge/Systemdatabas TLS rotation is explicitly not covered here** — the Forge and its Systemdatabas
 (`openaut/system-db`, #42) don't exist yet, so a TLS-rotation procedure for infrastructure that isn't
@@ -31,20 +41,26 @@ built would be invented, not decided. That piece stays blocked on #42/Forge depl
 
 ## Ownership
 
-Per [ADR 0002](../adr/0002-access-control-and-roles.md), the CA is not an Engineer-operational
-concern — it is policy/trust-anchor material. Ownership here follows the same shape as
-[ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 6's ownership of the
-credential/signing proxy's key-rotation policy (owner/governance-triggered, non-self-grant) — an
-analogy for consistency, not a claim that decision 6 itself decides CA rotation; decision 6's actual
-scope is the command-envelope signing key, covered separately in
-[`credential-proxy-key-rotation-plan.md`](credential-proxy-key-rotation-plan.md). The CA's ownership
-rule below rests on ADR 0002's PAP/non-self-grant model directly:
+The CA is not an Engineer-operational concern — it is policy/trust-anchor material. Ownership follows
+the **PAP/non-self-grant principle established in [ADR 0002](../adr/0002-access-control-and-roles.md)**
+(ADR 0002 doesn't name the CA specifically; this is that principle applied to it, not a direct ADR 0002
+citation about CA). It also follows the same ownership *shape* as
+[ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 6's credential/signing-proxy
+key-rotation policy — an analogy for consistency, not a claim that decision 6 itself decides CA
+rotation; decision 6's actual scope is the command-envelope signing key, covered separately in
+[`credential-proxy-key-rotation-plan.md`](credential-proxy-key-rotation-plan.md).
 
 - **Owner/governance authority** (asset owner or owner-appointed release authority): the only party
   that triggers, approves, or widens a CA rotation.
-- **Engineer**: may execute case-scoped technical steps (e.g. deploying a new trust bundle to a
-  broker or edge node) under an approved Systemdatabas case, but never generates, holds, or
-  self-signs a new trust anchor, and never grants itself CA access.
+- **Engineer**: may execute case-scoped technical steps **on edge nodes within active case scope**
+  (e.g. deploying a new trust bundle to an edge node) under an approved Systemdatabas case, but never
+  generates, holds, or self-signs a new trust anchor. **Engineer's sandbox cannot reach the broker
+  directly at all** — [ADR 0004](../adr/0004-edge-control-writes-and-continuity.md) decision 4 states
+  this explicitly ("the broker itself remains unreachable directly from Engineer"), and this plan
+  doesn't get to widen that. Broker- and management-plane trust-bundle changes are delivered through
+  the same **owner/governance-controlled signed release/configuration channel** the broker itself is
+  provisioned through (ADR 0001) — an infrastructure deploy path outside Engineer's runtime reach, not
+  a case-scoped Engineer action.
 - **Security**: read-only/watch-only, consuming CA-operation events from the append-only audit sink;
   cannot trigger or silence a rotation.
 
