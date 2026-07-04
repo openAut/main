@@ -71,7 +71,10 @@ untrusted input like any other field data (check source, schema, timestamp, prov
   signed permission profile — malformed protocol patterns or an unfamiliar device are a *security*
   signal when they indicate an unauthorized or spoofed actor; a *process* anomaly on otherwise
   legitimate traffic is `fdd`/`anomaly-correlation`'s finding to make, consumed above instead
-- attempts to reach denied networks/endpoints (Advisor, Security, PAP, internet — per ADR 0003)
+- Engineer/opencode sandbox violations: attempts by Engineer to reach networks its policy denies —
+  the public internet, the Advisor network, the Security network, or the PAP network (ADR 0003 §2's
+  deny-by-default egress list is scoped to Engineer's sandbox specifically, not a general policy for
+  every domain)
 - PAP/permission-profile modification attempts by operational actors
 - compliance timers: NIS2 24h/72h, CRA vulnerability reporting, AI Act logging/transparency checks
 
