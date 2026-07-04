@@ -70,7 +70,7 @@ Degree-day normalise:    compare kWh per (heating) degree-day, not raw kWh
 
 ## Runtime discipline
 
-The LLM explains findings; it does not diagnose, decide, or act. The savings analysis above produces
+The LLM explains findings; it is not the authority for diagnosis, classification, decisions, or actions. The savings analysis above produces
 the finding and evidence deterministically — the LLM may summarize evidence, explain likely drivers,
 and draft recommendations for human review, but generated text is never the authority for
 classification, control action, setpoint write, or deployment. Any future path that lets an
