@@ -71,6 +71,18 @@ adjacency list in config and extend over time.
 - **Confidence, not certainty** — show the cluster and why, so a human can override.
 - **Explainable detection** — no opaque scores; every flag names its rule and expected band.
 
+## Runtime discipline
+
+The LLM explains findings; it does not diagnose, decide, or act. The correlation/anomaly logic above
+produces the finding and evidence deterministically — the LLM may summarize evidence, explain likely
+causes, and draft recommendations for human review, but generated text is never the authority for
+classification, control action, setpoint write, or deployment. Any future path that lets an
+`anomaly-correlation` finding trigger a write, deploy, or override must go through the Driftstekniker
+→ Advisor → approved Systemdatabas case → Engineer path (see
+[`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md)), not a widened permissions block
+here. This mirrors the discipline [`security-instance`](../security-instance/SKILL.md) already states
+("the LLM is not the sole gatekeeper").
+
 > **Live behaviour is unverified until alarms and telemetry flow.** Windows, z-score thresholds and
 > the dependency graph are site-specific; the correlation dimensions and parent/child suppression are
 > the durable part.

@@ -68,5 +68,17 @@ Degree-day normalise:    compare kWh per (heating) degree-day, not raw kWh
   conflict instead.
 - **Explainable** — every number shows its inputs and assumptions.
 
+## Runtime discipline
+
+The LLM explains findings; it does not diagnose, decide, or act. The savings analysis above produces
+the finding and evidence deterministically — the LLM may summarize evidence, explain likely drivers,
+and draft recommendations for human review, but generated text is never the authority for
+classification, control action, setpoint write, or deployment. Any future path that lets an
+`energy-optimization` finding trigger a write, deploy, or override must go through the Driftstekniker
+→ Advisor → approved Systemdatabas case → Engineer path (see
+[`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md)), not a widened permissions block
+here. This mirrors the discipline [`security-instance`](../security-instance/SKILL.md) already states
+("the LLM is not the sole gatekeeper").
+
 > **Live behaviour is unverified until metering data flows.** Savings figures are estimates until
 > M&V confirms them. The analysis structure and the savings hierarchy are the durable part.
