@@ -78,6 +78,12 @@ ssh "$EDGE_SSH_USER@$EDGE_HOST" \
 Field reads are delegated to the protocol skills (`modbus`, `bacnet`, `m-bus`); this map is the glue
 between a point and its MQTT topic `openaut/<site>/<node>/<system>/<metric>`.
 
+This example is read-only telemetry. When a point becomes **writable** (the mediated MQTT setpoint
+channel decided in [ADR 0004](../../docs/adr/0004-edge-control-writes-and-continuity.md)), add the
+safety-relevance/interlock metadata block defined in
+[`docs/patterns/physical-plc-interlock.md`](../../docs/patterns/physical-plc-interlock.md) to that
+point's entry before it can be activated for Engineer write/deploy.
+
 ## Step 4 — Store-and-forward buffering
 
 `edge_agent.py` publishes with QoS 1 and **persists unsent readings to a local SQLite spool** when the

@@ -647,4 +647,8 @@ open-ended prose, so each gets its own owner and can close independently of this
   mechanism decision 1 introduces once issue #24 lands. Tracked as issue #29.
 - **The interlock mechanism itself** (hardware limit switches, PLC-level clamps, etc.) is
   per-equipment and out of scope here — this ADR only establishes that HLV depends on one existing.
-  Already tracked in issue #13.
+  Was tracked in issue #13, split into issue #40 and resolved by
+  [`docs/patterns/physical-plc-interlock.md`](../patterns/physical-plc-interlock.md): it decides the
+  "every writable point" vs. "safety-relevant" scope question this ADR left open (safety-relevant is
+  the practical scope) and defines the point-metadata contract a reviewer checks, without inventing
+  the physical mechanism itself.
