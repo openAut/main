@@ -12,35 +12,35 @@ fingerprints:
   rule_id: PE2
   file: SKILL.md
   reason: "Hardening, not escalation: doc shows chmod 600 to protect private keys."
-- hash: sha256:1c87ddb2349e9d05
+- hash: sha256:1474ba6a30182855
   rule_id: PE2
   file: scripts/gen-certs.sh
-  reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:f1dcc4d7a2c073e3
+  reason: "FP: matched in the file-header comment ('Keys are chmod 600'), not an executable command. See the real chmod calls below (separately reviewed)."
+- hash: sha256:f3634574c73bd01d
   rule_id: PE2
   file: scripts/gen-certs.sh
-  reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:4a8e0c4d6b344098
+  reason: "Hardening, not escalation: chmod 700 restricts the CA directory to owner-only access, protecting the CA private key."
+- hash: sha256:b1917d8430350e0b
   rule_id: PE2
   file: scripts/gen-certs.sh
-  reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:cd67f7dc8c139298
+  reason: "Hardening, not escalation: chmod 600 restricts the generated CA private key (ca.key) to owner read/write only."
+- hash: sha256:9f5f0d72edf40490
   rule_id: PE2
   file: scripts/gen-certs.sh
-  reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:da432afa66e512dd
+  reason: "Hardening, not escalation: chmod 600 restricts each generated broker/client private key to owner read/write only."
+- hash: sha256:35321338342e772f
   rule_id: PE3
   file: scripts/gen-certs.sh
-  reason: "FP, not exfiltration: reads/writes node-local PKI material to GENERATE certs; nothing is transmitted off-host."
-- hash: sha256:edc406dc24ef5539
+  reason: "FP: matched in the file-header comment ('Sources ../../../config.env'), not an executable command. See the real source line below (separately reviewed)."
+- hash: sha256:649bbc880c3c074f
   rule_id: PE3
   file: scripts/gen-certs.sh
-  reason: "FP, not exfiltration: reads/writes node-local PKI material to GENERATE certs; nothing is transmitted off-host."
+  reason: "FP, not credential theft: sources the repo's shared config.env only to read PKI_DIR (a local directory path). No other variable from that file (e.g. NEMOTRON_API_KEY, TEAMS_OUTGOING_SECRET) is read, printed, or transmitted; cert generation runs entirely through local openssl calls."
 - hash: sha256:8543fadc8b841565
   rule_id: PE3
   file: scripts/verify-tls.sh
   reason: "FP, not exfiltration: reads local cert/key paths to verify the TLS listener; node-local, nothing transmitted."
-- hash: sha256:2ede0e29072aedff
+- hash: sha256:1acd79f4fd51fadd
   rule_id: TM1
   file: scripts/gen-certs.sh
-  reason: "FP: rm -f is scoped to the PKI dir, cleaning intermediate .csr/.ext files during cert generation. No untrusted input."
+  reason: "FP: rm -f is scoped to three named, script-generated intermediate files (.csr/.ext/.csr.cnf) inside the PKI dir it just created; not a broad glob or -rf, no untrusted input."
