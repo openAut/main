@@ -1,6 +1,6 @@
 # Proposed capability catalog
 
-This catalog supports [ADR 0004](../adr/0004-mcp-gateway-capability-boundary.md). It sketches the
+This catalog supports [RFC 0001](../rfcs/0001-mcp-gateway-capability-boundary.md). It sketches the
 first capabilities openAut should reason about before building an MCP Gateway implementation.
 
 The catalog is intentionally small. It is a review target, not a complete product backlog.

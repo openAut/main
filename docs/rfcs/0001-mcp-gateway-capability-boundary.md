@@ -1,8 +1,13 @@
-# ADR 0004 - MCP Gateway and governed capability boundary
+# RFC 0001 - MCP Gateway and governed capability boundary
 
-- **Status:** Proposed (design draft - for review, nothing wired yet)
+- **Status:** RFC / discussion draft (not an accepted architecture decision - nothing wired yet)
 - **Date:** 2026-07-04
-- **Builds on:** [`0001-delivery-and-trust-model`](0001-delivery-and-trust-model.md), [`0002-access-control-and-roles`](0002-access-control-and-roles.md), [`0003-engineer-runtime-containment`](0003-engineer-runtime-containment.md), [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)
+- **Note:** originally drafted as an ADR 0004 candidate; moved to RFC form during the #52
+  stabilization pass because ADR 0004 was already taken by
+  [`0004-edge-control-writes-and-continuity`](../adr/0004-edge-control-writes-and-continuity.md),
+  and this proposal had not yet gone through review. If and when this direction is accepted, it
+  should be promoted to the next free ADR number (currently ADR 0005).
+- **Builds on:** [`0001-delivery-and-trust-model`](../adr/0001-delivery-and-trust-model.md), [`0002-access-control-and-roles`](../adr/0002-access-control-and-roles.md), [`0003-engineer-runtime-containment`](../adr/0003-engineer-runtime-containment.md), [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)
 
 ## Context
 

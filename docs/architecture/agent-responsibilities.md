@@ -1,6 +1,6 @@
 # Agent responsibilities and enforcement boundaries
 
-This document supports [ADR 0004](../adr/0004-mcp-gateway-capability-boundary.md). It is a proposed
+This document supports [RFC 0001](../rfcs/0001-mcp-gateway-capability-boundary.md). It is a proposed
 responsibility map, not an implementation contract.
 
 ## Summary
