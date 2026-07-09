@@ -8,7 +8,7 @@
 # docs/verification/emqx-mqtt5-cmd-verification.md) -- each segment is validated below
 # before it is ever put in a certificate; an unvalidated segment is a proven
 # wildcard-injection vector, not a theoretical one.
-# Sources ../../../config.env for PKI_DIR. Uses openssl. Keys are chmod 600.
+# Reads only PKI_DIR from ../../../config.env. Uses openssl. Keys are chmod 600.
 set -euo pipefail
 
 # Canonical-id pattern (ADR 0004 decision 1, precondition 3): 1-63 lowercase ASCII
@@ -29,8 +29,40 @@ validate_id() {  # validate_id <value> <label, e.g. "site" or "node">
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-# shellcheck disable=SC1091
-set -a; . "$ROOT/config.env"; set +a
+
+load_pki_dir() {
+  local config="$ROOT/config.env"
+  [ -f "$config" ] || return 0
+
+  # Do not source config.env: it may contain unrelated secrets. Accept the
+  # simple assignment forms used by config.env.example and intentionally avoid
+  # shell expansion while extracting only PKI_DIR.
+  PKI_DIR="$(
+    awk '
+      /^[[:space:]]*(export[[:space:]]+)?PKI_DIR[[:space:]]*=/ {
+        sub(/^[[:space:]]*(export[[:space:]]+)?PKI_DIR[[:space:]]*=[[:space:]]*/, "")
+        if ($0 ~ /^"/) {
+          sub(/^"/, "")
+          sub(/".*$/, "")
+          print
+          exit
+        }
+        if ($0 ~ /^'\''/) {
+          sub(/^'\''/, "")
+          sub(/'\''.*/, "")
+          print
+          exit
+        }
+        sub(/[[:space:]]+#.*$/, "")
+        sub(/[[:space:]]*$/, "")
+        print
+        exit
+      }
+    ' "$config"
+  )"
+}
+
+load_pki_dir
 
 PKI="${PKI_DIR:-$ROOT/pki}"
 DAYS=825

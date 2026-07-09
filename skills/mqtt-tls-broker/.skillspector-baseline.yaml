@@ -12,27 +12,23 @@ fingerprints:
   rule_id: PE2
   file: SKILL.md
   reason: "Hardening, not escalation: doc shows chmod 600 to protect private keys."
-- hash: sha256:1c87ddb2349e9d05
+- hash: sha256:1474ba6a30182855
   rule_id: PE2
   file: scripts/gen-certs.sh
   reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:f1dcc4d7a2c073e3
+- hash: sha256:e2d23ebe30d8f255
   rule_id: PE2
   file: scripts/gen-certs.sh
   reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:4a8e0c4d6b344098
+- hash: sha256:96b0b212c3623229
   rule_id: PE2
   file: scripts/gen-certs.sh
   reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:cd67f7dc8c139298
+- hash: sha256:a4ce43bfeec53cd7
   rule_id: PE2
   file: scripts/gen-certs.sh
   reason: "Hardening, not escalation: chmod 600/700 restricts key/dir permissions to protect private material."
-- hash: sha256:da432afa66e512dd
-  rule_id: PE3
-  file: scripts/gen-certs.sh
-  reason: "FP, not exfiltration: reads/writes node-local PKI material to GENERATE certs; nothing is transmitted off-host."
-- hash: sha256:edc406dc24ef5539
+- hash: sha256:e558df3b888c3524
   rule_id: PE3
   file: scripts/gen-certs.sh
   reason: "FP, not exfiltration: reads/writes node-local PKI material to GENERATE certs; nothing is transmitted off-host."
@@ -40,7 +36,7 @@ fingerprints:
   rule_id: PE3
   file: scripts/verify-tls.sh
   reason: "FP, not exfiltration: reads local cert/key paths to verify the TLS listener; node-local, nothing transmitted."
-- hash: sha256:2ede0e29072aedff
+- hash: sha256:3b032c0d8f531f4d
   rule_id: TM1
   file: scripts/gen-certs.sh
   reason: "FP: rm -f is scoped to the PKI dir, cleaning intermediate .csr/.ext files during cert generation. No untrusted input."
