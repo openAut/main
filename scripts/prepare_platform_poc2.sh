@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-poc1="$HOME/openaut/deploy/platform-poc1"
-poc2="$HOME/openaut/deploy/platform-poc2"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
+poc1="$root/deploy/platform-poc1"
+poc2="$root/deploy/platform-poc2"
 mkdir -p "$poc2/secrets"
 chmod 700 "$poc2/secrets"
 

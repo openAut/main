@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root="$HOME/openaut"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
 deploy="$root/deploy/platform-poc1"
 pki="$deploy/pki"
 field_interface="${OPENAUT_FIELD_INTERFACE:-eth1}"
@@ -54,6 +55,7 @@ chmod +x "$root/skills/mqtt-tls-broker/scripts/"*.sh
 chmod +x "$deploy/db/002-roles.sh"
 
 cd "$root"
+# gen-certs.sh sources the root config.env written above, including PKI_DIR.
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh ca
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh broker emqx "$field_ip"
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh client poc-lab iot2050-poc-01

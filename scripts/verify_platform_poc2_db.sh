@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-deploy="$HOME/openaut/deploy/platform-poc1"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
+deploy="$root/deploy/platform-poc1"
 compose=(docker compose --project-directory "$deploy")
 psql_cmd=("${compose[@]}" exec --no-TTY timescaledb psql -v ON_ERROR_STOP=1 -U postgres -d openaut)
 

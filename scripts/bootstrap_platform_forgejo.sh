@@ -5,7 +5,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 forgejo_api="$HERE/forgejo_api.sh"
-poc2="$HOME/openaut/deploy/platform-poc2"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
+poc2="$root/deploy/platform-poc2"
 secrets="$poc2/secrets"
 base_url="http://127.0.0.1:3000/api/v1"
 mkdir -p "$secrets"

@@ -9,7 +9,8 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 forgejo_api="$HERE/forgejo_api.sh"
-deploy="$HOME/openaut/deploy/platform-poc2"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
+deploy="$root/deploy/platform-poc2"
 secrets="$deploy/secrets"
 admin_file="$secrets/engineer_rotation_admin_token"
 engineer_file="$secrets/engineer_token"

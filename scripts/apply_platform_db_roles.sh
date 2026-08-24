@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-deploy="$HOME/openaut/deploy/platform-poc1"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
+deploy="$root/deploy/platform-poc1"
 cd "$deploy"
 
 ingest_password="$(cat secrets/ingest_db_password)"

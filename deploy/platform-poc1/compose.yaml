@@ -38,7 +38,6 @@ services:
       - ./runtime/certs:/opt/emqx/etc/certs:ro
     ports:
       - "${OPENAUT_FIELD_BIND_IP:?set by prepare_platform_poc1.sh}:8883:8883"
-      - "127.0.0.1:18083:18083"
     healthcheck:
       test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
       interval: 10s

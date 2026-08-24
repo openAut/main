@@ -77,7 +77,7 @@ same deployment has been reproduced elsewhere.
 - EMQX 5.8.9 CE, TimescaleDB 2.29.2/PostgreSQL 16, and the Python 3.12 ingest service run as
   digest-pinned containers on Platform.
 - The broker exposes only its mutual-TLS listener on the field interface. Plain MQTT and WebSocket
-  listeners are disabled; PostgreSQL and the EMQX dashboard are loopback-bound.
+  listeners and the EMQX dashboard are disabled; PostgreSQL is loopback-bound.
 - Synthetic end-to-end verification passes: valid scoped publish, ingest subscription, rejected
   wrong-scope delivery, rejected cert-less connection, refused plaintext connection, telemetry and
   status rows in TimescaleDB, and denied `agent_ro` insert.

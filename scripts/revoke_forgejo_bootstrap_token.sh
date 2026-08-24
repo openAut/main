@@ -3,7 +3,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 forgejo_api="$HERE/forgejo_api.sh"
-deploy="$HOME/openaut/deploy/platform-poc2"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
+deploy="$root/deploy/platform-poc2"
 secrets="$deploy/secrets"
 token_file="$secrets/admin_bootstrap_token"
 cleanup_file="$secrets/admin_cleanup_token"

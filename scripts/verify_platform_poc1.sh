@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-root="$HOME/openaut"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="${OPENAUT_ROOT:-$(cd "$HERE/.." && pwd)}"
 deploy="$root/deploy/platform-poc1"
 cd "$root"
 set -a
