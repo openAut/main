@@ -39,7 +39,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv tool install "git+https://github.com/NVIDIA/skillspector.git"
+      # Baselines currently use the reviewed v1 format. Pin the last compatible commit;
+      # migrate and re-triage every baseline before moving to SkillSpector >= 2.5.
+      - run: uv tool install "git+https://github.com/NVIDIA/skillspector.git@fd25398d7aa99353d86237b9c260759351f0e644"
       - name: Scan skills (fail on DO_NOT_INSTALL)
         run: |
           fail=0

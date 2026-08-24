@@ -3,6 +3,9 @@
 This repo is primarily a runbook pack. Use this lab path to verify the durable contracts without
 connecting to a real building, a Teams tenant, or a NemoClaw host.
 
+The fixed scope and acceptance gates for the first implementation slices are defined in
+[`POC1-POC2.md`](POC1-POC2.md).
+
 ## 1. Python checks
 
 ```bash
@@ -27,14 +30,14 @@ For a first dry run, publish payloads matching the contract:
 
 ```bash
 mosquitto_pub -h "$EMQX_HOST" -p "$EMQX_TLS_PORT" \
-  --cafile "$MQTT_CA_CERT" --cert "$PKI_DIR/clients/$EDGE_NODE_ID.crt" \
-  --key "$PKI_DIR/clients/$EDGE_NODE_ID.key" \
+  --cafile "$MQTT_CA_CERT" --cert "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.crt" \
+  --key "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.key" \
   -t "openaut/$EDGE_SITE/$EDGE_NODE_ID/ahu/supply_temp" \
   -m '{"value":21.5,"ts":1700000000,"unit":"degC"}'
 
 mosquitto_pub -h "$EMQX_HOST" -p "$EMQX_TLS_PORT" \
-  --cafile "$MQTT_CA_CERT" --cert "$PKI_DIR/clients/$EDGE_NODE_ID.crt" \
-  --key "$PKI_DIR/clients/$EDGE_NODE_ID.key" \
+  --cafile "$MQTT_CA_CERT" --cert "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.crt" \
+  --key "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.key" \
   -t "openaut/$EDGE_SITE/$EDGE_NODE_ID/"'$status' \
   -m '{"value":true,"ts":1700000000}'
 ```

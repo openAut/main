@@ -1,0 +1,107 @@
+name: openaut-poc1
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:2.29.2-pg16@sha256:289d55704b1b3ee8263cd3805c6930f9cd54506835a8f19f9b85dad17d5c5a8a
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - ingest_db_password
+      - agent_ro_db_password
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ../../skills/timeseries-stack/assets/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ./db/002-roles.sh:/docker-entrypoint-initdb.d/002-roles.sh:ro
+      - ./db/verify-counts.sql:/opt/openaut/verify-counts.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks:
+      - telemetry-db
+      - forge-db
+      - db-admin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d openaut"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  emqx:
+    image: openaut-poc1-emqx:5.8.9
+    build:
+      context: ../..
+      dockerfile: deploy/platform-poc1/emqx/Dockerfile
+    restart: unless-stopped
+    environment:
+      EMQX_NODE__COOKIE: ${EMQX_NODE_COOKIE:?set EMQX_NODE_COOKIE in deploy/platform-poc1/.env}
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+      - ../../skills/mqtt-tls-broker/assets/acl.conf:/opt/emqx/etc/acl.conf:ro
+      - ./runtime/certs:/opt/emqx/etc/certs:ro
+    ports:
+      - "${OPENAUT_FIELD_BIND_IP:?set by prepare_platform_poc1.sh}:8883:8883"
+    networks:
+      mqtt:
+        aliases:
+          - emqx
+    healthcheck:
+      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  ingest:
+    build:
+      context: ../..
+      dockerfile: deploy/platform-poc1/ingest/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    environment:
+      EMQX_HOST: emqx
+      EMQX_TLS_PORT: "8883"
+      MQTT_CA_CERT: /run/pki/ca/ca.crt
+      PKI_DIR: /run/pki
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DB: openaut
+      TSDB_INGEST_USER: ingest
+      PGPASSWORD_FILE: /run/secrets/ingest_db_password
+      PYTHONUNBUFFERED: "1"
+    secrets:
+      - ingest_db_password
+    volumes:
+      - ./runtime/pki:/run/pki:ro
+    networks:
+      mqtt:
+        aliases:
+          - ingest
+      telemetry-db:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  ingest_db_password:
+    file: ./secrets/ingest_db_password
+  agent_ro_db_password:
+    file: ./secrets/agent_ro_db_password
+
+volumes:
+  timescale_data:
+  emqx_data:
+  emqx_log:
+
+networks:
+  mqtt:
+  telemetry-db:
+    internal: true
+  forge-db:
+    name: openaut-platform-forge-db
+    internal: true
+  db-admin:
