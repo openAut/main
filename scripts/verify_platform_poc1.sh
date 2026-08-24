@@ -13,6 +13,11 @@ docker compose --project-directory "$deploy" ps --status running | grep -q times
 docker compose --project-directory "$deploy" ps --status running | grep -q emqx
 docker compose --project-directory "$deploy" ps --status running | grep -q ingest
 
+if bash skills/mqtt-tls-broker/scripts/gen-certs.sh service unsupported-service >/dev/null 2>&1; then
+  echo "FAIL — certificate helper issued an unknown service identity without an ACL update." >&2
+  exit 1
+fi
+
 bash skills/mqtt-tls-broker/scripts/verify-tls.sh
 
 edge_crt="$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.crt"
@@ -46,15 +51,21 @@ hypertable_count="$(docker compose --project-directory "$deploy" exec --no-TTY t
 [ "$hypertable_count" -ge 2 ]
 
 agent_password="$(cat "$deploy/secrets/agent_ro_db_password")"
-PGPASSWORD="$agent_password" psql -h 127.0.0.1 -U agent_ro -d openaut \
+[[ "$agent_password" =~ ^[0-9a-f]{64}$ ]]
+pgpass="$(mktemp)"
+chmod 600 "$pgpass"
+printf '127.0.0.1:5432:openaut:agent_ro:%s\n' "$agent_password" > "$pgpass"
+unset agent_password
+trap 'rm -f "$pgpass"' EXIT
+PGPASSFILE="$pgpass" psql -h 127.0.0.1 -U agent_ro -d openaut \
   -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM telemetry.readings" >/dev/null
-if PGPASSWORD="$agent_password" psql -h 127.0.0.1 -U agent_ro -d openaut \
+if PGPASSFILE="$pgpass" psql -h 127.0.0.1 -U agent_ro -d openaut \
   -v ON_ERROR_STOP=1 -c "INSERT INTO telemetry.node_status(ts,site,node,online) VALUES(now(),'denied','denied',true)" \
   >/dev/null 2>&1; then
   echo "FAIL — agent_ro was able to insert telemetry." >&2
   exit 1
 fi
-if PGPASSWORD="$agent_password" psql -h 127.0.0.1 -U agent_ro -d openaut \
+if PGPASSFILE="$pgpass" psql -h 127.0.0.1 -U agent_ro -d openaut \
   -v ON_ERROR_STOP=1 -c "UPDATE telemetry.node_status SET online=false WHERE site='$EDGE_SITE'" \
   >/dev/null 2>&1; then
   echo "FAIL — agent_ro was able to update telemetry." >&2

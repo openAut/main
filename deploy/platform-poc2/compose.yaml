@@ -12,7 +12,7 @@ services:
       FORGEJO__database__HOST: timescaledb:5432
       FORGEJO__database__NAME: forgejo
       FORGEJO__database__USER: forgejo
-      FORGEJO__database__PASSWD: ${FORGEJO_DB_PASSWORD:?set by prepare_platform_poc2.sh}
+      FORGEJO__database__PASSWD__FILE: /run/secrets/forgejo_db_password
       FORGEJO__server__DOMAIN: forge.openaut.local
       FORGEJO__server__ROOT_URL: http://127.0.0.1:3000/
       FORGEJO__server__HTTP_PORT: "3000"
@@ -23,6 +23,7 @@ services:
       - platform
     volumes:
       - forgejo_data:/var/lib/gitea
+      - ./secrets/forgejo_db_password:/run/secrets/forgejo_db_password:ro
       - forgejo_config:/etc/gitea
     ports:
       - "127.0.0.1:3000:3000"

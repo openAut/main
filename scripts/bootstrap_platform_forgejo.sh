@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
+# LAB ONLY: creates a standing, scoped Engineer token on Platform. It is not the short-lived,
+# case-bound credential-proxy flow required by ADR 0003. Rotate/revoke it with the companion script.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+forgejo_api="$HERE/forgejo_api.sh"
 poc2="$HOME/openaut/deploy/platform-poc2"
 secrets="$poc2/secrets"
 base_url="http://127.0.0.1:3000/api/v1"
@@ -14,17 +18,15 @@ if [ ! -s "$secrets/admin_bootstrap_token" ]; then
     > "$secrets/admin_bootstrap_token"
   chmod 600 "$secrets/admin_bootstrap_token"
 fi
-admin_token="$(cat "$secrets/admin_bootstrap_token")"
 
 cleanup_admin_token() {
   local code
-  [ -n "${admin_token:-}" ] || return 0
-  code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-    --request DELETE --header "Authorization: token $admin_token" \
+  [ -s "$secrets/admin_bootstrap_token" ] || return 0
+  code="$(bash "$forgejo_api" "$secrets/admin_bootstrap_token" \
+    --silent --show-error --output /dev/null --write-out '%{http_code}' --request DELETE \
     "$base_url/admin/users/openaut-admin/tokens/poc2-bootstrap" || true)"
   if [ "$code" = "204" ] || [ "$code" = "404" ]; then
     rm -f "$secrets/admin_bootstrap_token"
-    admin_token=""
     return 0
   fi
   echo "Failed to revoke Forgejo bootstrap token (HTTP $code); token file retained for cleanup." >&2
@@ -33,8 +35,7 @@ cleanup_admin_token() {
 trap 'cleanup_admin_token || true' EXIT
 
 api() {
-  curl --fail --silent --show-error \
-    -H "Authorization: token $admin_token" \
+  bash "$forgejo_api" "$secrets/admin_bootstrap_token" --fail --silent --show-error \
     -H "Content-Type: application/json" "$@"
 }
 
@@ -112,4 +113,5 @@ done
 
 cleanup_admin_token
 trap - EXIT
+echo "WARNING: Engineer token is a standing lab credential on Platform; do not copy it into prompts or opencode config."
 echo "FORGEJO_BOOTSTRAP_OK org=openaut repos=${#repos[@]} engineer_team=$team_id protected_main=${#repos[@]}"

@@ -130,6 +130,10 @@ case "${1:-}" in
     [ -n "${2:-}" ] || { echo "usage: gen-certs.sh service <service-id>" >&2; exit 1; }
     ca
     validate_id "$2" service
+    case "$2" in
+      ingest|agent_ro) ;;
+      *) echo "unsupported POC service identity '$2': update the EMQX deny ACL before issuing it" >&2; exit 1 ;;
+    esac
     leaf clients "$2" "$2" "DNS:$2" ;;
   *)
     echo "usage: gen-certs.sh {ca | broker <host> [alternate-host] | client <site> <node-id> | service <service-id>}" >&2; exit 1 ;;

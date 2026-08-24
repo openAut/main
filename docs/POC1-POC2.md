@@ -40,6 +40,15 @@ human-created test case -> human approval -> Engineer/opencode -> Forgejo branch
 Advisor remains optional and may be represented by a fixture or human-created case. POC2 does not
 permit a field write or deployment to the IOT2050.
 
+The POC2 Compose project attaches to the external `openaut-poc1_default` network so it can reuse the
+Platform PostgreSQL service. Prepare and start POC1 before starting POC2.
+
+The `advisor_app`, `approver_app`, and `engineer_app` database roles are a lab authorization harness.
+They do not replace PAP-authored, signed permission profiles or production scope by site, case, trust
+level, and duration. The database verification uses superuser-controlled `SET SESSION AUTHORIZATION`
+with separate NOLOGIN test roles; it proves constrained-function authorization and audit attribution,
+not credential issuance or independent login authentication.
+
 ### Acceptance gates
 
 1. Migration-managed Systemdatabas tables exist for equipment, points, documents, cases, approvals,
@@ -84,6 +93,10 @@ same deployment has been reproduced elsewhere.
   bound to Platform loopback only, and the human admin has completed the forced password change.
 - The private `openaut` organization has five repositories. Engineer is a restricted team member;
   all `main` branches allow only the human admin to push/merge and require one approval.
+- Forgejo bootstrap creates a standing, scoped Engineer token stored only on Platform for lab
+  verification. It is not delivered to Engineer, is not the ADR 0003 credential-proxy design, and
+  must be rotated with `scripts/rotate_forgejo_engineer_token.sh` or revoked with the same script's
+  `--revoke-only` mode.
 - TLS reverse proxy, secure delivery of the scoped Engineer token, and a complete branch/PR/audit
   evidence test remain pending. POC2 is therefore not yet accepted.
 

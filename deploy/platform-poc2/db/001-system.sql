@@ -97,6 +97,8 @@ CREATE TABLE IF NOT EXISTS system.audit_events (
   details jsonb NOT NULL DEFAULT '{}'
 );
 
+-- POC authorization harness only. These group roles do not replace PAP-authored, signed permission
+-- profiles or production scoping by site, case, trust level, and duration.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'advisor_app') THEN CREATE ROLE advisor_app NOLOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'approver_app') THEN CREATE ROLE approver_app NOLOGIN; END IF;

@@ -19,8 +19,9 @@ The verification script proved:
 5. The approver could not add any permission beyond the exact POC2 forge-PR-only scope.
 6. The approver function moved a forge-PR-only case to approved and recorded an audit event.
 7. Engineer could start the approved case through a constrained function and read its scope.
-8. Request, approval, and Engineer start used three distinct session identities and produced three
-   audit records.
+8. Request, approval, and Engineer start used three distinct NOLOGIN identities through
+   superuser-controlled `SET SESSION AUTHORIZATION` and produced three audit records. This verifies
+   database authorization logic, not separate credential-based logins.
 
 ```text
 POC2_DB_OK unapproved_case=denied invalid_scope=denied self_approval=denied spoofed_actor=denied approved_case=in_progress:3:3
@@ -50,8 +51,11 @@ POC2_FORGE_ENGINEER_OK identity=openaut-engineer restricted=true admin=false pri
 - Column grants alone are insufficient for state transitions. Security-definer functions provide a
   small enforcement point for request, approval, and Engineer start transitions.
 - Forgejo should use a separate database role/database even when colocated with TimescaleDB.
-- Bootstrap administrator tokens and Engineer tokens must be files outside version control, scoped,
-  short-lived or revocable, and never written to command output.
+- Bootstrap administrator tokens must be automatically revoked. The scoped Engineer token is a
+  standing lab credential on Platform only; it has an explicit rotation/revocation script and must
+  not be treated as the production credential-proxy flow.
+- Rotate with `bash scripts/rotate_forgejo_engineer_token.sh`; revoke without replacement with
+  `bash scripts/rotate_forgejo_engineer_token.sh --revoke-only`.
 - Loopback plus an SSH tunnel provides an encrypted bootstrap path but does not satisfy the target
   TLS endpoint requirement.
 
