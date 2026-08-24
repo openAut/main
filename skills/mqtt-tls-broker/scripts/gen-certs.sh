@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Minimal PKI for openAut MQTT mutual TLS.
 #   gen-certs.sh ca                        -> internal CA under $PKI_DIR/ca
-#   gen-certs.sh broker <hostname-or-ip>   -> server cert under $PKI_DIR/broker
+#   gen-certs.sh broker <hostname-or-ip> [alternate-hostname-or-ip]
+#                                             -> server cert under $PKI_DIR/broker
 #   gen-certs.sh client <site> <node-id>   -> client cert (CN=<site>/<node-id>) under $PKI_DIR/clients
+#   gen-certs.sh service <service-id>       -> service cert (CN=<service-id>) under $PKI_DIR/clients
 # CN is the combined site/node identifier EMQX's ${cert_common_name} ACL placeholder keys
 # on (see skills/mqtt-tls-broker/assets/acl.conf, ADR 0004 decision 1, and
 # docs/verification/emqx-mqtt5-cmd-verification.md) -- each segment is validated below
@@ -27,6 +29,22 @@ validate_id() {  # validate_id <value> <label, e.g. "site" or "node">
   fi
 }
 
+validate_host() {
+  local val="$1"
+  if [ "${#val}" -lt 1 ] || [ "${#val}" -gt 253 ] || [[ ! "$val" =~ ^[A-Za-z0-9](-*[A-Za-z0-9.:])*$ ]]; then
+    echo "invalid hostname-or-ip '$val': must be 1-253 chars, alnum/'.'/'-'/':' only, no leading '-' or control chars" >&2
+    exit 1
+  fi
+}
+
+host_san() {
+  if [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf 'IP:%s' "$1"
+  else
+    printf 'DNS:%s' "$1"
+  fi
+}
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 # shellcheck disable=SC1091
@@ -48,6 +66,14 @@ ca() {
 leaf() {  # role dir, name, CN, extfile-SAN
   local dir="$1" name="$2" cn="$3" san="$4"
   mkdir -p "$PKI/$dir"
+  if [ -f "$PKI/$dir/$name.crt" ] && [ -f "$PKI/$dir/$name.key" ]; then
+    echo "$dir cert already exists at $PKI/$dir/$name.crt"
+    return
+  fi
+  if [ -e "$PKI/$dir/$name.crt" ] || [ -e "$PKI/$dir/$name.key" ]; then
+    echo "incomplete certificate state for $PKI/$dir/$name; refusing to overwrite" >&2
+    exit 1
+  fi
   openssl genrsa -out "$PKI/$dir/$name.key" 2048
   # CSR subject is built via a config file, not `-subj "/O=.../CN=$cn"`. -subj parses '/' as the
   # RDN delimiter, so a CN containing a literal '/' (the <site>/<node> format ADR 0004 requires)
@@ -75,12 +101,11 @@ case "${1:-}" in
     # leaf() now writes $2 into an openssl config file, not just -subj -- reject anything that
     # could break out of the config file's CN line (newline, brackets, '=') or the filename it's
     # also used as, rather than assume this argument is trusted just because it's operator-supplied.
-    if [ "${#2}" -lt 1 ] || [ "${#2}" -gt 253 ] || [[ ! "$2" =~ ^[A-Za-z0-9](-*[A-Za-z0-9.:])*$ ]]; then
-      echo "invalid hostname-or-ip '$2': must be 1-253 chars, alnum/'.'/'-'/':' only, no leading '-' or control chars" >&2
-      exit 1
-    fi
+    validate_host "$2"
+    [ -z "${3:-}" ] || validate_host "$3"
     ca
-    if [[ "$2" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then san="IP:$2"; else san="DNS:$2"; fi
+    san="$(host_san "$2")"
+    [ -z "${3:-}" ] || san="$san,$(host_san "$3")"
     leaf broker "$2" "$2" "$san" ;;
   client)
     [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: gen-certs.sh client <site> <node-id>" >&2; exit 1; }
@@ -101,6 +126,11 @@ case "${1:-}" in
     # "a-b-c", silently overwriting one node's cert/key with another's. A directory per site
     # is unambiguous because neither segment can contain '/' (validate_id rejects it).
     leaf "clients/$2" "$3" "$cn" "DNS:$2-$3" ;;
+  service)
+    [ -n "${2:-}" ] || { echo "usage: gen-certs.sh service <service-id>" >&2; exit 1; }
+    ca
+    validate_id "$2" service
+    leaf clients "$2" "$2" "DNS:$2" ;;
   *)
-    echo "usage: gen-certs.sh {ca | broker <host> | client <site> <node-id>}" >&2; exit 1 ;;
+    echo "usage: gen-certs.sh {ca | broker <host> [alternate-host] | client <site> <node-id> | service <service-id>}" >&2; exit 1 ;;
 esac

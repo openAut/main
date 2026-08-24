@@ -5,7 +5,8 @@
 -- NOTE: psql does not expand shell env vars. These identifiers match config.env defaults
 -- (openaut / telemetry / ingest / agent_ro). Adjust here if you changed them in config.env.
 
-CREATE DATABASE openaut;
+SELECT 'CREATE DATABASE openaut'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'openaut')\gexec
 \connect openaut
 
 CREATE EXTENSION IF NOT EXISTS timescaledb;

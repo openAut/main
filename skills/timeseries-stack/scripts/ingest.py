@@ -16,6 +16,7 @@ import json
 import os
 import ssl
 import sys
+import time
 
 INSERT = (
     "INSERT INTO telemetry.readings (ts, site, node, system, metric, value, bool_val, unit) "
@@ -99,12 +100,32 @@ def main():
     pki = os.environ.get("PKI_DIR", "./pki")
     cert = f"{pki}/clients/ingest.crt"
     key = f"{pki}/clients/ingest.key"
+    password_file = os.environ.get("PGPASSWORD_FILE")
+    if password_file:
+        with open(password_file, encoding="utf-8") as handle:
+            os.environ["PGPASSWORD"] = handle.read().strip()
     dsn = (
         f"host={os.environ['TSDB_HOST']} port={os.environ.get('TSDB_PORT','5432')} "
         f"dbname={os.environ['TSDB_DB']} user={os.environ.get('TSDB_INGEST_USER','ingest')}"
     )  # password via PGPASSWORD / .pgpass
 
-    conn = psycopg.connect(dsn, autocommit=True)
+    conn = None
+
+    def db_execute(statement, row):
+        nonlocal conn
+        for attempt in range(2):
+            try:
+                if conn is None or conn.closed:
+                    conn = psycopg.connect(dsn, autocommit=True)
+                conn.execute(statement, row)
+                return
+            except psycopg.OperationalError:
+                if conn is not None:
+                    conn.close()
+                conn = None
+                if attempt:
+                    raise
+                time.sleep(1)
 
     def on_connect(client, _u, _f, rc, *_):
         print(f"connected rc={rc}; subscribing openaut/#")
@@ -114,7 +135,7 @@ def main():
         status = status_row(msg.topic, msg.payload)
         if status:
             try:
-                conn.execute(STATUS_INSERT, status)
+                db_execute(STATUS_INSERT, status)
             except Exception as exc:  # noqa: BLE001
                 print(f"status insert failed for {msg.topic}: {exc}", file=sys.stderr)
             return
@@ -122,16 +143,16 @@ def main():
         if not row:
             return
         try:
-            conn.execute(INSERT, row)
+            db_execute(INSERT, row)
         except Exception as exc:  # noqa: BLE001
             print(f"insert failed for {msg.topic}: {exc}", file=sys.stderr)
 
-    client = mqtt.Client(client_id="ingest")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="ingest")
     client.tls_set(ca_certs=ca, certfile=cert, keyfile=key, tls_version=ssl.PROTOCOL_TLS_CLIENT)
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(emqx_host, emqx_tls_port, keepalive=60)
-    client.loop_forever()
+    client.connect_async(emqx_host, emqx_tls_port, keepalive=60)
+    client.loop_forever(retry_first_connection=True)
 
 
 if __name__ == "__main__":

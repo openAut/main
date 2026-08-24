@@ -42,6 +42,7 @@ them under `$PKI_DIR` (keep that directory out of git — it is in `.gitignore`)
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh ca
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh broker "$EMQX_HOST"
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID"
+bash skills/mqtt-tls-broker/scripts/gen-certs.sh service ingest
 ```
 
 The client cert's **Common Name = the combined `<site>/<node>` identifier** (e.g. `CN=karsamala/iot2050-ahu-01`)
