@@ -16,7 +16,8 @@
 | psycopg | 3.3.4 |
 
 Container base images are digest-pinned in `deploy/platform-poc1/compose.yaml` and the ingest
-Dockerfile. Local passwords, PKI material, runtime copies, and `.env` are gitignored.
+Dockerfile. Python wheels are version- and SHA-256-locked with `pip --require-hashes`. Local
+passwords, PKI material, runtime copies, and `.env` are gitignored.
 
 ## Evidence
 

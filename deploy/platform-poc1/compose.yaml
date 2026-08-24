@@ -15,8 +15,13 @@ services:
       - timescale_data:/var/lib/postgresql/data
       - ../../skills/timeseries-stack/assets/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
       - ./db/002-roles.sh:/docker-entrypoint-initdb.d/002-roles.sh:ro
+      - ./db/verify-counts.sql:/opt/openaut/verify-counts.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
+    networks:
+      - telemetry-db
+      - forge-db
+      - db-admin
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d openaut"]
       interval: 5s
@@ -38,6 +43,10 @@ services:
       - ./runtime/certs:/opt/emqx/etc/certs:ro
     ports:
       - "${OPENAUT_FIELD_BIND_IP:?set by prepare_platform_poc1.sh}:8883:8883"
+    networks:
+      mqtt:
+        aliases:
+          - emqx
     healthcheck:
       test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
       interval: 10s
@@ -69,6 +78,11 @@ services:
       - ingest_db_password
     volumes:
       - ./runtime/pki:/run/pki:ro
+    networks:
+      mqtt:
+        aliases:
+          - ingest
+      telemetry-db:
 
 secrets:
   postgres_password:
@@ -82,3 +96,12 @@ volumes:
   timescale_data:
   emqx_data:
   emqx_log:
+
+networks:
+  mqtt:
+  telemetry-db:
+    internal: true
+  forge-db:
+    name: openaut-platform-forge-db
+    internal: true
+  db-admin:

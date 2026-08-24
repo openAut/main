@@ -21,6 +21,7 @@ services:
       FORGEJO__security__INSTALL_LOCK: "true"
     networks:
       - platform
+      - admin
     volumes:
       - forgejo_data:/var/lib/gitea
       - ./secrets/forgejo_db_password:/run/secrets/forgejo_db_password:ro
@@ -31,8 +32,9 @@ services:
 
 networks:
   platform:
-    name: openaut-poc1_default
+    name: openaut-platform-forge-db
     external: true
+  admin:
 
 volumes:
   forgejo_data:

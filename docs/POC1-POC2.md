@@ -40,8 +40,9 @@ human-created test case -> human approval -> Engineer/opencode -> Forgejo branch
 Advisor remains optional and may be represented by a fixture or human-created case. POC2 does not
 permit a field write or deployment to the IOT2050.
 
-The POC2 Compose project attaches to the external `openaut-poc1_default` network so it can reuse the
-Platform PostgreSQL service. Prepare and start POC1 before starting POC2.
+The POC1 stack separates EMQX/ingest (`mqtt`), ingest/TimescaleDB (`telemetry-db`), and
+TimescaleDB/Forgejo (`openaut-platform-forge-db`). POC2 attaches only to the external Forge DB
+network, so it cannot reach EMQX. Prepare and start POC1 before starting POC2.
 
 The `advisor_app`, `approver_app`, and `engineer_app` database roles are a lab authorization harness.
 They do not replace PAP-authored, signed permission profiles or production scope by site, case, trust
