@@ -58,6 +58,7 @@ telemetry.readings(
   node      text          not null,   -- .../<node>/...
   system    text          not null,   -- .../<system>/...
   metric    text          not null,   -- .../<metric>
+  event_id  text,                     -- stable edge id for at-least-once deduplication
   value     double precision,
   bool_val  boolean,                  -- for binary points
   unit      text
@@ -75,9 +76,21 @@ Two supported paths (pick one):
 
 Either connects to EMQX as the **`ingest`** identity (cert CN), subscribes read-only to `openaut/#`,
 parses `openaut/<site>/<node>/<system>/<metric>` into columns, and inserts into `telemetry.readings`.
+The Python consumer deduplicates durable edge retries by `(ts, node, event_id)`; messages without an
+`event_id` remain accepted for legacy and synthetic POC publishers but cannot be deduplicated.
 Node online/offline messages on `openaut/<site>/<node>/$status` are stored separately in
 `telemetry.node_status`.
 Run it as a systemd service on the AI-tier host.
+
+For an existing Platform POC data volume, apply the idempotent migration **before** rebuilding or
+restarting ingest with the new contract:
+
+```bash
+bash scripts/apply_platform_edge_event_id.sh
+```
+
+Fresh databases receive the same column, format constraint, and partition-compatible unique index
+from `assets/schema.sql` during initialization.
 
 ## Step 5 — Retention & continuous aggregates
 

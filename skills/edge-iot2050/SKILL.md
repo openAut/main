@@ -1,12 +1,13 @@
 ---
 name: edge-iot2050
-description: Provision a Siemens SIMATIC IOT2050 edge node for openAut — install a field-protocol poller, publish readings to the central EMQX broker over mutual TLS with the node's client certificate, buffer locally (store-and-forward) when the broker is unreachable, and run it as a resilient systemd service. Use when setting up IOT2050 or other Linux edge nodes, bridging BACnet/Modbus/M-Bus field data to MQTT, or adding store-and-forward edge buffering.
+description: Provision the openAut telemetry runtime on a Siemens SIMATIC IOT2050 — install the reference field-reader scaffold, publish readings to EMQX over mutual TLS, and buffer with PUBACK-aware store-and-forward. Use when preparing an approved IOT2050 deployment, integrating a read-only BACnet/Modbus/M-Bus reader, or testing resilient edge publishing.
 permissions:
   knowledge_only: false
-  exec: "node-provisioned edge agent (edge_agent.py) + systemd unit"
-  network: "outbound MQTT over mutual TLS to EMQX"
-  files: "read-write (/var/lib/openaut store-and-forward); read certs"
+  exec: "owner-approved install.sh + node-provisioned edge agent (edge_agent.py) + systemd unit"
+  network: "case-scoped SSH for deployment; outbound MQTT over mutual TLS to EMQX"
+  files: "approved deployment writes /opt/openaut-edge and /etc/openaut; runtime writes /var/lib/openaut and reads certs"
   credentials: "TLS client cert/key + EnvironmentFile (node-provisioned, not in repo)"
+  control_writes: "none"
 ---
 
 # edge-iot2050 — Siemens IOT2050 edge node
@@ -14,12 +15,47 @@ permissions:
 openAut Layer 2 keeps existing field equipment unchanged and puts a small Linux **edge node** next to
 it. The node polls field protocols (BACnet/Modbus/M-Bus/…), normalises readings to the openAut topic
 schema, and publishes them to the central **EMQX** broker over **mutual TLS**, buffering locally when
-the network is down so no data is lost.
+the network is down within a configured, explicitly bounded local queue.
+
+Use [`iot2050-device`](../iot2050-device/SKILL.md) first to identify the hardware variant, inspect the
+installed image, and apply Siemens' model-specific operating constraints. This skill covers only the
+openAut edge application.
 
 Depends on [`mqtt-tls-broker`](../mqtt-tls-broker/SKILL.md) (issues the node's client cert and defines
-the topic schema). Assumes `config.env` is sourced.
+the topic schema). The reference `read_point()` remains a stub: this is a tested MQTT/TLS and durable
+spool scaffold, not a functioning field poller until one selected read-only protocol is implemented
+and its point map is reviewed.
 
-## Step 1 — Issue and deploy the node's client certificate
+## Approval gate
+
+Certificate issuance, file copying, package installation, service changes, and deployment are writes.
+Before any of them, require all of the following:
+
+1. An approved Systemdatabas case for the exact node, site, protocol, points, artifact revision, and
+   maintenance window.
+2. Explicit human confirmation for the deployment being performed now.
+3. Engineer trust-domain execution through its case-scoped SSH and policy-owned deploy-wrapper path.
+   Advisor never runs this flow.
+4. A reviewed rollback plan and physical recovery access. Never deploy to a live building, occupied
+   space, or safety-critical equipment from this POC.
+
+`install.sh` verifies bundle integrity and requires matching case/confirmation strings, but it does
+**not** query Systemdatabasen and cannot prove approval by itself. The policy-owned wrapper must verify
+the active case and approved Forge revision before invoking it. Do not expose direct root execution as
+an alternative approval path. Inventory remains read-only and follows `iot2050-device`. Do not treat
+an empty or placeholder `config.env` as provisioned infrastructure.
+
+## Step 1 — Model and runtime preflight
+
+Confirm the device-tree model, OS image, free storage, clock synchronization, failed units, and
+listeners using `iot2050-device`. For Basic, do not use the Advanced-only eMMC installation flow.
+The deploy wrapper supplies the already-verified case identifier:
+
+```bash
+export OPENAUT_APPROVED_CASE='<approved-case-id>'
+```
+
+## Step 2 — Prepare reviewed artifacts
 
 The broker skill generates a per-node cert whose **CN = the combined `$EDGE_SITE/$EDGE_NODE_ID`**
 (the broker ACL keys on this whole CN via `${cert_common_name}`, not on MQTT ClientID):
@@ -28,37 +64,84 @@ The broker skill generates a per-node cert whose **CN = the combined `$EDGE_SITE
 bash skills/mqtt-tls-broker/scripts/gen-certs.sh client "$EDGE_SITE" "$EDGE_NODE_ID"
 ```
 
-Copy the CA + the node's cert/key to the IOT2050 (keys stay 600, owned by the service user). Cert files
-live under **one directory per site, one file per node** — `clients/<site>/<node>.{crt,key}` — not a
-concatenated `<site>-<node>` filename, since both segments may themselves contain `-` and a
-concatenated name is not collision-free (`site=a-b/node=c` and `site=a/node=b-c` would otherwise both
-produce `a-b-c`):
+The PKI keeps **one directory per site, one file per node** at
+`clients/<site>/<node>.{crt,key}`. Do not concatenate site and node with `-`: both segments may contain
+hyphens, making that representation collision-prone.
 
-```bash
-ssh "$EDGE_SSH_USER@$EDGE_HOST" "mkdir -p /etc/openaut/certs && chmod 700 /etc/openaut/certs"
-scp "$MQTT_CA_CERT" "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.crt" "$PKI_DIR/clients/$EDGE_SITE/$EDGE_NODE_ID.key" \
-    "$EDGE_SSH_USER@$EDGE_HOST:/etc/openaut/certs/"
+Build an approved deployment directory outside the repository containing exactly these five files,
+plus their canonical SHA-256 manifest:
+
+```text
+points.json
+edge.env
+ca.crt
+node.crt
+node.key
+manifest.sha256
 ```
 
-The node authenticates to EMQX **with this cert** — the broker ACL then confines it to
-`openaut/$EDGE_SITE/$EDGE_NODE_ID/#`. A stolen node can never publish as another node, and a node
-cannot widen its own scope by presenting a different MQTT ClientID at connect time (identity is read
-from the certificate at the TLS layer).
-
-## Step 2 — Install the edge agent
-
-Copy the poller/publisher and its point map, install Python deps in a venv:
+Create `manifest.sha256` only after the five files have been reviewed, then attach the manifest and
+approved Forge revision to the case:
 
 ```bash
-scp -r skills/edge-iot2050/scripts skills/edge-iot2050/assets \
-    "$EDGE_SSH_USER@$EDGE_HOST:/opt/openaut-edge/"
+(cd "$APPROVED_EDGE_CONFIG" && sha256sum points.json edge.env ca.crt node.crt node.key > manifest.sha256)
+```
+
+Use `assets/points.example.json` and `assets/edge.env.example` only as templates. Replace every
+placeholder, review every point as read-only, and never install the examples directly. Put the
+approved `paho_mqtt-2.1.0-py3-none-any.whl` in a separate wheelhouse. Its SHA-256 must match
+`assets/requirements.lock`; obtain the wheel through the approved Forge/CI artifact path, not by
+giving the IOT2050 general internet egress. The release's committed `assets/release.sha256` detects
+transfer corruption; the deploy wrapper remains responsible for binding the release to the approved
+Forge revision.
+
+The installer validates the manifest, fixed runtime paths, canonical identifiers, CA chain,
+certificate validity, exact `CN=<site>/<node>`, and private-key match before changing the node.
+
+## Step 3 — Stage and install
+
+Stage the reviewed release, deployment directory, and wheelhouse. Do not place private keys in the
+repository. The installer accepts only a root-owned tree with no symlinks or group/other-writable
+content. In the current root-only lab alias the commands below create that snapshot directly; a
+future non-root forced-command path must copy into an equivalent root-owned snapshot before invoking
+the installer. First reject a stale case-specific staging directory:
+
+```bash
+printf '%s\n' "$OPENAUT_APPROVED_CASE" | LC_ALL=C grep -Eq \
+  '^[A-Za-z0-9]+([._:-][A-Za-z0-9]+)*$' || exit 1
+EDGE_STAGE="/tmp/openaut-edge-$OPENAUT_APPROVED_CASE"
 ssh "$EDGE_SSH_USER@$EDGE_HOST" \
-  "cd /opt/openaut-edge && python3 -m venv venv && \
-   ./venv/bin/pip install paho-mqtt && \
-   echo 'add pymodbus / BAC0 / etc. for the protocols this node reads'"
+  "test ! -e '$EDGE_STAGE' && install -d -m 0700 \
+   '$EDGE_STAGE/release' '$EDGE_STAGE/config' '$EDGE_STAGE/wheels'"
+scp -r skills/edge-iot2050/scripts skills/edge-iot2050/assets \
+  "$EDGE_SSH_USER@$EDGE_HOST:$EDGE_STAGE/release/"
+scp -r "$APPROVED_EDGE_CONFIG/." "$EDGE_SSH_USER@$EDGE_HOST:$EDGE_STAGE/config/"
+scp -r "$APPROVED_WHEELHOUSE/." "$EDGE_SSH_USER@$EDGE_HOST:$EDGE_STAGE/wheels/"
 ```
 
-## Step 3 — Configure the point map
+After the policy-owned wrapper has rechecked the active case, approved revision, manifest, target,
+and human confirmation, it may invoke:
+
+```bash
+ssh "$EDGE_SSH_USER@$EDGE_HOST" \
+  "OPENAUT_APPROVED_CASE='$OPENAUT_APPROVED_CASE' \
+   OPENAUT_CONFIRM_CASE='$OPENAUT_APPROVED_CASE' \
+   /bin/sh '$EDGE_STAGE/release/scripts/install.sh' \
+   '$EDGE_STAGE/config' '$EDGE_STAGE/wheels'"
+```
+
+`install.sh` creates the non-login `openaut` service account, installs hash-verified offline
+dependencies, and builds case-specific release/configuration directories. It switches `current`
+symlinks only after all local validation succeeds, then requires the service to connect to EMQX and
+write a fresh readiness marker within 60 seconds. A failed activation restores the previous symlinks
+and systemd unit. Previous case directories remain for reviewed rollback and must be removed only by
+the policy-owned deploy wrapper after case closure.
+
+If the selected protocol needs a serial device, grant only its stable `/dev/serial/by-id/...` path
+through the systemd device policy and add the narrow device group in the reviewed artifact. Do not
+grant broad device access pre-emptively.
+
+## Step 4 — Configure the point map
 
 `assets/points.example.json` defines what to read and how to map it to topics:
 
@@ -75,47 +158,49 @@ ssh "$EDGE_SSH_USER@$EDGE_HOST" \
 }
 ```
 
-Field reads are delegated to the protocol skills (`modbus`, `bacnet`, `m-bus`); this map is the glue
+Field reads are delegated to the protocol skills (`modbus`, `bacnet`, `mbus`); this map is the glue
 between a point and its MQTT topic `openaut/<site>/<node>/<system>/<metric>`.
 
-This example is read-only telemetry. When a point becomes **writable** (the mediated MQTT setpoint
-channel decided in [ADR 0004](../../docs/adr/0004-edge-control-writes-and-continuity.md)), add the
-safety-relevance/interlock metadata block defined in
-[`docs/patterns/physical-plc-interlock.md`](../../docs/patterns/physical-plc-interlock.md) to that
-point's entry before it can be activated for Engineer write/deploy.
+This publisher accepts read-only telemetry points only. Both bundle validation and runtime reject
+writable points. The future mediated setpoint channel proposed in
+[ADR 0004](../../docs/adr/0004-edge-control-writes-and-continuity.md) is a separate capability and
+must never be activated by extending this point map.
 
-## Step 4 — Store-and-forward buffering
+## Step 5 — Store-and-forward buffering
 
-`edge_agent.py` publishes with QoS 1 and **persists unsent readings to a local SQLite spool** when the
-broker is unreachable, draining the spool on reconnect. The node also sets an MQTT **Last-Will** on
-`openaut/<site>/<node>/$status` so the AI tier sees it drop offline. This makes the edge resilient to
-WAN/broker outages — a core openAut requirement (local buffering on the edge).
+`edge_agent.py` assigns a stable `event_id` and persists each reading to SQLite **before** publishing
+with QoS 1. It removes a row only
+after Paho receives the broker's PUBACK. `connect_async()` and bounded reconnect delays retry the
+initial connection and later outages. Paho retains each in-flight QoS 1 message across an automatic
+reconnect while SQLite retains it across process restarts. Delivery is therefore at-least-once:
+ingest deduplicates the same event after reconnect or restart using `(ts, node, event_id)`.
+Apply `bash scripts/apply_platform_edge_event_id.sh` to an existing Platform data volume before
+restarting ingest with this contract; fresh databases receive the same schema from
+`timeseries-stack/assets/schema.sql`.
+
+The node sets an MQTT Last-Will on `openaut/<site>/<node>/$status`. A will cannot contain the future
+disconnect time, so the offline payload omits `ts`; ingest records when it observes the retained
+offline state. This is an observation timestamp, not proof of the exact disconnect time. Online
+status continues to carry the node timestamp.
 
 Set `OPENAUT_SPOOL_MAX_ROWS` to bound disk use during long outages. The reference default is 100,000
-queued readings; older rows are dropped first if that cap is reached.
+queued readings. Once full, the oldest non-inflight row is dropped and an error is logged; this is an
+explicit bounded-storage loss policy, not a claim of unlimited no-loss buffering. Size the cap from
+poll rate, expected outage, available media, and write endurance.
 
-## Step 5 — Run as a systemd service
-
-```bash
-scp skills/edge-iot2050/assets/openaut-edge.service "$EDGE_SSH_USER@$EDGE_HOST:/tmp/"
-ssh "$EDGE_SSH_USER@$EDGE_HOST" \
-  "sudo mv /tmp/openaut-edge.service /etc/systemd/system/ && \
-   sudo systemctl daemon-reload && sudo systemctl enable --now openaut-edge.service"
-```
-
-`Restart=always` + the spool means a reboot or transient network loss self-heals.
-
-## Step 6 — Verify
+## Step 6 — Verify and close the case
 
 ```bash
 ssh "$EDGE_SSH_USER@$EDGE_HOST" "systemctl status openaut-edge.service --no-pager"
-# From the broker skill: confirm readings land over TLS
 bash skills/mqtt-tls-broker/scripts/verify-tls.sh
-# From the storage skill: confirm rows arrive
 bash skills/timeseries-stack/scripts/verify-db.sh
 ```
 
 End-to-end success = a field value appears as a row in `telemetry.readings` within `interval_s`.
+Also verify an approved broker-outage test: queue depth increases while disconnected, the client
+reconnects without restart, rows remain until PUBACK, and the queue drains after recovery. Reboot the
+node only if the approved test plan explicitly includes it. Attach results and artifact hashes to the
+case before closure.
 
 ## Security review (openAut frameworks)
 
@@ -123,11 +208,11 @@ End-to-end success = a field value appears as a row in `telemetry.readings` with
 |---|---|---|
 | Strong device identity | per-node client cert, CN-bound ACL | IEC 62443 SR 1.x |
 | Encryption in transit | publishes only over `:8883` mutual TLS | IEC 62443 SR 4.1, CRA |
-| Availability / no data loss | store-and-forward spool + LWT status | NIS2 (availability), openAut edge buffering |
-| Key custody | certs 600, owned by the service user, on-device only | ISO 27001 A.8 |
-| Field isolation | node reads field bus, publishes one prefix; no inbound control path by default | IEC 62443 zones/conduits |
+| Bounded outage tolerance | PUBACK-aware store-and-forward spool + LWT status | NIS2 (availability), openAut edge buffering |
+| Key custody | private key 0640, root-owned and service-group-readable, on-device only | ISO 27001 A.8 |
+| Field isolation | node reads field bus, publishes one prefix; no inbound control path | IEC 62443 zones/conduits |
 
-> **Live behaviour is unverified until IOT2050 hardware and field devices are connected.** Protocol
-> client libraries and the IOT2050 base image differ per deployment — the cert identity, topic
-> mapping, and store-and-forward contract are the durable part. Control writes back to field devices
-> (setpoints) should remain a human-confirmed path via the Driftstekniker agent, not the edge poller.
+> Read-only inventory has been exercised on IOT2050 hardware, but the reference field reader and a
+> physical end-to-end publish remain unverified. This skill has no inbound MQTT subscription and no
+> field-write path. Any future setpoint path must follow ADR 0004 and remain separate from this
+> telemetry publisher.
