@@ -29,7 +29,9 @@ openaut/<site>/<node>/$status               node online/offline (LWT)
 ```
 
 - `<site>` = `$EDGE_SITE`, `<node>` = `$EDGE_NODE_ID`.
-- Payload: `{"value": <number|bool>, "ts": <unix_epoch>, "unit": "<str>"}`.
+- Payload: `{"event_id": "<32 lowercase hex>", "value": <number|bool>, "ts": <unix_epoch>, "unit": "<str>"}`.
+  `event_id` is required for durable edge publishers and remains stable across retries so ingest can
+  deduplicate at-least-once delivery; legacy/synthetic publishers may omit it during migration.
 - This maps cleanly onto the TimescaleDB hypertable in [`timeseries-stack`](../timeseries-stack/SKILL.md)
   and is published by [`edge-iot2050`](../edge-iot2050/SKILL.md).
 

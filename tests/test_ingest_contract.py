@@ -39,6 +39,23 @@ class IngestContractTests(unittest.TestCase):
         )
         self.assertEqual(row["value"], 21.5)
         self.assertIsNone(row["bool_val"])
+        self.assertIsNone(row["event_id"])
+
+    def test_event_id_is_preserved_for_deduplication(self):
+        event_id = "0123456789abcdef0123456789abcdef"
+        row = self.ingest.telemetry_row(
+            "openaut/karsamala/iot2050-ahu-01/ahu/supply_temp",
+            json.dumps({"event_id": event_id, "value": 21.5, "ts": 1700000000}).encode(),
+        )
+        self.assertEqual(row["event_id"], event_id)
+
+    def test_invalid_event_id_is_rejected(self):
+        self.assertIsNone(
+            self.ingest.telemetry_row(
+                "openaut/karsamala/iot2050-ahu-01/ahu/supply_temp",
+                json.dumps({"event_id": "not-canonical", "value": 21.5, "ts": 1700000000}).encode(),
+            )
+        )
 
     def test_bool_payload_maps_to_bool_only(self):
         row = self.ingest.telemetry_row(
@@ -54,7 +71,7 @@ class IngestContractTests(unittest.TestCase):
             self.ingest.telemetry_row("openaut/karsamala/iot2050-ahu-01/ahu/supply_temp", b'{"value":1}')
         )
 
-    def test_status_payload_requires_bool_and_timestamp(self):
+    def test_status_payload_requires_bool(self):
         row = self.ingest.status_row(
             "openaut/karsamala/iot2050-ahu-01/$status",
             json.dumps({"value": False, "ts": 1700000000}).encode(),
@@ -65,6 +82,24 @@ class IngestContractTests(unittest.TestCase):
         )
         self.assertIsNone(
             self.ingest.status_row("openaut/karsamala/iot2050-ahu-01/$status", b'{"value":"false","ts":1}')
+        )
+
+    def test_offline_will_uses_broker_receipt_time(self):
+        row = self.ingest.status_row(
+            "openaut/karsamala/iot2050-ahu-01/$status",
+            b'{"value":false}',
+            received_at=1700000001,
+        )
+        self.assertEqual(row["ts"], 1700000001)
+        self.assertIs(row["online"], False)
+
+    def test_online_status_still_requires_source_timestamp(self):
+        self.assertIsNone(
+            self.ingest.status_row(
+                "openaut/karsamala/iot2050-ahu-01/$status",
+                b'{"value":true}',
+                received_at=1700000001,
+            )
         )
 
 

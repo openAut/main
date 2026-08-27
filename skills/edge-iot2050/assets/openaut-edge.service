@@ -5,10 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Run as a non-root service user that owns /etc/openaut/certs and /var/lib/openaut.
+# Configuration and keys are root-owned; the service receives group-read access only.
 User=openaut
-EnvironmentFile=/etc/openaut/edge.env
-ExecStart=/opt/openaut-edge/venv/bin/python /opt/openaut-edge/scripts/edge_agent.py
+Group=openaut
+EnvironmentFile=/etc/openaut/current/edge.env
+ExecStartPre=/opt/openaut-edge/current/venv/bin/python /opt/openaut-edge/current/scripts/edge_agent.py --check-config /etc/openaut/current/points.json
+ExecStart=/opt/openaut-edge/current/venv/bin/python /opt/openaut-edge/current/scripts/edge_agent.py
 Restart=always
 RestartSec=5
 # Hardening
@@ -16,6 +18,16 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/openaut
 ProtectHome=true
+ProtectClock=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

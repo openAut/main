@@ -14,19 +14,21 @@ Not production-hardened (no batching/backpressure) — see notes in SKILL.md.
 """
 import json
 import os
+import re
 import ssl
 import sys
 import time
 
 INSERT = (
-    "INSERT INTO telemetry.readings (ts, site, node, system, metric, value, bool_val, unit) "
-    "VALUES (to_timestamp(%(ts)s), %(site)s, %(node)s, %(system)s, %(metric)s, "
-    "%(value)s, %(bool_val)s, %(unit)s)"
+    "INSERT INTO telemetry.readings (ts, site, node, system, metric, event_id, value, bool_val, unit) "
+    "VALUES (to_timestamp(%(ts)s), %(site)s, %(node)s, %(system)s, %(metric)s, %(event_id)s, "
+    "%(value)s, %(bool_val)s, %(unit)s) ON CONFLICT (ts, node, event_id) DO NOTHING"
 )
 STATUS_INSERT = (
     "INSERT INTO telemetry.node_status (ts, site, node, online) "
     "VALUES (to_timestamp(%(ts)s), %(site)s, %(node)s, %(online)s)"
 )
+EVENT_ID = re.compile(r"[0-9a-f]{32}", flags=re.ASCII)
 
 
 def parse_topic(topic: str):
@@ -57,12 +59,16 @@ def telemetry_row(topic: str, payload_bytes: bytes):
     except (json.JSONDecodeError, ValueError):
         return None
     val = payload.get("value")
+    event_id = payload.get("event_id")
+    if event_id is not None and (not isinstance(event_id, str) or EVENT_ID.fullmatch(event_id) is None):
+        return None
     row = {
         "ts": payload.get("ts"),
         "site": site,
         "node": node,
         "system": system,
         "metric": metric,
+        "event_id": event_id,
         "value": val if isinstance(val, (int, float)) and not isinstance(val, bool) else None,
         "bool_val": val if isinstance(val, bool) else None,
         "unit": payload.get("unit"),
@@ -72,7 +78,7 @@ def telemetry_row(topic: str, payload_bytes: bytes):
     return row
 
 
-def status_row(topic: str, payload_bytes: bytes):
+def status_row(topic: str, payload_bytes: bytes, received_at=None):
     parsed = parse_status_topic(topic)
     if not parsed:
         return None
@@ -82,9 +88,16 @@ def status_row(topic: str, payload_bytes: bytes):
     except (json.JSONDecodeError, ValueError):
         return None
     val = payload.get("value")
-    if not isinstance(val, bool) or payload.get("ts") is None:
+    if not isinstance(val, bool):
         return None
-    return {"ts": payload["ts"], "site": site, "node": node, "online": val}
+    timestamp = payload.get("ts")
+    # A retained MQTT Last-Will is a current-state observation, not an exact disconnect event.
+    # Ingest timestamps when it observes that state; online status remains source-timestamped.
+    if timestamp is None and val is False:
+        timestamp = received_at
+    if timestamp is None:
+        return None
+    return {"ts": timestamp, "site": site, "node": node, "online": val}
 
 
 def main():
@@ -132,7 +145,7 @@ def main():
         client.subscribe("openaut/#", qos=1)
 
     def on_message(_c, _u, msg):
-        status = status_row(msg.topic, msg.payload)
+        status = status_row(msg.topic, msg.payload, received_at=int(time.time()))
         if status:
             try:
                 db_execute(STATUS_INSERT, status)

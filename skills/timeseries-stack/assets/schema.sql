@@ -36,15 +36,29 @@ CREATE TABLE IF NOT EXISTS telemetry.readings (
   node      text              NOT NULL,
   system    text              NOT NULL,
   metric    text              NOT NULL,
+  event_id  text CONSTRAINT readings_event_id_format
+                 CHECK (event_id IS NULL OR event_id ~ '^[0-9a-f]{32}$'),
   value     double precision,
   bool_val  boolean,
   unit      text
 );
+ALTER TABLE telemetry.readings ADD COLUMN IF NOT EXISTS event_id text;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'telemetry.readings'::regclass AND conname = 'readings_event_id_format'
+  ) THEN
+    ALTER TABLE telemetry.readings ADD CONSTRAINT readings_event_id_format
+      CHECK (event_id IS NULL OR event_id ~ '^[0-9a-f]{32}$');
+  END IF;
+END $$;
 SELECT create_hypertable('telemetry.readings', 'ts',
                          partitioning_column => 'node', number_partitions => 4,
                          if_not_exists => TRUE);
 CREATE INDEX IF NOT EXISTS readings_node_metric_ts
   ON telemetry.readings (node, metric, ts DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS readings_event_id
+  ON telemetry.readings (ts, node, event_id);
 
 CREATE TABLE IF NOT EXISTS telemetry.node_status (
   ts        timestamptz       NOT NULL,

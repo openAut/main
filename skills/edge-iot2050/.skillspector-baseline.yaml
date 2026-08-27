@@ -1,22 +1,69 @@
-# SkillSpector baseline - findings suppressed on future scans.
-# Every entry is a reviewed false positive on the hardened edge agent.
+# SkillSpector baseline - reviewed false positives on the approved edge installer/runtime.
 # See docs/SUPPRESSION.md.
 version: 1
 rules: []
 fingerprints:
-- hash: sha256:91a6b13feca08cbc
+- hash: sha256:b6cdddf1275fa6ff
+  rule_id: TT2
+  file: scripts/edge_agent.py
+  reason: "FP: OPENAUT_READY_FILE is allow-listed to /var/lib/openaut/mqtt.ready by the root-owned bundle validator; systemd permits writes only under /var/lib/openaut."
+- hash: sha256:8c1bcb6c2a01fecc
   rule_id: LP3
   file: SKILL.md
-  reason: "Permissions are declared in this skill's frontmatter; the LP3 heuristic does not parse that block. See permissions: in SKILL.md."
-- hash: sha256:6cb8e1986fa8059c
-  rule_id: MP2
-  file: scripts/edge_agent.py
-  reason: "FP: field telemetry is parsed/normalized for MQTT/TimescaleDB; values are never interpreted as instructions or persisted as agent memory."
-- hash: sha256:b283d5e59d53af26
-  rule_id: MP2
-  file: scripts/edge_agent.py
-  reason: "FP: field telemetry is parsed/normalized for MQTT/TimescaleDB; values are never interpreted as instructions or persisted as agent memory."
-- hash: sha256:93ac96eba8d4fe14
+  reason: "FP: permissions are declared in SKILL.md frontmatter; the LP3 heuristic does not parse that block."
+- hash: sha256:885c114eabf5f79f
   rule_id: PE3
   file: assets/openaut-edge.service
-  reason: "FP: EnvironmentFile=/etc/openaut/edge.env on a hardened unit (User=openaut, NoNewPrivileges, ProtectSystem=strict). Standard secret delivery, not theft."
+  reason: "FP: EnvironmentFile points to installer-created root:openaut 0640 configuration; the non-root service receives group-read access and NoNewPrivileges."
+- hash: sha256:b78397d851b294ab
+  rule_id: PE2
+  file: scripts/install.sh
+  reason: "FP: root is explicitly required for an owner-approved, case-scoped node installation of a system account, systemd unit, and root-owned certificates; runtime remains non-root."
+- hash: sha256:aaa99f2b466287e5
+  rule_id: PE3
+  file: scripts/install.sh
+  reason: "FP: the installer copies a manifest-verified edge.env into root:openaut 0640 storage; it does not exfiltrate or print configuration or credentials."
+- hash: sha256:006877bd841b34a5
+  rule_id: PE3
+  file: scripts/verify_bundle.py
+  reason: "FP: edge.env is an expected local bundle filename, not credential discovery; the parser accepts only eight allow-listed runtime keys."
+- hash: sha256:d2b3576e4e17a50b
+  rule_id: PE3
+  file: scripts/verify_bundle.py
+  reason: "FP: validation errors name edge.env lines but never include values; no credentials are read or transmitted."
+- hash: sha256:fb8ccf165c0ab52b
+  rule_id: PE3
+  file: scripts/verify_bundle.py
+  reason: "FP: edge.env keys and fixed paths are validated against an exact allow-list before installation; values are not exposed."
+- hash: sha256:579e976dfe972cb2
+  rule_id: PE3
+  file: scripts/verify_bundle.py
+  reason: "FP: the example broker check rejects placeholder configuration; it is not credential access."
+- hash: sha256:45f43e6589c0eeb2
+  rule_id: PE3
+  file: scripts/verify_bundle.py
+  reason: "FP: EMQX_HOST format validation operates on a broker address from the approved local bundle, not a secret."
+- hash: sha256:38a00725476ff650
+  rule_id: PE3
+  file: scripts/verify_bundle.py
+  reason: "FP: the validator opens only the exact manifest-listed edge.env and points.json files inside the approved bundle; it performs no credential search or transmission."
+- hash: sha256:6277b882284959e9
+  rule_id: RA2
+  file: scripts/install.sh
+  reason: "FP: prior systemd enablement is inspected solely so a failed owner-approved deployment can restore the original state."
+- hash: sha256:9ccf545b45c6ed1d
+  rule_id: RA2
+  file: scripts/install.sh
+  reason: "FP: systemd persistence is the explicit purpose of the human-confirmed edge service deployment; failure restores prior active and enablement states."
+- hash: sha256:71dd53ca4621a9b7
+  rule_id: TM1
+  file: scripts/install.sh
+  reason: "FP: rollback removes only the fixed /opt/openaut-edge/current symlink after validating that current is absent or a symlink; no user input controls the path."
+- hash: sha256:c1b445c5eb97cfe3
+  rule_id: TM1
+  file: scripts/install.sh
+  reason: "FP: rollback removes only the fixed /etc/openaut/current symlink after validating that current is absent or a symlink; no user input controls the path."
+- hash: sha256:8925ba1f8168b81a
+  rule_id: TM1
+  file: scripts/install.sh
+  reason: "FP: activation clears only the fixed /var/lib/openaut/mqtt.ready marker before requiring a fresh PUBACK-backed readiness signal."
