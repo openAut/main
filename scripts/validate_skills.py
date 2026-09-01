@@ -6,6 +6,7 @@ any violation so CI can gate on it.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 
@@ -61,8 +62,20 @@ def check(md: pathlib.Path) -> list[str]:
         errs.append(f"name '{name.strip()}' does not match skill directory '{md.parent.name}'")
 
     perms = fm.get("permissions")
+    metadata = fm.get("metadata")
+    encoded_permissions = metadata.get("openaut-permissions") if isinstance(metadata, dict) else None
+    if perms is None and encoded_permissions is not None:
+        if not isinstance(encoded_permissions, str):
+            return errs + ["'metadata.openaut-permissions' must be a JSON string"]
+        try:
+            perms = json.loads(encoded_permissions)
+        except json.JSONDecodeError as e:
+            return errs + [f"'metadata.openaut-permissions' is not valid JSON: {e}"]
     if not isinstance(perms, dict):
-        return errs + ["missing 'permissions' mapping"]
+        return errs + [
+            "missing legacy 'permissions' mapping or standards-compatible "
+            "'metadata.openaut-permissions' JSON string"
+        ]
 
     ko = perms.get("knowledge_only")
     if not isinstance(ko, bool):

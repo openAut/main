@@ -75,6 +75,7 @@ openAut-specific defaults:
 |---|---|
 | [`forge-stack`](skills/forge-stack/SKILL.md) | Provision local **Forgejo** in the AI/management zone: TLS, backups, runners, storage, agent access, and sandbox egress. |
 | [`documentation-store`](skills/documentation-store/SKILL.md) | Define how manuals, runbooks, generated docs, point maps, and AI-readable source material live in Forge and link to `documents.uri` / `documents.sha256`. |
+| [`manual-ingest`](skills/manual-ingest/SKILL.md) | Convert technical product manuals to traceable Markdown, assign stable product/document identities, validate source hashes, and generate the `openaut/manuals` catalog. |
 | [`forge-governance`](skills/forge-governance/SKILL.md) | Define branch protection, PR review, CODEOWNERS, commit/artifact signing, CI gates, and scoped agent permissions. |
 
 **Security instance — what watches the deployment:**

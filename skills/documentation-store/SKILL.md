@@ -13,6 +13,9 @@ permissions:
 openAut documentation lives as versioned files in the local forge and as operational metadata in the
 Systemdatabas.
 
+Use [`manual-ingest`](../manual-ingest/SKILL.md) for the concrete product-manual conversion,
+identity, archive-layout, source-hash validation, and catalog-generation workflow.
+
 Keep the split strict:
 
 - **Forge** stores content: manuals, Markdown docs, PDFs/LFS objects, register maps, runbooks, code,
@@ -60,7 +63,7 @@ prompt-injection surfaces until verified.
 
 | Repo | Content |
 |---|---|
-| `openaut/manuals` | vendor manuals, DU docs, wiring diagrams, scanned PDFs via LFS |
+| `openaut/manuals` | manufacturer product manuals and source files, organized by stable product ID; use `manual-ingest` |
 | `openaut/generated-docs` | I/O lists, register maps, MQTT schemas, FAT/SAT notes |
 | `openaut/runbooks` | operational runbooks and skill-pack source |
 | `openaut/control-<site>` | edge poller/control code and deployable config |
