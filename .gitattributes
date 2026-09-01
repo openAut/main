@@ -3,3 +3,4 @@ skills/edge-iot2050/scripts/* text eol=lf
 skills/edge-iot2050/assets/openaut-edge.service text eol=lf
 skills/edge-iot2050/assets/requirements.lock text eol=lf
 skills/edge-iot2050/assets/release.sha256 text eol=lf
+scripts/apply_platform_edge_event_id.sh text eol=lf
