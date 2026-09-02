@@ -1,4 +1,4 @@
-# openAut Agent Skills
+# openAut Agent
 
 > ## ⚠️ Learning project — not for production
 >
