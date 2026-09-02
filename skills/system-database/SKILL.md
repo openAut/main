@@ -113,7 +113,8 @@ CREATE TABLE system.documents (
   forge_commit text,
   trust_level text NOT NULL DEFAULT 'untrusted',
   uploaded_by text,
-  uploaded_at timestamptz NOT NULL DEFAULT now()
+  uploaded_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (site IS NOT NULL OR equipment_id IS NOT NULL OR product_id IS NOT NULL)
 );
 
 CREATE TABLE system.cases (

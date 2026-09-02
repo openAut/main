@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import mimetypes
+import os
 import re
 import shutil
+import stat
 import sys
+import tempfile
 import unicodedata
 from datetime import date
 from pathlib import Path
@@ -37,6 +40,89 @@ ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 class ArchiveError(ValueError):
     """Raised when archive content violates the contract."""
+
+
+def archive_root(repo: Path) -> Path:
+    """Return a canonical archive root, rejecting a missing root or any symlink boundary."""
+    absolute = repo.absolute()
+    try:
+        mode = absolute.lstat().st_mode
+    except OSError as exc:
+        raise ArchiveError(f"archive root is not accessible: {absolute}: {exc}") from exc
+    if stat.S_ISLNK(mode):
+        raise ArchiveError(f"archive root must not be a symbolic link: {absolute}")
+    if not stat.S_ISDIR(mode):
+        raise ArchiveError(f"archive root is not a directory: {absolute}")
+    return absolute.resolve(strict=True)
+
+
+def safe_path(repo: Path, path: Path) -> Path:
+    """Keep a path beneath repo and reject symlinks in every existing component."""
+    root = archive_root(repo)
+    candidate = path.absolute()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise ArchiveError(f"path escapes archive root: {candidate}") from exc
+
+    current = root
+    for part in relative.parts:
+        current = current / part
+        try:
+            mode = current.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ArchiveError(f"cannot inspect archive path {current}: {exc}") from exc
+        if stat.S_ISLNK(mode):
+            raise ArchiveError(f"symbolic links are not allowed in the archive: {current}")
+
+    resolved = candidate.resolve(strict=False)
+    if not resolved.is_relative_to(root):
+        raise ArchiveError(f"resolved path escapes archive root: {candidate}")
+    return candidate
+
+
+def atomic_write_text(repo: Path, path: Path, text: str) -> None:
+    """Write UTF-8 through a regular temporary file and atomically replace the target."""
+    target = safe_path(repo, path)
+    safe_path(repo, target.parent)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    safe_path(repo, target.parent)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if temporary.is_symlink() or not temporary.is_file():
+            raise ArchiveError(f"temporary output is not a regular file: {temporary}")
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+
+
+def atomic_copy(repo: Path, source: Path, destination: Path) -> None:
+    """Copy source bytes to a temporary regular file, then atomically install them."""
+    target = safe_path(repo, destination)
+    safe_path(repo, target.parent)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    safe_path(repo, target.parent)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "wb") as output, source.open("rb") as input_file:
+            shutil.copyfileobj(input_file, output)
+            output.flush()
+            os.fsync(output.fileno())
+        if temporary.is_symlink() or not temporary.is_file():
+            raise ArchiveError(f"temporary output is not a regular file: {temporary}")
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
 
 
 def slug(value: str) -> str:
@@ -80,7 +166,8 @@ def product_directory(repo: Path, product: dict[str, str]) -> Path:
     )
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
+def load_yaml(repo: Path, path: Path) -> dict[str, Any]:
+    safe_path(repo, path)
     try:
         value = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
@@ -90,7 +177,8 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return value
 
 
-def frontmatter(path: Path) -> tuple[dict[str, Any], str]:
+def frontmatter(repo: Path, path: Path) -> tuple[dict[str, Any], str]:
+    safe_path(repo, path)
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -124,17 +212,20 @@ def expected_product_yaml(product: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def write_yaml(path: Path, value: dict[str, Any]) -> None:
-    path.write_text(yaml.safe_dump(value, sort_keys=False, allow_unicode=True), encoding="utf-8")
+def write_yaml(repo: Path, path: Path, value: dict[str, Any]) -> None:
+    atomic_write_text(repo, path, yaml.safe_dump(value, sort_keys=False, allow_unicode=True))
 
 
 def ensure_product(repo: Path, product: dict[str, str]) -> Path:
     directory = product_directory(repo, product)
+    safe_path(repo, directory)
     directory.mkdir(parents=True, exist_ok=True)
+    safe_path(repo, directory)
     path = directory / "product.yaml"
     expected = expected_product_yaml(product)
-    if path.exists():
-        actual = load_yaml(path)
+    safe_path(repo, path)
+    if path.exists() or path.is_symlink():
+        actual = load_yaml(repo, path)
         for key in (
             "schema",
             "product_id",
@@ -145,7 +236,7 @@ def ensure_product(repo: Path, product: dict[str, str]) -> Path:
             if actual.get(key) != expected[key]:
                 raise ArchiveError(f"{path}: existing {key} does not match requested product")
     else:
-        write_yaml(path, expected)
+        write_yaml(repo, path, expected)
     return directory
 
 
@@ -154,7 +245,7 @@ def normalized_terms(values: list[str]) -> list[str]:
 
 
 def ingest(args: argparse.Namespace) -> Path:
-    repo = args.repo.resolve()
+    repo = archive_root(args.repo)
     source = args.source.resolve()
     markdown = args.markdown.resolve()
     if not source.is_file():
@@ -177,21 +268,23 @@ def ingest(args: argparse.Namespace) -> Path:
     document_number_id = slug(args.document_number)
     revision_id = slug(args.revision)
     language_path = args.language.lower()
-    destination = (
+    destination = safe_path(
+        repo,
         root
         / "documents"
         / args.document_type
         / language_path
         / document_number_id
-        / f"rev-{revision_id}"
+        / f"rev-{revision_id}",
     )
-    if destination.exists():
+    if destination.exists() or destination.is_symlink():
         raise ArchiveError(f"document revision already exists: {destination}")
     destination.mkdir(parents=True)
+    safe_path(repo, destination)
 
     suffix = source.suffix.lower() or ".bin"
     stored_source = destination / f"source{suffix}"
-    shutil.copyfile(source, stored_source)
+    atomic_copy(repo, source, stored_source)
     source_hash = sha256_file(stored_source)
     document_id = ".".join(
         (
@@ -229,14 +322,14 @@ def ingest(args: argparse.Namespace) -> Path:
         "trust_level": "quarantine",
     }
     rendered = "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True) + "---\n\n" + body
-    (destination / "manual.md").write_text(rendered, encoding="utf-8")
+    atomic_write_text(repo, destination / "manual.md", rendered)
     return destination / "manual.md"
 
 
-def validate_product(path: Path) -> list[str]:
+def validate_product(repo: Path, path: Path) -> list[str]:
     errors: list[str] = []
     try:
-        data = load_yaml(path)
+        data = load_yaml(repo, path)
     except ArchiveError as exc:
         return [str(exc)]
     required = (
@@ -262,8 +355,14 @@ def validate_product(path: Path) -> list[str]:
     for key in ("manufacturer_id", "product_family_id", "model_id"):
         if not ID_RE.fullmatch(data[key]):
             errors.append(f"{path}: {key} must be a lowercase ASCII slug")
-    expected_path = Path(data["manufacturer_id"]) / data["product_family_id"] / data["model_id"] / "product.yaml"
-    if Path(*path.parts[-4:]) != expected_path:
+    expected_path = (
+        Path("manufacturers")
+        / data["manufacturer_id"]
+        / data["product_family_id"]
+        / data["model_id"]
+        / "product.yaml"
+    )
+    if path.relative_to(repo) != expected_path:
         errors.append(f"{path}: path does not match product IDs")
     return errors
 
@@ -271,7 +370,7 @@ def validate_product(path: Path) -> list[str]:
 def validate_manual(repo: Path, path: Path) -> tuple[list[str], dict[str, Any] | None]:
     errors: list[str] = []
     try:
-        data, body = frontmatter(path)
+        data, body = frontmatter(repo, path)
     except ArchiveError as exc:
         return [str(exc)], None
     required_strings = (
@@ -329,7 +428,7 @@ def validate_manual(repo: Path, path: Path) -> tuple[list[str], dict[str, Any] |
         errors.append(f"{path}: missing product record {product_path}")
     else:
         try:
-            product = load_yaml(product_path)
+            product = load_yaml(repo, product_path)
         except ArchiveError as exc:
             errors.append(str(exc))
         else:
@@ -358,42 +457,136 @@ def validate_manual(repo: Path, path: Path) -> tuple[list[str], dict[str, Any] |
     if not isinstance(source, dict):
         errors.append(f"{path}: source must be a mapping")
     else:
-        stored = source.get("stored_filename")
+        stored_filename = source.get("stored_filename")
         expected_hash = source.get("sha256")
         if not isinstance(source.get("original_filename"), str):
             errors.append(f"{path}: source.original_filename is required")
         if not isinstance(source.get("media_type"), str):
             errors.append(f"{path}: source.media_type is required")
-        if not isinstance(stored, str) or Path(stored).name != stored:
+        if not isinstance(stored_filename, str) or Path(stored_filename).name != stored_filename:
             errors.append(f"{path}: invalid source.stored_filename")
         else:
-            source_path = path.parent / stored
-            if not source_path.is_file():
+            source_path = path.parent / stored_filename
+            try:
+                safe_path(repo, source_path)
+            except ArchiveError as exc:
+                errors.append(str(exc))
+                source_path = None
+            if source_path is None:
+                pass
+            elif not source_path.is_file():
                 errors.append(f"{path}: missing stored source {source_path}")
             elif not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
                 errors.append(f"{path}: invalid source.sha256")
             elif sha256_file(source_path) != expected_hash:
                 errors.append(f"{path}: stored source SHA-256 mismatch")
 
-    expected_suffix = Path(
+    expected_path = Path(
+        "manufacturers",
+        *product_tokens,
+        "documents",
         data["document_type"],
         data["language"].lower(),
         slug(data["document_number"]),
         f"rev-{slug(data['revision'])}",
         "manual.md",
     )
-    if Path(*path.parts[-5:]) != expected_suffix:
+    if path.relative_to(repo) != expected_path:
         errors.append(f"{path}: path does not match document metadata")
     return errors, data
 
 
-def scan(repo: Path) -> tuple[list[str], list[tuple[Path, dict[str, Any]]]]:
+def inventory_archive(repo: Path) -> tuple[list[str], list[Path], list[Path]]:
+    """Inventory all contract files without following symlinks."""
     errors: list[str] = []
+    products: list[Path] = []
+    manuals: list[Path] = []
+    sources: list[Path] = []
+
+    for current_name, directory_names, file_names in os.walk(repo, followlinks=False):
+        current = Path(current_name)
+        if current == repo and ".git" in directory_names:
+            directory_names.remove(".git")
+        for name in list(directory_names):
+            path = current / name
+            try:
+                mode = path.lstat().st_mode
+            except OSError as exc:
+                errors.append(f"{path}: cannot inspect archive entry: {exc}")
+                directory_names.remove(name)
+                continue
+            if stat.S_ISLNK(mode):
+                errors.append(f"{path}: symbolic links are not allowed in the archive")
+                directory_names.remove(name)
+        for name in file_names:
+            path = current / name
+            try:
+                mode = path.lstat().st_mode
+            except OSError as exc:
+                errors.append(f"{path}: cannot inspect archive entry: {exc}")
+                continue
+            if stat.S_ISLNK(mode):
+                errors.append(f"{path}: symbolic links are not allowed in the archive")
+                continue
+            if not stat.S_ISREG(mode):
+                errors.append(f"{path}: archive entries must be regular files")
+                continue
+            if name == "product.yaml":
+                products.append(path)
+            elif name == "manual.md":
+                manuals.append(path)
+            elif name.startswith("source."):
+                sources.append(path)
+
+    valid_products: list[Path] = []
+    for path in sorted(products):
+        parts = path.relative_to(repo).parts
+        if len(parts) != 5 or parts[0] != "manufacturers" or parts[-1] != "product.yaml":
+            errors.append(f"{path}: product.yaml is outside the required product path")
+        else:
+            valid_products.append(path)
+
+    valid_manuals: list[Path] = []
+    valid_revision_directories: set[Path] = set()
+    for path in sorted(manuals):
+        parts = path.relative_to(repo).parts
+        if (
+            len(parts) != 10
+            or parts[0] != "manufacturers"
+            or parts[4] != "documents"
+            or parts[-1] != "manual.md"
+        ):
+            errors.append(f"{path}: manual.md is outside the required revision path")
+            continue
+        valid_manuals.append(path)
+        valid_revision_directories.add(path.parent)
+        try:
+            entries = list(path.parent.iterdir())
+        except OSError as exc:
+            errors.append(f"{path.parent}: cannot inventory revision directory: {exc}")
+            continue
+        source_files = [entry for entry in entries if entry.name.startswith("source.") and entry.is_file()]
+        if len(entries) != 2 or len(source_files) != 1:
+            errors.append(
+                f"{path.parent}: revision directory must contain exactly manual.md and one source file"
+            )
+
+    for source in sorted(sources):
+        if source.parent not in valid_revision_directories:
+            errors.append(f"{source}: source file has no correctly placed manual.md")
+
+    return errors, valid_products, valid_manuals
+
+
+def scan(repo: Path) -> tuple[list[str], list[tuple[Path, dict[str, Any]]]]:
+    try:
+        repo = archive_root(repo)
+    except ArchiveError as exc:
+        return [str(exc)], []
+    errors, products, manuals = inventory_archive(repo)
     documents: list[tuple[Path, dict[str, Any]]] = []
-    products = sorted((repo / "manufacturers").glob("*/*/*/product.yaml"))
-    manuals = sorted((repo / "manufacturers").glob("*/*/*/documents/*/*/*/*/manual.md"))
     for product in products:
-        errors.extend(validate_product(product))
+        errors.extend(validate_product(repo, product))
     seen: dict[str, Path] = {}
     for manual in manuals:
         manual_errors, data = validate_manual(repo, manual)
@@ -411,11 +604,17 @@ def scan(repo: Path) -> tuple[list[str], list[tuple[Path, dict[str, Any]]]]:
 
 
 def build_catalog(repo: Path, documents: list[tuple[Path, dict[str, Any]]]) -> dict[str, Any]:
+    repo = archive_root(repo)
     product_paths = sorted((repo / "manufacturers").glob("*/*/*/product.yaml"))
-    products = [load_yaml(path) | {"path": path.relative_to(repo).as_posix()} for path in product_paths]
+    products = [
+        load_yaml(repo, path) | {"path": path.relative_to(repo).as_posix()}
+        for path in product_paths
+    ]
     entries: list[dict[str, Any]] = []
     for path, metadata in documents:
+        safe_path(repo, path)
         source_path = path.parent / metadata["source"]["stored_filename"]
+        safe_path(repo, source_path)
         relative = path.relative_to(repo).as_posix()
         entries.append(
             {
@@ -456,7 +655,11 @@ def parser() -> argparse.ArgumentParser:
     ingest_parser.add_argument("--model", required=True)
     ingest_parser.add_argument("--document-type", required=True, choices=sorted(DOCUMENT_TYPES))
     ingest_parser.add_argument("--document-number", required=True)
-    ingest_parser.add_argument("--revision", required=True)
+    ingest_parser.add_argument(
+        "--revision",
+        required=True,
+        help="manufacturer revision identifier, for example 2025-04; use 'unknown' only if unmarked",
+    )
     ingest_parser.add_argument("--language", required=True)
     ingest_parser.add_argument("--title")
     ingest_parser.add_argument("--protocol", action="append", default=[])
@@ -476,14 +679,14 @@ def main(argv: list[str] | None = None) -> int:
             path = ingest(args)
             print(path)
             return 0
-        repo = args.repo.resolve()
+        repo = archive_root(args.repo)
         errors, documents = scan(repo)
         if errors:
             for error in errors:
                 print(f"ERROR {error}", file=sys.stderr)
             return 1
         if args.command == "catalog":
-            write_yaml(repo / "catalog.yaml", build_catalog(repo, documents))
+            write_yaml(repo, repo / "catalog.yaml", build_catalog(repo, documents))
             print(repo / "catalog.yaml")
         else:
             print(f"validated {len(documents)} document revision(s)")

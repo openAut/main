@@ -22,6 +22,8 @@ manufacturers/
 ```
 
 IDs and paths use lowercase ASCII slugs. Display names preserve the manufacturer's spelling.
+The archive must contain no symbolic links. Each revision directory contains exactly `manual.md`
+and one `source.<extension>` file; validation rejects misplaced contract files and any extra entry.
 
 ## Product identity
 

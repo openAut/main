@@ -61,16 +61,32 @@ def check(md: pathlib.Path) -> list[str]:
     if isinstance(name, str) and name.strip() and name.strip() != md.parent.name:
         errs.append(f"name '{name.strip()}' does not match skill directory '{md.parent.name}'")
 
+    legacy_present = "permissions" in fm
     perms = fm.get("permissions")
     metadata = fm.get("metadata")
-    encoded_permissions = metadata.get("openaut-permissions") if isinstance(metadata, dict) else None
-    if perms is None and encoded_permissions is not None:
+    metadata_present = isinstance(metadata, dict) and "openaut-permissions" in metadata
+    encoded_permissions = metadata.get("openaut-permissions") if metadata_present else None
+    metadata_permissions = None
+    if metadata_present:
         if not isinstance(encoded_permissions, str):
-            return errs + ["'metadata.openaut-permissions' must be a JSON string"]
-        try:
-            perms = json.loads(encoded_permissions)
-        except json.JSONDecodeError as e:
-            return errs + [f"'metadata.openaut-permissions' is not valid JSON: {e}"]
+            errs.append("'metadata.openaut-permissions' must be a JSON string")
+        else:
+            try:
+                metadata_permissions = json.loads(encoded_permissions)
+            except json.JSONDecodeError as e:
+                errs.append(f"'metadata.openaut-permissions' is not valid JSON: {e}")
+            else:
+                if not isinstance(metadata_permissions, dict):
+                    errs.append("'metadata.openaut-permissions' JSON must decode to an object")
+
+    if legacy_present and metadata_present:
+        errs.append(
+            "declare permissions exactly once; do not combine legacy 'permissions' with "
+            "'metadata.openaut-permissions'"
+        )
+        return errs
+    if metadata_present:
+        perms = metadata_permissions
     if not isinstance(perms, dict):
         return errs + [
             "missing legacy 'permissions' mapping or standards-compatible "
