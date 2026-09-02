@@ -18,8 +18,8 @@ key, Platform Docker socket, or PAP access.
 ## Bootstrap
 
 Run the script from a PowerShell session whose user belongs to `Hyper-V Administrators`. Supply
-environment-specific paths, the published SHA-256 for the selected Ubuntu ISO, and every field
-CIDR explicitly:
+environment-specific paths, the published SHA-256 for the selected Ubuntu ISO, every field CIDR,
+and the management switch explicitly:
 
 ```powershell
 .\scripts\setup_hyperv_ci_vm.ps1 `
@@ -31,9 +31,14 @@ CIDR explicitly:
   -ReportPath "<existing-report-directory>\openaut-ci.json"
 ```
 
-The script does not recreate an existing VM. It requires exactly one adapter named `management`,
-adds missing inbound and outbound deny ACLs idempotently, and fails if the effective ACL set does
-not cover every supplied field CIDR.
+The script does not recreate an existing VM. It turns off the disposable CI VM before inspecting
+its topology and leaves it off on success or failure. This may terminate an active CI job, so run
+boundary changes between jobs. It requires exactly one adapter named `management`, adds missing
+inbound and outbound field-deny ACLs idempotently, and fails if the effective ACL set does not cover
+every supplied field CIDR.
+
+`FieldAclPrepared` means only that the host adapter topology and field ACL entries passed. It is not
+proof of complete isolation: the report deliberately leaves `GuestNetworkProofsCompleted=false`.
 
 ## Verification
 
@@ -44,14 +49,15 @@ Get-VMNetworkAdapter -VMName openaut-ci
 Get-VMNetworkAdapterAcl -VMName openaut-ci
 ```
 
-From the guest, prove that representative field SSH, MQTT, database, and deployment ports time out.
-Then prove that the exact Forgejo TLS hostname remains reachable with normal certificate validation.
-Repeat both positive and negative checks after any Hyper-V switch, host route, VPN, or physical
-adapter change.
+Start the VM only for verification. From the guest, prove that representative field SSH, MQTT,
+database, and deployment ports time out. Then prove that the exact Forgejo TLS hostname remains
+reachable with normal certificate validation. Stop the VM again if any expected allow or deny fails.
+Repeat both checks after any Hyper-V switch, host route, VPN, or physical adapter change.
 
-Do not install a runner until a release authority has distributed the Forgejo CA and the TLS check
-succeeds without disabling validation. Runner registration must be repository-scoped, ephemeral,
-and performed with a human-generated secret that is never committed or passed to an Engineer.
+Field ACLs do not make general runtime egress deny-by-default. That separate host-enforced control
+is tracked by openAut/main#68. Do not register a runner until #68 is review-evidenced and its runtime
+network proofs pass. Runner registration must remain repository-scoped and ephemeral, using a
+human-generated secret that is never committed or passed to an Engineer.
 
 The disposable PostgreSQL `case-policy` gate is tracked by openAut/main#60. Systemdatabas migrations,
 roles, and grants remain tracked by openAut/main#42.

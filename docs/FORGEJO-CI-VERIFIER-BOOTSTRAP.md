@@ -28,11 +28,17 @@ engine because compromise is then bounded to that dedicated VM.
    loopback HTTP binding behind the reverse proxy; do not expose port 3000 directly.
 2. Create a small dedicated CI VM from an independent Ubuntu installation. Do not clone an existing
    trust-domain identity, SSH host key, or credential.
-3. Allow the CI VM to reach only the exact Forgejo TLS hostname and approved package/image sources
-   during provisioning. Runtime egress should be limited to Forgejo.
+3. During provisioning, allow only the exact Forgejo TLS hostname and approved package/image
+   sources needed for patching and digest-pinned image prefetching.
 4. Verify the Forgejo CA chain from the CI VM before runner registration.
 5. Record the CI VM's adapter inventory and host-enforced field-subnet ACLs. Repeat the negative
    field-connectivity tests after every Hyper-V switch or host-routing change.
+6. Before runner registration, implement the separate host-enforced deny-by-default runtime egress
+   control tracked by openAut/main#68. Verify that Forgejo remains reachable while a field target
+   and an arbitrary internet target are blocked.
+
+The bootstrap stops an existing CI VM before topology inspection or ACL changes and leaves it off.
+Do not start it when adapter validation, ACL verification, or runtime network proofs fail.
 
 Distribute the CA and make `forge.openaut.local` resolvable from every intended management client
 before changing Forgejo's canonical `ROOT_URL` to HTTPS. A loopback SSH tunnel is a recovery path,
@@ -92,17 +98,18 @@ field equipment. The CI runner and Forge verifier are deliberately separate iden
 ## Order of operations
 
 1. Review and merge the TLS/reverse-proxy and dedicated-CI-VM configuration.
-2. Register one repository-scoped ephemeral runner and obtain a green `case-policy` result for the
+2. Complete openAut/main#68 and its positive/negative runtime network proofs.
+3. Register one repository-scoped ephemeral runner and obtain a green `case-policy` result for the
    exact current PR head.
-3. Human reviewer approves that head; `openaut-admin` merges it.
+4. Human reviewer approves that head; `openaut-admin` merges it.
    Before merge, the Forgejo reviews API must show `APPROVED` tied to the exact head SHA;
    `REQUEST_REVIEW` records only a pending review request and is not approval evidence.
-4. Release authority applies the reviewed Systemdatabas migrations and runs their verification.
-5. Release authority runs the separately reviewed case-verifier bootstrap and verifies both
+5. Release authority applies the reviewed Systemdatabas migrations and runs their verification.
+6. Release authority runs the separately reviewed case-verifier bootstrap and verifies both
    least-privilege identities.
-6. Engineer creates/submits the frozen case; the verifier independently re-queries Forgejo and
+7. Engineer creates/submits the frozen case; the verifier independently re-queries Forgejo and
    records the approval evidence.
-7. Only then may Engineer start the case and request explicit deployment confirmation.
+8. Only then may Engineer start the case and request explicit deployment confirmation.
 
 Any changed PR head invalidates the previous review and CI evidence.
 An expired maintenance window must be replaced with a short future window before CI and human

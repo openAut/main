@@ -1,38 +1,61 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
     [string]$IsoPath,
 
     [Parameter(Mandatory)]
-    [ValidatePattern("^[A-Fa-f0-9]{64}$")]
     [string]$IsoSha256,
 
     [Parameter(Mandatory)]
-    [ValidateNotNullOrEmpty()]
     [string[]]$DeniedFieldCidrs,
 
     [Parameter(Mandatory)]
-    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Container })]
     [string]$VmRoot,
 
+    [Parameter(Mandatory)]
+    [string]$ManagementSwitch,
+
     [string]$VmName = "openaut-ci",
-    [string]$ManagementSwitch = "Default Switch",
     [string]$ReportPath
 )
 
 $ErrorActionPreference = "Stop"
 Import-Module Hyper-V
 
-$actualIsoHash = (Get-FileHash -LiteralPath $IsoPath -Algorithm SHA256).Hash
-if ($actualIsoHash -ne $IsoSha256.ToUpperInvariant()) {
-    throw "ISO checksum does not match the operator-supplied SHA-256."
+$vm = Get-VM -Name $VmName -ErrorAction SilentlyContinue
+if ($vm -and $vm.State -ne "Off") {
+    Stop-VM -VM $vm -TurnOff -Confirm:$false
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        Start-Sleep -Milliseconds 250
+        $vm = Get-VM -Name $VmName
+    } while ($vm.State -ne "Off" -and (Get-Date) -lt $deadline)
+    if ($vm.State -ne "Off") {
+        throw "$VmName could not be stopped; refusing to inspect or change its network boundary."
+    }
+}
+
+if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) {
+    throw "ISO path does not exist: $IsoPath"
+}
+if ($IsoSha256 -notmatch "^[A-Fa-f0-9]{64}$") {
+    throw "IsoSha256 must contain exactly 64 hexadecimal characters."
+}
+if (-not (Test-Path -LiteralPath $VmRoot -PathType Container)) {
+    throw "VM root does not exist: $VmRoot"
+}
+if (-not $DeniedFieldCidrs -or @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) })) {
+    throw "At least one field CIDR is required."
 }
 if (-not (Get-VMSwitch -Name $ManagementSwitch -ErrorAction SilentlyContinue)) {
     throw "Hyper-V management switch '$ManagementSwitch' was not found."
 }
 
-$vm = Get-VM -Name $VmName -ErrorAction SilentlyContinue
+$actualIsoHash = (Get-FileHash -LiteralPath $IsoPath -Algorithm SHA256).Hash
+if ($actualIsoHash -ne $IsoSha256.ToUpperInvariant()) {
+    throw "ISO checksum does not match the operator-supplied SHA-256."
+}
+
 $created = $false
 if (-not $vm) {
     $vmPath = Join-Path $VmRoot $VmName
@@ -63,8 +86,10 @@ if (-not $vm) {
 }
 
 $adapters = @(Get-VMNetworkAdapter -VM $vm)
-if ($adapters.Count -ne 1 -or $adapters[0].Name -ne "management" -or
-    $adapters[0].SwitchName -ne $ManagementSwitch) {
+$nonManagementAdapterPresent = [bool]($adapters | Where-Object {
+    $_.Name -ne "management" -or $_.SwitchName -ne $ManagementSwitch
+})
+if ($adapters.Count -ne 1 -or $nonManagementAdapterPresent) {
     throw "$VmName must have exactly one adapter named 'management' on '$ManagementSwitch'."
 }
 $managementNic = $adapters[0]
@@ -72,8 +97,7 @@ $managementNic = $adapters[0]
 $fieldCidrs = @($DeniedFieldCidrs | Sort-Object -Unique)
 foreach ($cidr in $fieldCidrs) {
     foreach ($direction in @("Inbound", "Outbound")) {
-        $acls = @(Get-VMNetworkAdapterAcl -VMNetworkAdapter $managementNic)
-        $exists = $acls | Where-Object {
+        $exists = @(Get-VMNetworkAdapterAcl -VMNetworkAdapter $managementNic) | Where-Object {
             $_.Action -eq "Deny" -and
             $_.Direction -eq $direction -and
             $_.RemoteAddress -eq $cidr
@@ -107,11 +131,14 @@ $report = [ordered]@{
     AdapterCount = $adapters.Count
     AdapterName = $managementNic.Name
     SwitchName = $managementNic.SwitchName
-    FieldAdapterPresent = [bool]($adapters | Where-Object SwitchName -ne $ManagementSwitch)
+    NonManagementAdapterPresent = $nonManagementAdapterPresent
+    BoundaryState = "FieldAclPrepared"
+    GuestNetworkProofsCompleted = $false
     DeniedFieldCidrs = $fieldCidrs
-    DenyAcls = @($effectiveAcls | Where-Object Action -eq "Deny" | ForEach-Object {
+    Acls = @($effectiveAcls | ForEach-Object {
         [ordered]@{
             Direction = [string]$_.Direction
+            Action = [string]$_.Action
             RemoteAddress = [string]$_.RemoteAddress
         }
     })
@@ -126,4 +153,4 @@ if ($ReportPath) {
 }
 
 $cidrSummary = $fieldCidrs -join ","
-Write-Host "OPENAUT_CI_VM_PREPARED vm=$VmName field_adapter=absent denied_field_cidrs=$cidrSummary"
+Write-Host "OPENAUT_CI_VM_FIELD_ACL_PREPARED vm=$VmName state=off guest_tests=pending denied_field_cidrs=$cidrSummary"
