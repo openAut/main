@@ -1,4 +1,4 @@
-# openAut NemoClaw Skills
+# openAut Agent Skills
 
 > ## ⚠️ Learning project — not for production
 >
@@ -19,20 +19,22 @@
 
 ## What this repo is
 
-`openAut/main` is the **agent workbench** for the openAut project.
+`openAut/main` is the **agent workbench and shared skill layer** for the openAut project.
 
-It is meant to be used from coding agents such as **OpenAI Codex**, **Claude Code**, or similar
-tools. The repo gives the agent the domain knowledge, runbooks, reference scripts, architecture
-contracts, and safety constraints needed to help build the rest of openAut: the core framework, role
-agents, security posture, edge integrations, lab environments, dashboards, and future
-proof-of-concept deployments.
+It is meant to be used primarily from **OpenCode**, while remaining compatible with other coding
+agents that support Agent Skills or can consume `SKILL.md` runbooks directly.
 
-This is not the openAut product runtime. It is the project's executable knowledge base: a place
-where agents can read, reason, generate, test, and evolve the surrounding repos without inventing
-the architecture from scratch.
+The repo gives agents the domain knowledge, workflows, reference scripts, architecture contracts,
+and safety constraints needed to help build and operate the rest of openAut: the core framework,
+role agents, security posture, edge integrations, lab environments, dashboards, documentation, and
+future proof-of-concept deployments.
 
-Agent-agnostic **skills, runbooks, contracts, and reference scripts** that let a coding agent —
-**Claude Code**, **OpenAI Codex**, or similar tools — understand the openAut architecture and help
+This is not the openAut product runtime. It is the project's **executable knowledge base**: a place
+where agents can read, reason, generate, test, document, and evolve the surrounding repositories
+without inventing the architecture from scratch.
+
+The repository provides agent-agnostic **skills, runbooks, contracts, and reference scripts** that
+let **OpenCode** — or another compatible coding agent — understand the openAut architecture and help
 create the rest of the project safely.
 
 These skills do **not** reimplement NemoClaw. NemoClaw already ships the bootstrap
@@ -43,7 +45,7 @@ openAut-specific defaults:
 | Default | Choice | Why |
 |---|---|---|
 | **Communication channel** | **Microsoft Teams** (via webhook bridge) | openAut targets the Microsoft stack (Teams + Power BI). NemoClaw has no native Teams channel, so a small bridge maps Teams ↔ the OpenClaw gateway. |
-| **Inference** | **Remote Nemotron 3 Super** on a separate machine, **egress-locked + TLS** | Keeps the heavy MoE model on a dedicated GPU box (e.g. ASUS Ascent GX10), reachable only from the sandbox over an encrypted, allow-listed link. |
+| **Inference** | **Remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** on a separate machine, **egress-locked + TLS** | Keeps inference on a dedicated GPU system (e.g. ASUS Ascent GX10), reachable only from the sandbox over an encrypted, allow-listed link. |
 
 > These defaults are configurable. Set `TEAMS_*` and `NEMOTRON_*` in `config.env` to point at
 > your own bridge and inference host; every skill sources that file.
@@ -54,9 +56,9 @@ openAut-specific defaults:
 
 | Skill | What it does |
 |---|---|
-| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
+| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
 | [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host + local Forge only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
-| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the openAut trust domains: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams; **Security** is a separate read-only watch instance ([`security-instance`](skills/security-instance/SKILL.md)). Per ADR 0001 §5 and [ADR 0003](docs/adr/0003-engineer-runtime-containment.md), Advisor and Engineer run on **different software stacks** — Advisor on **NemoClaw**, Engineer on **opencode** — in separate runtime sandboxes on separate hosts. Actions move through approved cases in the Systemdatabas. |
+| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the openAut trust domains: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams; **Security** is a separate read-only watch instance ([`security-instance`](skills/security-instance/SKILL.md)). Per ADR 0001 §5 and [ADR 0003](docs/adr/0003-engineer-runtime-containment.md), Advisor and Engineer run on **different software stacks** — Advisor on **NemoClaw**, Engineer on **OpenCode** — in separate runtime sandboxes on separate hosts. Actions move through approved cases in the Systemdatabas. |
 | [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut **operator personas** (jobs-to-be-done) — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. Personas are served chiefly by **Advisor** (read-only); writes/deploys go through **Engineer** via an approved case, while **Security** watches across both. A persona is not itself a trust domain. |
 
 **Data backbone & edge — what the agents read from:**
@@ -94,8 +96,9 @@ openAut-specific defaults:
 
 The personas in [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) are each granted
 a **least-privilege subset** of these (e.g. read-only protocols + analytics for the energy role).
-The newer [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) maps the same
-capabilities onto the public openAut architecture's stricter **Advisor / Engineer / Security**
+
+The [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) maps the same
+capabilities onto the openAut architecture's stricter **Advisor / Engineer / Security**
 trust boundaries.
 
 Supporting:
@@ -108,32 +111,52 @@ Supporting:
 
 ## Using these skills
 
-**Claude Code** — drop the `skills/` folders into `~/.claude/skills/` (or a project `.claude/skills/`).
-Each `SKILL.md` carries YAML frontmatter so the agent auto-discovers it.
+**OpenCode** — place the skill folders in `.opencode/skills/` for a project, or in
+`~/.config/opencode/skills/` for global use. OpenCode also supports compatible skill locations such
+as `.claude/skills/` and `.agents/skills/`.
 
-**OpenAI Codex** (and any other agent) — there is no skill auto-loader, so point the agent at the
-relevant `SKILL.md` and tell it to follow it as a runbook. The bodies are plain Markdown +
-self-contained shell/Python; nothing depends on the Anthropic skill mechanism.
+Each skill lives in its own directory with a `SKILL.md` file and optional supporting scripts,
+references, and other resources. OpenCode automatically discovers available skills and exposes them
+to the agent, which can load the relevant skill on demand through its native skill mechanism.
+
+The `SKILL.md` files use YAML frontmatter for discovery metadata such as the skill name and
+description. The skill bodies are plain Markdown and may reference self-contained shell or Python
+scripts stored alongside the skill.
+
+Because the openAut skills follow this portable directory-based structure, they can also be used by
+other agents that support the Agent Skills convention or, where automatic discovery is unavailable,
+by explicitly pointing the agent to the relevant `SKILL.md`.
 
 ## Scope
 
-This pack is a full openAut skill set: the **agent tier** (provision, sandbox policy, role workflows),
-the **data backbone + edge** (MQTT/TLS broker, TimescaleDB/PostgreSQL, IOT2050), and the **runtime
-capabilities** the agents carry (six field protocols, three analytics skills, five compliance
-references). The protocol and analytics skills are vendor- and site-agnostic guidance + reference
-scripts; live behaviour is unverified until real hardware and the data backbone are connected (each
-SKILL.md says so).
+This repository contains the openAut skill layer: reusable knowledge, workflows, guardrails, and
+technical capabilities that AI agents can load when working with an openAut deployment.
 
-In that sense, this repo is upstream of the rest of openAut: it gives agents the shared context and
-guardrails they need before generating code, docs, deployment recipes, or new repos. What remains
-genuinely outside the pack is openAut's own application code (the dashboards, Power BI, REST API of
-Layer 4) — these skills *operate* and help create a deployment, but they are not the product itself.
+The skill set covers three main areas:
+
+- **Agent and infrastructure workflows** — provisioning, sandbox policy, deployment, diagnostics,
+  documentation, and role-specific workflows.
+- **Data backbone and edge infrastructure** — MQTT/TLS, TimescaleDB/PostgreSQL, edge devices such as
+  the IOT2050, and the surrounding data flow.
+- **Runtime and engineering capabilities** — field protocols, analytics, automation engineering,
+  documentation, and compliance references used by agents working with building automation systems.
+
+Protocol and analytics skills are designed to be vendor- and site-agnostic. They provide guidance,
+workflows, reference material, and reusable scripts, but live behaviour must still be validated
+against the actual hardware, network, control system, and data backbone of a deployment.
+
+In the openAut architecture, this repository sits upstream of much of the implementation work. It
+provides agents with shared technical context and operating rules before they generate code,
+documentation, deployment configurations, integrations, or new repositories.
+
+The repository is therefore not the openAut application itself. Dashboards, APIs, integrations,
+control applications, and other deployed services belong to their respective implementation
+repositories. These skills help agents build, operate, diagnose, and extend those systems.
 
 ## Source references
 
-- NVIDIA DGX Spark playbook — NemoClaw: <https://github.com/NVIDIA/dgx-spark-playbooks/blob/main/nvidia/nemoclaw/README.md>
+- OpenCode skills: <https://opencode.ai/docs/skills>
+- OpenCode: <https://opencode.ai/>
 - NemoClaw docs: <https://docs.nvidia.com/nemoclaw/user-guide/openclaw/home>
 - OpenClaw docs: <https://docs.openclaw.ai/>
-
-> Tested against NemoClaw **v0.0.55** (June 2026). The installer's default model is
-> `nvidia/Qwen3.6-35B-A3B-NVFP4`; these skills override it to Nemotron 3 Super on a remote host.
+- Agent Skills specification: <https://agentskills.io/>
