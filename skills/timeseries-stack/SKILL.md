@@ -36,8 +36,10 @@ ssh "$TSDB_SSH_USER@$TSDB_HOST" \
 Apply `assets/schema.sql`. It creates the `$TSDB_DB` database, the `$TSDB_TS_SCHEMA` telemetry
 hypertable, a relational `system` schema (devices, sites), and two roles:
 
-- **`$TSDB_INGEST_USER`** — INSERT on telemetry only (used by the ingest consumer).
-- **`$TSDB_AGENT_RO_USER`** — SELECT only (granted to the Energisamordnare / Förvaltare agents).
+- **`$TSDB_INGEST_USER`** — INSERT on telemetry plus SELECT on the deduplication key
+  `(ts, node, event_id)` only, as required by PostgreSQL `ON CONFLICT` (used by the ingest consumer).
+- **`$TSDB_AGENT_RO_USER`** — SELECT only (used by Advisor for the Energisamordnare and
+  Förvaltare personas).
 
 ```bash
 scp skills/timeseries-stack/assets/schema.sql "$TSDB_SSH_USER@$TSDB_HOST:/tmp/"
@@ -126,7 +128,7 @@ read-only role is refused an INSERT.
 
 | Control | Check | Framework |
 |---|---|---|
-| Least privilege | ingest = INSERT only; agents = SELECT only | IEC 62443 SR 2.1, NIS2 Art. 21 |
+| Least privilege | ingest = INSERT plus deduplication-key SELECT only; Advisor (`agent_ro`) = SELECT only | IEC 62443 SR 2.1, NIS2 Art. 21 |
 | Encrypted ingest | consumer connects to EMQX over TLS w/ client cert | IEC 62443 SR 4.1, CRA |
 | Data minimisation/retention | 90-day raw retention, aggregates for the rest | ISO 27001 A.8, GDPR-adjacent |
 | On-prem only | DB bound to the AI-tier host, no cloud egress | NIS2, openAut air-gap goal |

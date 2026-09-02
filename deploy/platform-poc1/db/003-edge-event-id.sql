@@ -15,3 +15,6 @@ END $$;
 -- TimescaleDB unique indexes must include the time and space partition dimensions.
 CREATE UNIQUE INDEX IF NOT EXISTS readings_event_id
   ON telemetry.readings (ts, node, event_id);
+
+-- ON CONFLICT index inference requires read access to the conflict-key columns.
+GRANT SELECT (ts, node, event_id) ON telemetry.readings TO ingest;

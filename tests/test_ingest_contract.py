@@ -6,6 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INGEST = ROOT / "skills" / "timeseries-stack" / "scripts" / "ingest.py"
+SCHEMA = ROOT / "skills" / "timeseries-stack" / "assets" / "schema.sql"
+EVENT_ID_MIGRATION = ROOT / "deploy" / "platform-poc1" / "db" / "003-edge-event-id.sql"
 
 
 def load_ingest():
@@ -101,6 +103,15 @@ class IngestContractTests(unittest.TestCase):
                 received_at=1700000001,
             )
         )
+
+    def test_deduplication_grant_is_column_scoped(self):
+        required_grant = "GRANT SELECT (ts, node, event_id) ON telemetry.readings TO ingest;"
+        broad_grant = "GRANT SELECT ON telemetry.readings TO ingest;"
+
+        for sql_path in (SCHEMA, EVENT_ID_MIGRATION):
+            sql = sql_path.read_text(encoding="utf-8")
+            self.assertIn(required_grant, sql)
+            self.assertNotIn(broad_grant, sql)
 
 
 if __name__ == "__main__":

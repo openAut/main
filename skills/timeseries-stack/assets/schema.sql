@@ -94,6 +94,8 @@ END $$;
 
 GRANT USAGE ON SCHEMA telemetry TO ingest, agent_ro;
 GRANT INSERT ON telemetry.readings, telemetry.node_status TO ingest;            -- write: ingest only
+-- Required by ON CONFLICT; ingest cannot read payload or building-data columns.
+GRANT SELECT (ts, node, event_id) ON telemetry.readings TO ingest;
 GRANT SELECT ON telemetry.readings, telemetry.readings_hourly, telemetry.node_status TO agent_ro;  -- read: agents only
 GRANT USAGE ON SCHEMA system TO agent_ro;
 GRANT SELECT ON ALL TABLES IN SCHEMA system TO agent_ro;
