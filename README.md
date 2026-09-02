@@ -103,6 +103,8 @@ Supporting:
 - [`CONTEXT.md`](CONTEXT.md) — the canonical glossary: **persona** vs. **agent / trust domain** vs. **runtime skill**.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
 - [`docs/LAB.md`](docs/LAB.md) — a local verification path for the MQTT/topic/database contracts.
+- [`docs/HYPERV-CI-BOUNDARY.md`](docs/HYPERV-CI-BOUNDARY.md) — host-enforced isolation for an
+  untrusted Forgejo CI VM on Hyper-V management/NAT networks.
 - [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.
 - [`config.env.example`](config.env.example) — copy to `config.env` and fill in.
 
