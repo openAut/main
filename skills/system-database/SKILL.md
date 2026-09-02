@@ -1,6 +1,6 @@
 ---
 name: system-database
-description: Define the openAut Systemdatabas contract — relational PostgreSQL tables for sites, equipment, points, Forge-backed documents, cases, approvals, generated documentation, and audit events alongside TimescaleDB telemetry. Use when aligning openAut/main with the public architecture, designing database migrations, linking forge:// URIs and documents.sha256, or giving agents a shared case and metadata model.
+description: Define the openAut Systemdatabas contract — relational PostgreSQL tables for sites, products, equipment, points, Forge-backed documents, cases, approvals, generated documentation, and audit events alongside TimescaleDB telemetry. Use when aligning openAut/main with the public architecture, designing database migrations, linking product manuals through product_id and forge:// URIs, or giving agents a shared case and metadata model.
 permissions:
   knowledge_only: true
   tools: none
@@ -16,7 +16,7 @@ operational model that Advisor, Engineer, Security, dashboards, and Power BI rea
 TimescaleDB stores time-series readings. The Systemdatabas stores the things that give those
 readings meaning:
 
-- sites, systems, equipment, and points
+- sites, product models, installed equipment, and points
 - protocol/register/BACnet object mappings
 - documents and manuals
 - cases, approval requests, and execution status
@@ -35,6 +35,7 @@ This skill defines the contract that future migrations should implement. It comp
 | Entity | Purpose |
 |---|---|
 | `system.sites` | Site/building identity and ownership context. |
+| `system.products` | Site-independent manufacturer/family/model identity shared by installed equipment and product manuals. |
 | `system.equipment` | AHUs, pumps, heat exchangers, chillers, shunt groups, meters, etc. |
 | `system.points` | Named physical/logical points with unit, datatype, writable flag, safety limits. |
 | `system.protocol_mappings` | Modbus registers, BACnet objects, KNX group addresses, DALI addresses, etc. |
@@ -52,10 +53,19 @@ generating database code:
 ```sql
 CREATE SCHEMA IF NOT EXISTS system;
 
+CREATE TABLE system.products (
+  product_id text PRIMARY KEY,
+  manufacturer text NOT NULL,
+  product_family text NOT NULL,
+  model text NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE system.equipment (
   equipment_id text PRIMARY KEY,
   site text NOT NULL REFERENCES system.sites(site),
   parent_equipment_id text REFERENCES system.equipment(equipment_id),
+  product_id text REFERENCES system.products(product_id),
   name text NOT NULL,
   kind text NOT NULL,
   location text,
@@ -93,8 +103,9 @@ CREATE TABLE system.protocol_mappings (
 
 CREATE TABLE system.documents (
   document_id text PRIMARY KEY,
-  site text NOT NULL REFERENCES system.sites(site),
+  site text REFERENCES system.sites(site),
   equipment_id text REFERENCES system.equipment(equipment_id),
+  product_id text REFERENCES system.products(product_id),
   kind text NOT NULL,
   title text NOT NULL,
   uri text NOT NULL,
@@ -102,7 +113,8 @@ CREATE TABLE system.documents (
   forge_commit text,
   trust_level text NOT NULL DEFAULT 'untrusted',
   uploaded_by text,
-  uploaded_at timestamptz NOT NULL DEFAULT now()
+  uploaded_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (site IS NOT NULL OR equipment_id IS NOT NULL OR product_id IS NOT NULL)
 );
 
 CREATE TABLE system.cases (
@@ -164,6 +176,7 @@ The database should be compatible with a lightweight Haystack/Brick-style view, 
 does not adopt either wholesale at the start:
 
 - stable equipment IDs
+- stable product IDs shared by every installation of the same manufacturer model
 - explicit parent/child relationships
 - point tags/metadata for analytics
 - machine-readable units and datatypes
@@ -176,6 +189,9 @@ knowing whether the value came from Modbus, BACnet, M-Bus, KNX, or another sourc
 
 Use [`documentation-store`](../documentation-store/SKILL.md) as the source contract:
 
+- Use [`manual-ingest`](../manual-ingest/SKILL.md) for product identity, manual metadata, and the
+  `openaut/manuals` catalog. Product manuals link through `documents.product_id`; an installed
+  device links through `equipment.product_id`, so the same manual is not copied per site.
 - `documents.uri` and `generated_artifacts.content_uri` store a `forge://` reference, preferably
   pinned to a commit.
 - `documents.sha256` is an independent SHA-256 over the blob bytes, not a Git commit SHA.

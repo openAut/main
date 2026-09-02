@@ -20,7 +20,8 @@ step, and Engineer performs SSH/deploy actions only after approval.
 
 Use with [`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md),
 [`system-database`](../system-database/SKILL.md), and the relevant protocol skill (`modbus`,
-`bacnet`, `mbus`, `knx`, `dali`, or `lorawan`).
+`bacnet`, `mbus`, `knx`, `dali`, or `lorawan`). Use [`manual-ingest`](../manual-ingest/SKILL.md)
+when the product manual has not yet been converted, identified, and cataloged in `openaut/manuals`.
 
 ## Inputs
 

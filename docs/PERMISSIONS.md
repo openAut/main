@@ -3,9 +3,17 @@
 > ⚠️ **Learning project — not for production.** See the [README](../README.md) for the full
 > disclaimer.
 
-Every `SKILL.md` declares a `permissions:` block in its YAML frontmatter. The block documents, in
-one place, what the skill is allowed to do — so intent is explicit, reviewable, and machine-checkable
+Every `SKILL.md` declares its openAut permissions in its YAML frontmatter. New skills use the
+Agent Skills-compatible `metadata.openaut-permissions` JSON string. Existing skills may retain the
+legacy top-level `permissions:` mapping until they are migrated. The declaration documents, in one
+place, what the skill is allowed to do, so intent is explicit, reviewable, and machine-checkable
 (`scripts/validate_skills.py`, run in CI).
+
+The namespaced metadata form matters because the Agent Skills specification permits custom string
+metadata but does not define a top-level `permissions` field.
+
+Declare permissions exactly once. A skill containing both forms is rejected even when their values
+match, so loaders cannot observe two competing authorization contracts.
 
 This is **declared intent / metadata**. It does not itself grant or enforce capabilities at runtime;
 the sandbox policy, exec allow-lists, and the Advisor/Engineer trust split are the enforcement. A
@@ -18,7 +26,8 @@ skill without reading its whole body.
 |---|---|---|
 | `name` | string | non-empty; matches the skill directory |
 | `description` | string | non-empty |
-| `permissions` | mapping | the block below |
+| `metadata.openaut-permissions` | JSON string | preferred standards-compatible form containing the keys below |
+| `permissions` | mapping | legacy openAut form containing the same keys |
 
 ## `permissions` keys
 
@@ -44,8 +53,9 @@ validator (catches typos and silent drift).
 
 1. **No UTF-8 BOM** before `---` (a loader that checks `startswith('---')` must recognise the
    frontmatter).
-2. Frontmatter parses as YAML and contains `name`, `description`, `permissions`.
-3. `permissions.knowledge_only` is present and boolean.
+2. Frontmatter parses as YAML and contains `name`, `description`, and exactly one permission
+   declaration form. Combining the legacy and metadata forms is invalid.
+3. The chosen declaration decodes to a mapping and `knowledge_only` is present and boolean.
 4. Every key in `permissions` is from the table above.
 5. **If `knowledge_only: true`:** either `exec`/`network`/`tools` are all `none`/absent, **or**
    `delegated_capabilities` is present (the skill guides action that an approved role performs).
@@ -55,7 +65,13 @@ validator (catches typos and silent drift).
 
 ## Examples by skill class
 
-**Knowledge / standards** (e.g. `ai-act`, `iec62443`):
+**Acting skill, standards-compatible form** (preferred for new skills):
+```yaml
+metadata:
+  openaut-permissions: '{"knowledge_only":false,"exec":"python scripts/tool.py","network":"none","files":"read-write","control_writes":"none"}'
+```
+
+**Knowledge / standards, legacy form** (e.g. `ai-act`, `iec62443`):
 ```yaml
 permissions:
   knowledge_only: true

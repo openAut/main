@@ -158,6 +158,7 @@ public-upstream dependency source.
 | [`system-database`](../skills/system-database/SKILL.md) | 3 | Define the Systemdatabas contract: equipment, points, documents, cases, approvals, generated artifacts, and audit events. |
 | [`forge-stack`](../skills/forge-stack/SKILL.md) | 3 | Provision local Forgejo as the versioned system of record for code, manuals, runbooks, generated docs, migrations, and artifacts. |
 | [`documentation-store`](../skills/documentation-store/SKILL.md) | 3 | Define Forge-backed documentation retrieval, `forge://` URIs, independent `documents.sha256`, and quarantine-to-verified trust flow. |
+| [`manual-ingest`](../skills/manual-ingest/SKILL.md) | 3 | Convert product manuals to Markdown, assign stable product/document IDs, retain hashed sources, and generate a portable manuals catalog. |
 | [`forge-governance`](../skills/forge-governance/SKILL.md) | 3 | Define PR review, branch protection, CI gates, CODEOWNERS, signing, and scoped agent permissions. |
 | [`edge-iot2050`](../skills/edge-iot2050/SKILL.md) | 2 | Siemens IOT2050 edge node: field poller → EMQX over mutual TLS, store-and-forward buffering. |
 | [`engineer-integration`](../skills/engineer-integration/SKILL.md) | 2→3 | Define Engineer's approved manual-to-integration workflow: parse manufacturer docs, deploy to edge over SSH, verify data, and write generated documentation. |
