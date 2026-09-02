@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import mimetypes
 import os
@@ -42,16 +44,78 @@ class ArchiveError(ValueError):
     """Raised when archive content violates the contract."""
 
 
+def is_link_like(status: os.stat_result) -> bool:
+    """Detect POSIX symlinks and Windows reparse points such as directory junctions."""
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    file_attributes = getattr(status, "st_file_attributes", 0)
+    return stat.S_ISLNK(status.st_mode) or bool(file_attributes & reparse_flag)
+
+
+def publish_no_replace(
+    source: Path,
+    destination: Path,
+    expected_destination_parent: os.stat_result | None = None,
+) -> None:
+    """Atomically publish a directory without replacing an existing destination."""
+    if os.name == "nt":
+        try:
+            os.rename(source, destination)
+        except FileExistsError as exc:
+            raise ArchiveError(f"archive destination already exists: {destination}") from exc
+        return
+
+    if not sys.platform.startswith("linux"):
+        raise ArchiveError("atomic no-replace publication is supported only on Linux and Windows")
+
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    source_parent_fd = os.open(source.parent, flags)
+    try:
+        destination_parent_fd = os.open(destination.parent, flags)
+        try:
+            opened_parent = os.fstat(destination_parent_fd)
+            if expected_destination_parent is not None and (
+                opened_parent.st_dev != expected_destination_parent.st_dev
+                or opened_parent.st_ino != expected_destination_parent.st_ino
+            ):
+                raise ArchiveError("archive destination parent changed during ingest")
+            libc = ctypes.CDLL(None, use_errno=True)
+            renameat2 = libc.renameat2
+            renameat2.argtypes = (
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            )
+            renameat2.restype = ctypes.c_int
+            result = renameat2(
+                source_parent_fd,
+                os.fsencode(source.name),
+                destination_parent_fd,
+                os.fsencode(destination.name),
+                1,  # RENAME_NOREPLACE
+            )
+            if result != 0:
+                error_number = ctypes.get_errno()
+                if error_number in (errno.EEXIST, errno.ENOTEMPTY):
+                    raise ArchiveError(f"archive destination already exists: {destination}")
+                raise OSError(error_number, os.strerror(error_number), str(destination))
+        finally:
+            os.close(destination_parent_fd)
+    finally:
+        os.close(source_parent_fd)
+
+
 def archive_root(repo: Path) -> Path:
     """Return a canonical archive root, rejecting a missing root or any symlink boundary."""
     absolute = repo.absolute()
     try:
-        mode = absolute.lstat().st_mode
+        status = absolute.lstat()
     except OSError as exc:
         raise ArchiveError(f"archive root is not accessible: {absolute}: {exc}") from exc
-    if stat.S_ISLNK(mode):
-        raise ArchiveError(f"archive root must not be a symbolic link: {absolute}")
-    if not stat.S_ISDIR(mode):
+    if is_link_like(status):
+        raise ArchiveError(f"archive root must not be a link or reparse point: {absolute}")
+    if not stat.S_ISDIR(status.st_mode):
         raise ArchiveError(f"archive root is not a directory: {absolute}")
     return absolute.resolve(strict=True)
 
@@ -69,13 +133,13 @@ def safe_path(repo: Path, path: Path) -> Path:
     for part in relative.parts:
         current = current / part
         try:
-            mode = current.lstat().st_mode
+            status = current.lstat()
         except FileNotFoundError:
             continue
         except OSError as exc:
             raise ArchiveError(f"cannot inspect archive path {current}: {exc}") from exc
-        if stat.S_ISLNK(mode):
-            raise ArchiveError(f"symbolic links are not allowed in the archive: {current}")
+        if is_link_like(status):
+            raise ArchiveError(f"links and reparse points are not allowed in the archive: {current}")
 
     resolved = candidate.resolve(strict=False)
     if not resolved.is_relative_to(root):
@@ -216,27 +280,32 @@ def write_yaml(repo: Path, path: Path, value: dict[str, Any]) -> None:
     atomic_write_text(repo, path, yaml.safe_dump(value, sort_keys=False, allow_unicode=True))
 
 
-def ensure_product(repo: Path, product: dict[str, str]) -> Path:
+def existing_product(repo: Path, product: dict[str, str]) -> Path | None:
     directory = product_directory(repo, product)
     safe_path(repo, directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    safe_path(repo, directory)
+    if not directory.exists():
+        return None
+    if not directory.is_dir():
+        raise ArchiveError(f"product path is not a directory: {directory}")
+
     path = directory / "product.yaml"
     expected = expected_product_yaml(product)
     safe_path(repo, path)
-    if path.exists() or path.is_symlink():
-        actual = load_yaml(repo, path)
-        for key in (
-            "schema",
-            "product_id",
-            "manufacturer_id",
-            "product_family_id",
-            "model_id",
-        ):
-            if actual.get(key) != expected[key]:
-                raise ArchiveError(f"{path}: existing {key} does not match requested product")
-    else:
-        write_yaml(repo, path, expected)
+    if not path.is_file():
+        raise ArchiveError(f"existing product directory has no product.yaml: {directory}")
+    actual = load_yaml(repo, path)
+    for key in (
+        "schema",
+        "product_id",
+        "manufacturer",
+        "manufacturer_id",
+        "product_family",
+        "product_family_id",
+        "model",
+        "model_id",
+    ):
+        if actual.get(key) != expected[key]:
+            raise ArchiveError(f"{path}: existing {key} does not match requested product")
     return directory
 
 
@@ -264,65 +333,99 @@ def ingest(args: argparse.Namespace) -> Path:
         raise ArchiveError("converted Markdown is empty")
 
     product = product_parts(args.manufacturer, args.family, args.model)
-    root = ensure_product(repo, product)
+    root = existing_product(repo, product)
+    product_root = product_directory(repo, product)
     document_number_id = slug(args.document_number)
     revision_id = slug(args.revision)
     language_path = args.language.lower()
-    destination = safe_path(
-        repo,
-        root
-        / "documents"
+    revision_relative = (
+        Path("documents")
         / args.document_type
         / language_path
         / document_number_id
-        / f"rev-{revision_id}",
+        / f"rev-{revision_id}"
     )
+    destination = safe_path(repo, product_root / revision_relative)
     if destination.exists() or destination.is_symlink():
         raise ArchiveError(f"document revision already exists: {destination}")
-    destination.mkdir(parents=True)
-    safe_path(repo, destination)
 
-    suffix = source.suffix.lower() or ".bin"
-    stored_source = destination / f"source{suffix}"
-    atomic_copy(repo, source, stored_source)
-    source_hash = sha256_file(stored_source)
-    document_id = ".".join(
-        (
-            product["product_id"],
-            args.document_type,
-            document_number_id,
-            language_path,
-            revision_id,
+    publish_parent = product_root.parent if root is None else destination.parent
+    publish_parent.mkdir(parents=True, exist_ok=True)
+    safe_path(repo, publish_parent)
+    staging_root = Path(tempfile.mkdtemp(prefix=f".{repo.name}-manual-ingest-", dir=repo.parent))
+    try:
+        staging_root = staging_root.resolve(strict=True)
+        if staging_root.parent != repo.parent:
+            raise ArchiveError(f"staging directory escaped archive parent: {staging_root}")
+        publish_status = publish_parent.stat()
+        if staging_root.stat().st_dev != publish_status.st_dev:
+            raise ArchiveError("staging and archive destination must be on the same filesystem")
+        if hasattr(os, "chown"):
+            os.chown(staging_root, -1, publish_status.st_gid)
+        os.chmod(staging_root, stat.S_IMODE(publish_status.st_mode))
+        if root is None:
+            staging_destination = staging_root / revision_relative
+            publish_to = product_root
+        else:
+            staging_destination = staging_root
+            publish_to = destination
+
+        staging_destination.mkdir(parents=True, exist_ok=True)
+        if root is None:
+            write_yaml(staging_root, staging_root / "product.yaml", expected_product_yaml(product))
+
+        suffix = source.suffix.lower() or ".bin"
+        stored_source = staging_destination / f"source{suffix}"
+        atomic_copy(staging_root, source, stored_source)
+        source_hash = sha256_file(stored_source)
+        document_id = ".".join(
+            (
+                product["product_id"],
+                args.document_type,
+                document_number_id,
+                language_path,
+                revision_id,
+            )
         )
-    )
-    metadata: dict[str, Any] = {
-        "schema": "openaut-manual/v1",
-        "document_id": document_id,
-        "title": args.title or f"{product['manufacturer']} {product['model']} {args.document_type}",
-        "product_id": product["product_id"],
-        "manufacturer": product["manufacturer"],
-        "product_family": product["product_family"],
-        "model": product["model"],
-        "document_type": args.document_type,
-        "document_number": args.document_number,
-        "revision": args.revision,
-        "language": args.language,
-        "protocols": normalized_terms(args.protocol),
-        "tags": normalized_terms(args.tag),
-        "source": {
-            "original_filename": source.name,
-            "stored_filename": stored_source.name,
-            "media_type": mimetypes.guess_type(source.name)[0] or "application/octet-stream",
-            "sha256": source_hash,
-        },
-        "conversion": {
-            "method": args.conversion_method,
-            "converted_at": date.today().isoformat(),
-        },
-        "trust_level": "quarantine",
-    }
-    rendered = "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True) + "---\n\n" + body
-    atomic_write_text(repo, destination / "manual.md", rendered)
+        metadata: dict[str, Any] = {
+            "schema": "openaut-manual/v1",
+            "document_id": document_id,
+            "title": args.title or f"{product['manufacturer']} {product['model']} {args.document_type}",
+            "product_id": product["product_id"],
+            "manufacturer": product["manufacturer"],
+            "product_family": product["product_family"],
+            "model": product["model"],
+            "document_type": args.document_type,
+            "document_number": args.document_number,
+            "revision": args.revision,
+            "language": args.language,
+            "protocols": normalized_terms(args.protocol),
+            "tags": normalized_terms(args.tag),
+            "source": {
+                "original_filename": source.name,
+                "stored_filename": stored_source.name,
+                "media_type": mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+                "sha256": source_hash,
+            },
+            "conversion": {
+                "method": args.conversion_method,
+                "converted_at": date.today().isoformat(),
+            },
+            "trust_level": "quarantine",
+        }
+        rendered = (
+            "---\n"
+            + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True)
+            + "---\n\n"
+            + body
+        )
+        atomic_write_text(staging_root, staging_destination / "manual.md", rendered)
+        safe_path(repo, publish_parent)
+        publish_no_replace(staging_root, publish_to, publish_status)
+        staging_root = None
+    finally:
+        if staging_root is not None and staging_root.exists():
+            shutil.rmtree(staging_root)
     return destination / "manual.md"
 
 
@@ -510,25 +613,25 @@ def inventory_archive(repo: Path) -> tuple[list[str], list[Path], list[Path]]:
         for name in list(directory_names):
             path = current / name
             try:
-                mode = path.lstat().st_mode
+                status = path.lstat()
             except OSError as exc:
                 errors.append(f"{path}: cannot inspect archive entry: {exc}")
                 directory_names.remove(name)
                 continue
-            if stat.S_ISLNK(mode):
-                errors.append(f"{path}: symbolic links are not allowed in the archive")
+            if is_link_like(status):
+                errors.append(f"{path}: links and reparse points are not allowed in the archive")
                 directory_names.remove(name)
         for name in file_names:
             path = current / name
             try:
-                mode = path.lstat().st_mode
+                status = path.lstat()
             except OSError as exc:
                 errors.append(f"{path}: cannot inspect archive entry: {exc}")
                 continue
-            if stat.S_ISLNK(mode):
-                errors.append(f"{path}: symbolic links are not allowed in the archive")
+            if is_link_like(status):
+                errors.append(f"{path}: links and reparse points are not allowed in the archive")
                 continue
-            if not stat.S_ISREG(mode):
+            if not stat.S_ISREG(status.st_mode):
                 errors.append(f"{path}: archive entries must be regular files")
                 continue
             if name == "product.yaml":
