@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import mimetypes
 import os
@@ -47,6 +49,61 @@ def is_link_like(status: os.stat_result) -> bool:
     reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
     file_attributes = getattr(status, "st_file_attributes", 0)
     return stat.S_ISLNK(status.st_mode) or bool(file_attributes & reparse_flag)
+
+
+def publish_no_replace(
+    source: Path,
+    destination: Path,
+    expected_destination_parent: os.stat_result | None = None,
+) -> None:
+    """Atomically publish a directory without replacing an existing destination."""
+    if os.name == "nt":
+        try:
+            os.rename(source, destination)
+        except FileExistsError as exc:
+            raise ArchiveError(f"archive destination already exists: {destination}") from exc
+        return
+
+    if not sys.platform.startswith("linux"):
+        raise ArchiveError("atomic no-replace publication is supported only on Linux and Windows")
+
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    source_parent_fd = os.open(source.parent, flags)
+    try:
+        destination_parent_fd = os.open(destination.parent, flags)
+        try:
+            opened_parent = os.fstat(destination_parent_fd)
+            if expected_destination_parent is not None and (
+                opened_parent.st_dev != expected_destination_parent.st_dev
+                or opened_parent.st_ino != expected_destination_parent.st_ino
+            ):
+                raise ArchiveError("archive destination parent changed during ingest")
+            libc = ctypes.CDLL(None, use_errno=True)
+            renameat2 = libc.renameat2
+            renameat2.argtypes = (
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            )
+            renameat2.restype = ctypes.c_int
+            result = renameat2(
+                source_parent_fd,
+                os.fsencode(source.name),
+                destination_parent_fd,
+                os.fsencode(destination.name),
+                1,  # RENAME_NOREPLACE
+            )
+            if result != 0:
+                error_number = ctypes.get_errno()
+                if error_number in (errno.EEXIST, errno.ENOTEMPTY):
+                    raise ArchiveError(f"archive destination already exists: {destination}")
+                raise OSError(error_number, os.strerror(error_number), str(destination))
+        finally:
+            os.close(destination_parent_fd)
+    finally:
+        os.close(source_parent_fd)
 
 
 def archive_root(repo: Path) -> Path:
@@ -295,25 +352,24 @@ def ingest(args: argparse.Namespace) -> Path:
     publish_parent = product_root.parent if root is None else destination.parent
     publish_parent.mkdir(parents=True, exist_ok=True)
     safe_path(repo, publish_parent)
-    staging_root = Path(
-        tempfile.mkdtemp(prefix=f".{repo.name}-manual-ingest-", dir=repo.parent)
-    ).resolve(strict=True)
-    if staging_root.parent != repo.parent:
-        raise ArchiveError(f"staging directory escaped archive parent: {staging_root}")
-    publish_status = publish_parent.stat()
-    if hasattr(os, "chown"):
-        os.chown(staging_root, -1, publish_status.st_gid)
-    os.chmod(staging_root, stat.S_IMODE(publish_status.st_mode))
-    if root is None:
-        staging_destination = staging_root / revision_relative
-        publish_from = staging_root
-        publish_to = product_root
-    else:
-        staging_destination = staging_root
-        publish_from = staging_destination
-        publish_to = destination
-
+    staging_root = Path(tempfile.mkdtemp(prefix=f".{repo.name}-manual-ingest-", dir=repo.parent))
     try:
+        staging_root = staging_root.resolve(strict=True)
+        if staging_root.parent != repo.parent:
+            raise ArchiveError(f"staging directory escaped archive parent: {staging_root}")
+        publish_status = publish_parent.stat()
+        if staging_root.stat().st_dev != publish_status.st_dev:
+            raise ArchiveError("staging and archive destination must be on the same filesystem")
+        if hasattr(os, "chown"):
+            os.chown(staging_root, -1, publish_status.st_gid)
+        os.chmod(staging_root, stat.S_IMODE(publish_status.st_mode))
+        if root is None:
+            staging_destination = staging_root / revision_relative
+            publish_to = product_root
+        else:
+            staging_destination = staging_root
+            publish_to = destination
+
         staging_destination.mkdir(parents=True, exist_ok=True)
         if root is None:
             write_yaml(staging_root, staging_root / "product.yaml", expected_product_yaml(product))
@@ -364,9 +420,8 @@ def ingest(args: argparse.Namespace) -> Path:
             + body
         )
         atomic_write_text(staging_root, staging_destination / "manual.md", rendered)
-        if publish_to.exists() or publish_to.is_symlink():
-            raise ArchiveError(f"archive destination appeared during ingest: {publish_to}")
-        os.replace(publish_from, publish_to)
+        safe_path(repo, publish_parent)
+        publish_no_replace(staging_root, publish_to, publish_status)
         staging_root = None
     finally:
         if staging_root is not None and staging_root.exists():

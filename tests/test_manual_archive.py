@@ -163,14 +163,12 @@ def test_ingest_failure_leaves_no_partial_product_and_can_retry(
     markdown = tmp_path / "manual.md"
     markdown.write_text("# Manual\n", encoding="utf-8")
     args = ingest_args(repo, source, markdown)
-    original_replace = manual_archive.os.replace
+    original_publish = manual_archive.publish_no_replace
 
-    def fail_publish(source_path: Path, destination_path: Path) -> None:
-        if Path(source_path).is_dir():
-            raise OSError("simulated publish failure")
-        original_replace(source_path, destination_path)
+    def fail_publish(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("simulated publish failure")
 
-    monkeypatch.setattr(manual_archive.os, "replace", fail_publish)
+    monkeypatch.setattr(manual_archive, "publish_no_replace", fail_publish)
     with pytest.raises(OSError, match="simulated publish failure"):
         manual_archive.ingest(args)
 
@@ -178,8 +176,44 @@ def test_ingest_failure_leaves_no_partial_product_and_can_retry(
     assert not product.exists()
     assert list(tmp_path.glob(".manuals-manual-ingest-*")) == []
 
-    monkeypatch.setattr(manual_archive.os, "replace", original_replace)
+    monkeypatch.setattr(manual_archive, "publish_no_replace", original_publish)
     assert manual_archive.ingest(args).is_file()
+
+
+def test_publish_no_replace_preserves_existing_destination(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "new.txt").write_text("new\n", encoding="utf-8")
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    marker = destination / "existing.txt"
+    marker.write_text("existing\n", encoding="utf-8")
+
+    with pytest.raises(manual_archive.ArchiveError, match="destination already exists"):
+        manual_archive.publish_no_replace(source, destination)
+
+    assert marker.read_text(encoding="utf-8") == "existing\n"
+    assert (source / "new.txt").is_file()
+
+
+def test_staging_setup_failure_is_cleaned_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "manuals"
+    repo.mkdir()
+    source = tmp_path / "manual.pdf"
+    source.write_bytes(b"source")
+    markdown = tmp_path / "manual.md"
+    markdown.write_text("# Manual\n", encoding="utf-8")
+
+    def fail_chmod(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("simulated chmod failure")
+
+    monkeypatch.setattr(manual_archive.os, "chmod", fail_chmod)
+    with pytest.raises(OSError, match="simulated chmod failure"):
+        manual_archive.ingest(ingest_args(repo, source, markdown))
+
+    assert list(tmp_path.glob(".manuals-manual-ingest-*")) == []
 
 
 def test_ingest_rejects_product_display_name_slug_collision(tmp_path: Path) -> None:

@@ -25,8 +25,9 @@ IDs and paths use lowercase ASCII slugs. Display names preserve the manufacturer
 The archive must contain no symbolic links. Each revision directory contains exactly `manual.md`
 and one `source.<extension>` file; validation rejects misplaced contract files and any extra entry.
 Ingest stages a complete new product or revision in a temporary sibling of the archive before
-publishing it with an atomic rename. Failed ingest attempts must not expose a partial product or
-revision inside the archive or block a retry.
+publishing it with an atomic no-replace rename. Linux and Windows are supported, and the helper
+verifies that staging and destination use the same filesystem. Failed ingest attempts must not
+expose a partial product or revision inside the archive or block a retry.
 On POSIX, the helper aligns the published root's group and mode with its destination parent before
 publication. On Windows, the archive and its parent must use the same ACL because a same-volume move
 retains the staging directory's security descriptor rather than inheriting a new one.
