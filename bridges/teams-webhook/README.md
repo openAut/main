@@ -1,9 +1,13 @@
 # Teams ↔ OpenClaw — retired approach, see msteams plugin
 
 > **This bridge is retired.** It relied on Microsoft Teams' **Incoming Webhook** (an Office 365
-> Connector). Microsoft retired Office 365 Connectors in Teams in a rollout that completed
-> **2026-05-22** — `TEAMS_INCOMING_WEBHOOK_URL` posts to `webhook.office.com` no longer work.
-> Do not deploy this bridge. Kept only as a historical record of the earlier design.
+> Connector). Microsoft's Office 365 Connectors retirement in Teams had several deadline extensions
+> (December 2025 → March 2026 → April 30, 2026) before the final disable rollout of
+> **May 18-22, 2026** — see the [Microsoft 365 Developer Blog notice](https://devblogs.microsoft.com/microsoft365dev/retirement-of-office-365-connectors-within-microsoft-teams/)
+> and check the [Microsoft 365 Message Center](https://admin.microsoft.com) for your own tenant's
+> exact status, since Message Center rollout notices can vary by tenant ring. `TEAMS_INCOMING_WEBHOOK_URL`
+> posts to `webhook.office.com` no longer work. Do not deploy this bridge. Kept only as a historical
+> record of the earlier design.
 
 ## What replaced it
 

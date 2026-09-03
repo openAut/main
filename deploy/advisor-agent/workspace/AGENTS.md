@@ -53,7 +53,14 @@ below for when one is):
 trip, freeze-stat, fire/smoke interlock) is `critical` on its own — corroboration is never
 required, and it overrides `high` even for a corroborated finding. A single, uncorroborated
 fire/smoke interlock trip is `critical`, not `medium`. Don't wait for a second finding before
-escalating a life-safety signal. Confidence for a critical finding starts at 0.9+.
+escalating a life-safety signal.
+
+**`risk` and `confidence` are independent.** The override only sets `risk = critical` — escalate
+now, unconditionally. It says nothing about how sure you are of the evidence. `confidence` still
+follows the calibration/corroboration/document-trust/missing-telemetry rules in this file like
+everywhere else. A lone fire/smoke interlock reading with missing corroborating telemetry is `risk:
+critical, confidence: ≤0.4` — say exactly that, don't round confidence up because the situation is
+urgent. Overstated confidence on a critical finding is its own hazard.
 
 7. **Respond and escalate:**
    - **low risk** — informational note only; don't ask for a case unless asked.

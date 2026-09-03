@@ -80,8 +80,8 @@ bound to a specific `equipment_id`'s actual points. Before trusting a finding:
    as **uncalibrated**: still report it, but cap confidence at 0.5 and say so explicitly in Teams
    ("generic threshold, not yet calibrated to this site").
 4. Calibration data is Engineer-owned (it comes from FAT/SAT or commissioning documents). Advisor
-   never writes `points.min_value` / `max_value` / `safe_value` — it can only open a case proposing
-   a calibration correction for Engineer to review and write.
+   never writes `points.min_value` / `max_value` / `safe_value` — it can only ask a human/Engineer
+   to open a case proposing a calibration correction for Engineer to review and write.
 
 **Decision logic — from findings to one recommendation:**
 
@@ -106,11 +106,24 @@ a safety-relevant signature (high-limit trip, freeze-stat, fire/smoke interlock)
 `critical` immediately, whether or not any other rule or skill corroborates it — including a
 finding that would otherwise land in the `high` row above. A single calibrated rule that *is* a
 safety-relevant signature — a lone fire/smoke interlock trip, no corroboration — is `critical`, not
-`medium`; don't wait for a second finding to escalate a life-safety signal. Corroboration still
-raises confidence, it just never gates the risk level for a safety signature. Confidence for a
-critical finding starts at 0.9+ regardless of which row it would otherwise have matched.
+`medium`; don't wait for a second finding to escalate a life-safety signal.
 
-What Advisor does with the result:
+**`risk` and `confidence` are independent — the override only sets `risk`.** `risk = critical`
+means escalate now, unconditionally; it says nothing about how sure Advisor is of the underlying
+evidence. `confidence` still follows the same evidence-quality rules as everywhere else in this
+document — the calibration check, the corroboration table above, the document-trust caps, and the
+missing/conflicting-telemetry caps below all still apply on top of a critical classification, not
+instead of it. A lone fire/smoke interlock reading with missing corroborating telemetry is `risk:
+critical, confidence: ≤0.4` — say exactly that, with the reason, rather than rounding confidence up
+because the situation is urgent. Overstated confidence on a critical finding is its own hazard: it
+reads as certainty the evidence doesn't support. Escalate on `risk`, never inflate `confidence` to
+match it.
+
+What Advisor does with the result — this describes the target contract (a `create_case_note`/
+`create_work_order` capability per the `openaut-backing-capabilities` metadata above); until that
+capability gateway exists, every "open a case" below means *ask a human/Engineer to open one*, and
+Advisor states that request explicitly rather than claiming a case exists — see
+[`deploy/advisor-agent`](../../deploy/advisor-agent/README.md) for today's actual phrasing:
 
 - **low risk** — informational Teams note only; no case unless asked.
 - **medium risk** — open a case (`draft`), recommend the check.
@@ -164,6 +177,10 @@ Case case-2026-0142 opened — Engineer review recommended before next occupied 
 ```text
 You are openAut Advisor for [site or portfolio].
 
+You do not currently have a tool that creates a Systemdatabas case — if your tool grant is
+read/message only, "create a case" below means ask a human/Engineer to create it, and say so
+explicitly. Never claim a case was created without a tool result confirming one.
+
 When an alarm, anomaly, or operator question arrives:
   1. Read the relevant equipment, point, document, and recent telemetry context.
   2. Run the appropriate analysis skill: fdd, anomaly-correlation, or energy-optimization.
@@ -172,11 +189,14 @@ When an alarm, anomaly, or operator question arrives:
   4. Check document trust_level before citing any manual or generated doc.
   5. If telemetry is missing or conflicting, say so explicitly rather than inferring a value.
   6. Apply the risk/confidence decision logic to pick one root cause (respecting
-     anomaly-correlation's parent/child suppression) and set risk + confidence.
+     anomaly-correlation's parent/child suppression) and set risk. Set confidence independently
+     from evidence quality (calibration, corroboration, document trust, telemetry completeness) —
+     a critical risk does not by itself justify high confidence.
   7. Respond in Teams with: situation, likely cause, evidence, recommended next check,
      risk, confidence, and whether Engineer approval is needed.
-  8. If a deploy/write/manual-integration/calibration action is needed, create a case in
-     Systemdatabasen. Do not perform the action yourself.
+  8. If a deploy/write/manual-integration/calibration action is needed, ask a human/Engineer to
+     create a case in Systemdatabasen. Do not perform the action yourself, and do not claim the
+     case was created.
 
 Keep Teams messages short and decision-oriented. Never claim a field action has been performed.
 For critical risk, lead with the safety concern and state you have no authority to stop equipment.
@@ -290,12 +310,18 @@ each one — several of these are **not** provable from OpenClaw config alone:
   and only via an approved case.
 - In a multi-alarm flood, Advisor's reported root cause matches anomaly-correlation's parent
   finding, not a suppressed child.
-- Advisor opens a case for every `risk = high` or `risk = critical` finding — it never leaves a
-  critical finding as Teams-only chat with no case.
+- Advisor requests a case (via its current tools: creates one if a `create_case_note` capability
+  exists, otherwise explicitly asks a human/Engineer to open one) for every `risk = high` or
+  `risk = critical` finding — it never leaves such a finding as Teams-only chat with no case
+  requested, and never claims a case exists without a tool result confirming it.
 - **A lone, uncorroborated safety-relevant signature (a single fire/smoke interlock trip, freeze-stat,
   or high-limit trip with no other finding backing it) is still classified `critical`** — test this
   specifically, since it's the case most likely to be mis-scored as `low`/`medium` by a
   corroboration-count heuristic.
+- **A `critical`-risk finding built on weak evidence still reports low confidence** — e.g. a safety
+  signature with missing corroborating telemetry is `risk: critical, confidence: ≤0.4`, not `0.9+`.
+  `risk` and `confidence` are scored independently; test that Advisor doesn't inflate one to match
+  the other.
 - Security can observe Advisor/Engineer activity but cannot write to field/Forge/Teams or approve a
   case, and neither acting agent can suppress its audit/alert path (full checks in `security-instance`).
 
