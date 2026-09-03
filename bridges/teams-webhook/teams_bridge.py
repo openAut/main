@@ -24,15 +24,6 @@ Config comes from environment (source ../../config.env first):
 
 Stdlib only — no Flask. Not production-hardened; see README security notes.
 """
-import sys
-
-sys.exit(
-    "RETIRED: this bridge relies on Teams Incoming Webhooks (Office 365 Connectors), which "
-    "Microsoft discontinued (rollout completed 2026-05-22). Use OpenClaw's native msteams "
-    "channel plugin instead. See bridges/teams-webhook/README.md and "
-    "skills/nemoclaw-provision/SKILL.md Step 5."
-)
-
 import base64
 import hashlib
 import hmac
@@ -159,6 +150,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    import sys
+
+    sys.exit(
+        "RETIRED: this bridge relies on Teams Incoming Webhooks (Office 365 Connectors), which "
+        "Microsoft discontinued (rollout completed 2026-05-22). Use OpenClaw's native msteams "
+        "channel plugin instead. See bridges/teams-webhook/README.md and "
+        "skills/nemoclaw-provision/SKILL.md Step 5."
+    )
     if not OUTGOING_SECRET:
         print("WARN: TEAMS_OUTGOING_SECRET unset — inbound Teams requests will be rejected.")
     if not INCOMING_WEBHOOK_URL:
