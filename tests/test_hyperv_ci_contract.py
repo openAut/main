@@ -78,6 +78,8 @@ class HyperVCiContractTests(unittest.TestCase):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
 
         self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[string\]\$ForgejoIpv4")
+        self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[switch\]\$DedicatedForgejoEndpointConfirmed")
+        self.assertIn("tuple is dedicated to Forgejo", script)
         self.assertIn("Add-VMNetworkAdapterExtendedAcl", script)
         self.assertIn('-RemotePort "443" -Protocol "TCP"', script)
         self.assertIn('-Direction Outbound -RemoteIPAddress "ANY" -Weight $denyWeight', script)
@@ -104,13 +106,15 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("ForgejoIpv4 must not overlap denied field CIDR", script)
         self.assertIn("Guard denies are not effective", script)
         self.assertIn("@($DeniedFieldCidrs).Count -eq 0", script)
+        self.assertIn("$outboundGuards.Count -eq 0", script)
+        self.assertIn("$inboundGuards.Count -eq 0", script)
 
     def test_runtime_report_path_is_validated_before_acl_changes(self):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
 
         normalize_parent = script.index('if ([string]::IsNullOrEmpty($reportParent))')
         validate_parent = script.index("Report parent does not exist", normalize_parent)
-        first_acl_change = script.index("Add-VMNetworkAdapterExtendedAcl")
+        first_acl_change = script.index("Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter")
         self.assertLess(normalize_parent, validate_parent)
         self.assertLess(validate_parent, first_acl_change)
 

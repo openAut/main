@@ -6,6 +6,9 @@ param(
     [Parameter(Mandatory)]
     [string[]]$DeniedFieldCidrs,
 
+    [Parameter(Mandatory)]
+    [switch]$DedicatedForgejoEndpointConfirmed,
+
     [string]$VmName = "openaut-ci",
     [string]$ManagementAdapterName = "management",
     [string]$ReportPath,
@@ -24,6 +27,9 @@ if (-not [System.Net.IPAddress]::TryParse($ForgejoIpv4, [ref]$parsedForgejoIp) -
 if (@($DeniedFieldCidrs).Count -eq 0 -or
     @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
     throw "At least one field CIDR is required."
+}
+if (-not $DedicatedForgejoEndpointConfirmed) {
+    throw "The operator must confirm that the allowed IPv4/TCP 443 tuple is dedicated to Forgejo."
 }
 $reportParent = $null
 if ($ReportPath) {
@@ -158,15 +164,27 @@ if (-not $policyComplete -and $managed.Count -gt 0 -and -not $ReplaceManagedPoli
 }
 if (-not $policyComplete) {
     $guards = @($managed | Where-Object { $_.Weight -eq $guardWeight })
-    if ($guards.Count -eq 0) {
+    $outboundGuards = @($guards | Where-Object { Test-DenyRule $_ "Outbound" $guardWeight })
+    $inboundGuards = @($guards | Where-Object { Test-DenyRule $_ "Inbound" $guardWeight })
+    $malformedGuards = @($guards | Where-Object {
+        -not (Test-DenyRule $_ "Outbound" $guardWeight) -and
+        -not (Test-DenyRule $_ "Inbound" $guardWeight)
+    })
+
+    if ($malformedGuards.Count -gt 0 -or $outboundGuards.Count -gt 1 -or $inboundGuards.Count -gt 1) {
+        foreach ($rule in $guards) {
+            Remove-VMNetworkAdapterExtendedAcl -InputObject $rule
+        }
+        $outboundGuards = @()
+        $inboundGuards = @()
+    }
+    if ($outboundGuards.Count -eq 0) {
         Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Deny `
             -Direction Outbound -RemoteIPAddress "ANY" -Weight $guardWeight
+    }
+    if ($inboundGuards.Count -eq 0) {
         Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Deny `
             -Direction Inbound -RemoteIPAddress "ANY" -Weight $guardWeight
-    } elseif ($guards.Count -ne 2 -or
-        @($guards | Where-Object { Test-DenyRule $_ "Outbound" $guardWeight }).Count -ne 1 -or
-        @($guards | Where-Object { Test-DenyRule $_ "Inbound" $guardWeight }).Count -ne 1) {
-        throw "Managed guard ACLs are malformed; refusing policy replacement."
     }
 
     $effectiveGuards = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic | Where-Object {
@@ -218,6 +236,7 @@ $report = [ordered]@{
     BoundaryState = "RuntimeEgressPolicyPrepared"
     ForgejoIpv4 = $ForgejoIpv4
     ForgejoTcpPort = 443
+    DedicatedForgejoEndpointConfirmed = [bool]$DedicatedForgejoEndpointConfirmed
     DeniedFieldCidrs = $fieldCidrs
     DefaultIpv4Outbound = "Deny"
     DefaultIpv6Outbound = "Deny"
