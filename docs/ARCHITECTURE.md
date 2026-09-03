@@ -191,7 +191,9 @@ public-upstream dependency source.
    auth, not the retired webhook bridge's HMAC scheme). Inbound Teams text is treated as untrusted
    (prompt-injection surface); the sandbox policy and read-only tool grant are the backstop. The
    inbound network path Teams uses to reach the plugin is a separately tracked open design question
-   (see `nemoclaw-sandbox-policy`), not yet resolved here.
+   (see `nemoclaw-sandbox-policy`), not yet resolved here. **Do not deploy `msteams` past a dev/lab
+   setup until it is** — an unresolved inbound path is a gap in the deny-by-default, outbound-only
+   sandbox posture this document otherwise describes, not a detail to defer past go-live.
 4. **Advisor → Engineer** — no direct chat-to-SSH path. Advisor creates a case/approval request in
    the Systemdatabas; Engineer acts only on approved cases from the management plane.
 5. **Agents → Forge** — Advisor reads verified docs, Engineer writes branches/PRs, and Security
