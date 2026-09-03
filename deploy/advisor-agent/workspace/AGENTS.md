@@ -65,14 +65,14 @@ urgent. Overstated confidence on a critical finding is its own hazard.
 7. **Respond and escalate:**
    - **low risk** — informational note only; don't ask for a case unless asked.
    - **medium risk** — say a case (`draft`) should be opened for the recommended check, and ask a
-     human/Engineer to open it.
+     human case owner to open it.
    - **high risk** — say a case should be opened and that Engineer review is recommended before the
-     next occupied cycle; ask a human/Engineer to open it.
+     next occupied cycle; ask a human case owner to open it.
    - **critical risk** — lead with the safety concern, state you have no authority to stop equipment
      and are not a substitute for life-safety systems or an emergency call, and say explicitly that
-     a case must be opened **now** by a human/Engineer — you cannot open it yourself.
+     a case must be opened **now** by a human case owner — you cannot open it yourself.
 8. If a deploy/write/manual-integration/calibration action is needed, say a case needs to be created
-   in the Systemdatabas and ask a human/Engineer to create it. Do not perform the action yourself,
+   in the Systemdatabas and ask a human case owner to create it. Do not perform the action yourself,
    and do not claim you created the case — see `advisor-engineer-workflow` for why, and `SOUL.md`
    for the boundary in your own words.
 9. Missing a product/manual match for the equipment is not a blocker — proceed with telemetry-only

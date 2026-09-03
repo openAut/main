@@ -80,7 +80,7 @@ bound to a specific `equipment_id`'s actual points. Before trusting a finding:
    as **uncalibrated**: still report it, but cap confidence at 0.5 and say so explicitly in Teams
    ("generic threshold, not yet calibrated to this site").
 4. Calibration data is Engineer-owned (it comes from FAT/SAT or commissioning documents). Advisor
-   never writes `points.min_value` / `max_value` / `safe_value` — it can only ask a human/Engineer
+   never writes `points.min_value` / `max_value` / `safe_value` — it can only ask a human case owner
    to open a case proposing a calibration correction for Engineer to review and write.
 
 **Decision logic — from findings to one recommendation:**
@@ -121,7 +121,7 @@ match it.
 
 What Advisor does with the result — this describes the target contract (a `create_case_note`/
 `create_work_order` capability per the `openaut-backing-capabilities` metadata above); until that
-capability gateway exists, every "open a case" below means *ask a human/Engineer to open one*, and
+capability gateway exists, every "open a case" below means *ask a human case owner to open one*, and
 Advisor states that request explicitly rather than claiming a case exists — see
 [`deploy/advisor-agent`](../../deploy/advisor-agent/README.md) for today's actual phrasing:
 
@@ -168,7 +168,7 @@ Case case-2026-0142 opened — Engineer review recommended before next occupied 
 > This example assumes a working `create_case_note`/`create_work_order` capability exists (the
 > target contract — see the `openaut-backing-capabilities` metadata above). No such tool is wired up
 > yet, and today's reference implementation ([`deploy/advisor-agent`](../../deploy/advisor-agent/README.md))
-> only grants `read`/`message`. Until a capability gateway exists, Advisor must ask a human/Engineer
+> only grants `read`/`message`. Until a capability gateway exists, Advisor must ask a human case owner
 > to open the case and say so explicitly, never claim one was opened — see that bundle's
 > `workspace/AGENTS.md` for the actual phrasing to use today.
 
@@ -178,7 +178,7 @@ Case case-2026-0142 opened — Engineer review recommended before next occupied 
 You are openAut Advisor for [site or portfolio].
 
 You do not currently have a tool that creates a Systemdatabas case — if your tool grant is
-read/message only, "create a case" below means ask a human/Engineer to create it, and say so
+read/message only, "create a case" below means ask a human case owner to create it, and say so
 explicitly. Never claim a case was created without a tool result confirming one.
 
 When an alarm, anomaly, or operator question arrives:
@@ -194,7 +194,7 @@ When an alarm, anomaly, or operator question arrives:
      a critical risk does not by itself justify high confidence.
   7. Respond in Teams with: situation, likely cause, evidence, recommended next check,
      risk, confidence, and whether Engineer approval is needed.
-  8. If a deploy/write/manual-integration/calibration action is needed, ask a human/Engineer to
+  8. If a deploy/write/manual-integration/calibration action is needed, ask a human case owner to
      create a case in Systemdatabasen. Do not perform the action yourself, and do not claim the
      case was created.
 
@@ -311,7 +311,7 @@ each one — several of these are **not** provable from OpenClaw config alone:
 - In a multi-alarm flood, Advisor's reported root cause matches anomaly-correlation's parent
   finding, not a suppressed child.
 - Advisor requests a case (via its current tools: creates one if a `create_case_note` capability
-  exists, otherwise explicitly asks a human/Engineer to open one) for every `risk = high` or
+  exists, otherwise explicitly asks a human case owner to open one) for every `risk = high` or
   `risk = critical` finding — it never leaves such a finding as Teams-only chat with no case
   requested, and never claims a case exists without a tool result confirming it.
 - **A lone, uncorroborated safety-relevant signature (a single fire/smoke interlock trip, freeze-stat,
