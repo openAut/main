@@ -103,6 +103,16 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("-ReplaceManagedPolicy", script)
         self.assertIn("ForgejoIpv4 must not overlap denied field CIDR", script)
         self.assertIn("Guard denies are not effective", script)
+        self.assertIn("@($DeniedFieldCidrs).Count -eq 0", script)
+
+    def test_runtime_report_path_is_validated_before_acl_changes(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        normalize_parent = script.index('if ([string]::IsNullOrEmpty($reportParent))')
+        validate_parent = script.index("Report parent does not exist", normalize_parent)
+        first_acl_change = script.index("Add-VMNetworkAdapterExtendedAcl")
+        self.assertLess(normalize_parent, validate_parent)
+        self.assertLess(validate_parent, first_acl_change)
 
     def test_runtime_policy_installs_guard_denies_before_final_allow(self):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")

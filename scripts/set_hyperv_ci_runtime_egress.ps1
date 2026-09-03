@@ -21,8 +21,19 @@ if (-not [System.Net.IPAddress]::TryParse($ForgejoIpv4, [ref]$parsedForgejoIp) -
     $ForgejoIpv4 -ne $parsedForgejoIp.ToString()) {
     throw "ForgejoIpv4 must be one canonical IPv4 host address, not a hostname or CIDR."
 }
-if (-not $DeniedFieldCidrs -or @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) })) {
+if (@($DeniedFieldCidrs).Count -eq 0 -or
+    @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
     throw "At least one field CIDR is required."
+}
+$reportParent = $null
+if ($ReportPath) {
+    $reportParent = Split-Path -Parent $ReportPath
+    if ([string]::IsNullOrEmpty($reportParent)) {
+        $reportParent = "."
+    }
+    if (-not (Test-Path -LiteralPath $reportParent -PathType Container)) {
+        throw "Report parent does not exist: $reportParent"
+    }
 }
 
 function Convert-Ipv4ToUInt32([System.Net.IPAddress]$address) {
@@ -227,10 +238,6 @@ $report = [ordered]@{
 }
 
 if ($ReportPath) {
-    $reportParent = Split-Path -Parent $ReportPath
-    if (-not (Test-Path -LiteralPath $reportParent -PathType Container)) {
-        throw "Report parent does not exist: $reportParent"
-    }
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
 }
 
