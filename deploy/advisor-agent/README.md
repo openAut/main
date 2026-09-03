@@ -60,7 +60,12 @@ folder without that policy applied gives you a well-behaved agent, not a safe on
    `workspace/` sibling breaks the reference; keep them together, or replace the relative path with
    an absolute one for your deployment.
 4. Fill in `[site or portfolio]` placeholders in `workspace/AGENTS.md` and `workspace/SOUL.md`.
-5. Run the [Verification](../../skills/advisor-engineer-workflow/SKILL.md#verification) checklist
+5. `channels.msteams.enabled` is `false` in the checked-in file on purpose. Before flipping it to
+   `true`: narrow the `bindings` match from the wildcard (`accountId: "*"`, `peer.kind: "*"`) to
+   your deployment's actually-approved channels/users, and resolve the msteams **inbound** path
+   (next bullet) — do both first, not after. Flipping `enabled` without doing so puts a wildcard,
+   untrusted-input-accepting endpoint live.
+6. Run the [Verification](../../skills/advisor-engineer-workflow/SKILL.md#verification) checklist
    in the contract skill before any live use — none of it is assumed true just because these files
    exist. Confirm from the running agent (not just by reading config) which workspace files it
    actually loaded, since a broken path fails silently rather than erroring.

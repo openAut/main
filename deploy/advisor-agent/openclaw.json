@@ -45,9 +45,14 @@
       "match": { "channel": "msteams", "accountId": "*", "peer": { "kind": "*" } }
     }
   ],
+  // "enabled": false on purpose — this checked-in template ships cold. The binding above is a
+  // tenant-wide wildcard with no channel/user allow-list and the msteams inbound path is still an
+  // open design question (see nemoclaw-sandbox-policy); flip this to true only after you've
+  // narrowed the binding to your deployment's approved channels/users AND resolved that inbound
+  // path, not as a step before either.
   "channels": {
     "msteams": {
-      "enabled": true,
+      "enabled": false,
       "appId": "${MSTEAMS_APP_ID}",
       "appPassword": "${MSTEAMS_APP_PASSWORD}",
       "tenantId": "${MSTEAMS_TENANT_ID}",

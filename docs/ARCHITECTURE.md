@@ -171,9 +171,11 @@ public-upstream dependency source.
   OpenClaw ships Teams as a **native, bundled channel plugin** (`msteams`, Bot Framework / Azure
   Bot) — the earlier "NemoClaw has no native Teams channel, so the pack adds a webhook bridge"
   premise was wrong; the webhook approach it described also stopped working when Microsoft retired
-  Teams Incoming Webhooks. Configure via `MSTEAMS_*` in `config.env`. Unlike the old egress-only
-  bridge, `msteams` needs an **inbound** path from Teams' cloud — see `nemoclaw-sandbox-policy` for
-  the still-open question of how that's exposed.
+  Teams Incoming Webhooks. Configure via `MSTEAMS_*` in `config.env`. The old bridge already had a
+  narrow, event-triggered inbound path too (Teams calling its Outgoing Webhook, HMAC-verified, only
+  on @mention — see `bridges/teams-webhook`); `msteams` needs a broader, **standing** inbound path
+  instead (Teams' cloud must reach `/api/messages` at any time, Bot Framework-authenticated) — see
+  `nemoclaw-sandbox-policy` for the still-open question of how that's exposed.
 - **Local Forgejo as the project forge.** Code, manuals, runbooks, generated docs, migrations, and
   deployable artifacts live in a local forge in the AI/management zone, with scoped agent access and
   CI/review gates before anything becomes trusted or deployable.
