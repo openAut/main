@@ -59,5 +59,51 @@ is tracked by openAut/main#68. Do not register a runner until #68 is review-evid
 network proofs pass. Runner registration must remain repository-scoped and ephemeral, using a
 human-generated secret that is never committed or passed to an Engineer.
 
+## Runtime egress policy
+
+Issue openAut/main#68 is implemented by a separate Hyper-V extended adapter ACL policy. Extended
+ACLs are required because the basic field ACL cannot restrict protocol and port. The runtime policy
+allows one exact IPv4/TCP 443 tuple with stateful return traffic, then denies all other outbound IPv4
+and IPv6 traffic and all unsolicited inbound traffic. This is an L3/L4 boundary, not service-identity
+enforcement: a compromised guest can address the tuple directly. The endpoint must therefore be
+dedicated to Forgejo, not a shared TLS virtual host, forward proxy, or CONNECT service. A hostname is
+not accepted as the network allow-list: the legitimate client must resolve the expected Forgejo TLS
+hostname to the operator-supplied address and validate it through the normal certificate chain.
+
+Apply only after the Forgejo address is stable, its CA is installed in the guest, and a release-
+authority-owned static hostname mapping resolves the TLS name to that exact address. Synchronize and
+verify the guest clock during provisioning; runtime DNS and NTP are intentionally not allowed by this
+minimal policy.
+
+```powershell
+.\scripts\set_hyperv_ci_runtime_egress.ps1 `
+  -VmName openaut-ci `
+  -ForgejoIpv4 "<exact-forgejo-management-ip>" `
+  -DeniedFieldCidrs "<field-cidr>" `
+  -DedicatedForgejoEndpointConfirmed `
+  -ReportPath "<existing-report-directory>\openaut-ci-runtime.json"
+```
+
+The script stops the VM before inspection, requires the basic inbound/outbound field denies from the
+bootstrap, rejects a Forgejo address inside a denied field CIDR, and reserves high ACL weights for the
+managed runtime policy. It refuses a partial or changed policy unless `-ReplaceManagedPolicy` is
+explicitly supplied after review. A replacement first installs still-higher temporary inbound and
+outbound guard denies; they remain if any later operation fails and a later reviewed replacement can
+repair a partial guard pair. Guards are removed only after the final deny/allow set is complete. The
+script also refuses any unrecognized rule with higher priority than the default deny. It leaves the
+VM off and reports `RunnerRegistrationAllowed=false`; applying rules is not connectivity proof.
+
+Start the VM only for the review-evidenced test matrix. Verify normal Forgejo TLS succeeds while a
+field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port other than 443, and UDP 443
+all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to prove the allow and denies
+are host-owned. Repeat after guest restart and after a host restart. Record the exact policy report,
+guest results, and post-restart ACL output. If any negative test succeeds, stop the VM and keep runner
+registration blocked.
+
+Before recording the positive result, inspect the allowed address/port from the management side and
+prove it terminates only the Forgejo TLS service, offers no forward-proxy or CONNECT behavior, and is
+not shared with another virtual host. TLS hostname validation proves the legitimate runner reached
+Forgejo; it does not narrow what a compromised guest can send to the allowed L3/L4 tuple.
+
 The disposable PostgreSQL `case-policy` gate is tracked by openAut/main#60. Systemdatabas migrations,
 roles, and grants remain tracked by openAut/main#42.

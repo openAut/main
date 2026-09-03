@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "setup_hyperv_ci_vm.ps1"
 BOUNDARY = ROOT / "docs" / "HYPERV-CI-BOUNDARY.md"
 RUNBOOK = ROOT / "docs" / "FORGEJO-CI-VERIFIER-BOOTSTRAP.md"
+RUNTIME_SCRIPT = ROOT / "scripts" / "set_hyperv_ci_runtime_egress.ps1"
 
 
 class HyperVCiContractTests(unittest.TestCase):
@@ -72,6 +73,79 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertNotRegex(docs, r"(?:192\.168|172\.\d+|10\.\d+)\.\d+\.\d+")
         self.assertNotRegex(docs, re.compile(r"BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY"))
         self.assertNotIn("config.env", docs)
+
+    def test_runtime_policy_is_exact_and_deny_by_default(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[string\]\$ForgejoIpv4")
+        self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[switch\]\$DedicatedForgejoEndpointConfirmed")
+        self.assertIn("tuple is dedicated to Forgejo", script)
+        self.assertIn("Add-VMNetworkAdapterExtendedAcl", script)
+        self.assertIn('-RemotePort "443" -Protocol "TCP"', script)
+        self.assertIn('-Direction Outbound -RemoteIPAddress "ANY" -Weight $denyWeight', script)
+        self.assertIn('-Direction Inbound -RemoteIPAddress "ANY" -Weight $denyWeight', script)
+        self.assertIn("$allowWeight = 62000", script)
+        self.assertIn("$denyWeight = 61000", script)
+        self.assertIn("$guardWeight = 63000", script)
+        self.assertIn("$rule.Stateful -eq $true", script)
+        self.assertIn("Test-AnySelector $rule.Protocol", script)
+        self.assertIn("$rule.IsolationID -eq 0", script)
+        self.assertIn("[uint64]4294967295", script)
+        self.assertNotIn("[uint64]0xffffffff", script)
+        self.assertNotRegex(script, r"(?:192\.168|172\.\d+|10\.\d+)\.\d+\.\d+")
+
+    def test_runtime_policy_stops_vm_and_requires_field_boundary(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('if ($vm.State -ne "Off")', script)
+        self.assertIn("Stop-VM -VM $vm -TurnOff -Confirm:$false", script)
+        self.assertIn("Missing prerequisite $direction field deny ACL", script)
+        self.assertIn("Existing unrecognized extended ACL has higher priority", script)
+        self.assertIn("Unexpected higher-priority extended ACL", script)
+        self.assertIn("-ReplaceManagedPolicy", script)
+        self.assertIn("ForgejoIpv4 must not overlap denied field CIDR", script)
+        self.assertIn("Guard denies are not effective", script)
+        self.assertIn("@($DeniedFieldCidrs).Count -eq 0", script)
+        self.assertIn("$outboundGuards.Count -eq 0", script)
+        self.assertIn("$inboundGuards.Count -eq 0", script)
+
+    def test_runtime_report_path_is_validated_before_acl_changes(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        normalize_parent = script.index('if ([string]::IsNullOrEmpty($reportParent))')
+        validate_parent = script.index("Report parent does not exist", normalize_parent)
+        first_acl_change = script.index("Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter")
+        self.assertLess(normalize_parent, validate_parent)
+        self.assertLess(validate_parent, first_acl_change)
+
+    def test_runtime_policy_installs_guard_denies_before_final_allow(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        guard = script.index('-Direction Outbound -RemoteIPAddress "ANY" -Weight $guardWeight')
+        final_deny = script.index('-Direction Outbound -RemoteIPAddress "ANY" -Weight $denyWeight')
+        final_allow = script.index('-RemotePort "443" -Protocol "TCP"', final_deny)
+        remove_guard = script.index("New runtime ACL set is incomplete", final_allow)
+        self.assertLess(guard, final_deny)
+        self.assertLess(final_deny, final_allow)
+        self.assertLess(final_allow, remove_guard)
+
+    def test_runtime_report_keeps_registration_blocked_until_guest_proofs(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('BoundaryState = "RuntimeEgressPolicyPrepared"', script)
+        self.assertIn("GuestNetworkProofsCompleted = $false", script)
+        self.assertIn("RunnerRegistrationAllowed = $false", script)
+        self.assertIn("runner_registration=blocked", script)
+
+    def test_runtime_docs_require_complete_network_matrix(self):
+        docs = BOUNDARY.read_text(encoding="utf-8") + RUNBOOK.read_text(encoding="utf-8")
+
+        for expected in ("public IPv4", "IPv6", "UDP 443", "host restart", "guest restart"):
+            self.assertIn(expected, docs)
+        self.assertIn("normal certificate chain", docs)
+        self.assertIn("Get-VMNetworkAdapterExtendedAcl", docs)
+        self.assertIn("static hostname mapping", docs)
+        self.assertIn("runtime DNS and NTP are intentionally not allowed", docs)
 
 
 if __name__ == "__main__":
