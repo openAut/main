@@ -26,9 +26,13 @@ entry. That cuts against openAut's deny-by-default, outbound-only sandbox postur
 architectural cost, not a config detail.
 
 **This is intentionally left open for now** — proceed with the native plugin for a dev/lab setup
-(e.g. a `devtunnel`/`tailscale funnel` tunnel), but do not treat the inbound path design (direct
-exposure vs. a DMZ relay that re-terminates into the sandbox) as decided. Revisit before any
-production or live-BMS deployment.
+only, e.g. behind a `devtunnel`/`tailscale funnel` tunnel. Those tunnels are a lab convenience, not
+a hardened answer: they still terminate an endpoint that accepts untrusted Teams-sourced input, and
+neither is a substitute for verifying Bot Framework's own request authentication, a proxy/DMZ
+boundary, rate limiting, and logging on that endpoint. Do not treat the inbound path design (direct
+exposure vs. a DMZ relay that re-terminates into the sandbox) as decided, and do not deploy this
+past a dev/lab setup — see the repo-level "learning project, not for production" notice — until
+that design and those controls are verified. Revisit before any production or live-BMS deployment.
 
 ## Why this bridge existed (historical)
 

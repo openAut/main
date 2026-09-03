@@ -23,7 +23,16 @@ folder without that policy applied gives you a well-behaved agent, not a safe on
 1. Provision and lock down the sandbox: [`nemoclaw-provision`](../../skills/nemoclaw-provision/SKILL.md),
    then [`nemoclaw-sandbox-policy`](../../skills/nemoclaw-sandbox-policy/SKILL.md).
 2. Fill in `${MSTEAMS_APP_ID}` / `${MSTEAMS_APP_PASSWORD}` / `${MSTEAMS_TENANT_ID}` in `config.env`
-   (repo root) — see `nemoclaw-provision` Step 5 for how to get them.
+   (repo root) — see `nemoclaw-provision` Step 5 for how to get them. **Filling in `config.env` does
+   not, by itself, put those values in OpenClaw's process environment** — `${...}` substitution in
+   `openclaw.json` only works if whatever runs `openclaw` actually has them set. If OpenClaw runs as
+   a systemd service, add `EnvironmentFile=/path/to/config.env` (or a secret-store-backed drop-in) to
+   its unit rather than assuming a shell `source` from some earlier session carries over. Restrict
+   `config.env` to the service account (`chmod 600`, owned by that user) — it holds the Bot Framework
+   app secret in plaintext. After merging, verify the substitution resolved (e.g. `openclaw config
+   show` or equivalent) without printing `appPassword` to a log or terminal you don't control, and
+   never copy the resolved secret value into a second file (including a "merged" copy of
+   `openclaw.json`) — keep one source of truth for it.
 3. Copy this whole `deploy/advisor-agent/` directory to the sandbox host as a unit (e.g.
    `/opt/openaut/advisor-agent/`), then merge its `openclaw.json` into the sandbox's OpenClaw config
    (or point `OPENCLAW_CONFIG_PATH` at a file that imports it). `"workspace": "./workspace"` is

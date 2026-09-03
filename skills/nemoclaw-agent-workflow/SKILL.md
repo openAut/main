@@ -101,7 +101,7 @@ On a weekly schedule [cron]:
 Read-only: you never write to field devices.
 ```
 
-**Schedule:** `openclaw cron create --agent energisamordnare --schedule "0 7 * * 1" ...` — see
+**Schedule:** `openclaw cron create --agent advisor-energisamordnare --schedule "0 7 * * 1" ...` — see
 [Creating an agent](#creating-an-agent) below for the full command.
 
 ## Persona 3 — Förvaltare (Technical Manager)
@@ -126,27 +126,44 @@ Be concise and decision-oriented; route detail to the dashboard, decisions to Te
 
 ## Creating an agent
 
-Each persona is an **OpenClaw agent entry** (`agents.entries.<id>`) — not a separate NemoClaw
-sandbox. All three run inside the same sandbox and the same **Advisor** trust boundary (read-only,
-no `exec`/write tools), because none of them holds field-write authority; only their skill allowlist
-and channel binding differ. Confirmed against OpenClaw's multi-agent config (see
-`docs.openclaw.ai/tools/multi-agent-sandbox-tools` and `docs.openclaw.ai/tools/skills`):
+**These are not new trust domains.** Per [`CONTEXT.md`](../../CONTEXT.md)'s persona vs. trust-domain
+glossary, a persona is *realised through* a trust domain — chiefly **Advisor** — and "is not itself
+an agent or a trust domain." All three personas share Advisor's exact tool grant (`read`, `message`
+only, everything else denied — see [`deploy/advisor-agent`](../../deploy/advisor-agent/README.md))
+and none holds field-write authority; only their skill allowlist and channel binding differ.
+
+OpenClaw's multi-agent config (see `docs.openclaw.ai/tools/multi-agent-sandbox-tools` and
+`docs.openclaw.ai/tools/skills`) requires a separate `agents.entries.<id>` per distinct skill
+allowlist / channel binding, so each persona still needs its own entry technically — but the ids
+below are prefixed `advisor-` and the identical tool grant is repeated verbatim rather than varied,
+specifically so nothing here reads as three independent agents. If your OpenClaw version supports
+selecting a skill set per-binding on a single agent entry, prefer that over three entries — it
+removes the ambiguity entirely.
+
+The `bindings.match` blocks below must resolve to **disjoint** Teams scopes — OpenClaw needs some
+way to tell which persona a given incoming message is for. Three entries all matching
+`accountId: "*", peer: { kind: "*" }` (as an earlier draft of this file had) is not routable
+config: nothing distinguishes them, so at best the first-registered binding wins and the other two
+never fire, at worst it's rejected as a conflict. Route each persona to its **own Teams channel**
+instead — one bot install per role-specific channel, or filed under a single Teams app bound to
+distinct channel IDs — and treat the exact `bindings.match` shape (`peer.id` vs. a separate
+`channelId` field, etc.) as unverified until checked against a live OpenClaw + Teams install:
 
 ```json5
 {
   agents: {
     entries: {
-      driftstekniker: {
+      "advisor-driftstekniker": {
         workspace: "~/.openclaw/workspace-driftstekniker",
         tools: { allow: ["read", "message"], deny: ["exec", "write", "edit", "apply_patch", "process", "browser"] },
         skills: ["advisor-engineer-workflow", "bacnet", "modbus", "fdd", "anomaly-correlation"],
       },
-      energisamordnare: {
+      "advisor-energisamordnare": {
         workspace: "~/.openclaw/workspace-energisamordnare",
         tools: { allow: ["read", "message"], deny: ["exec", "write", "edit", "apply_patch", "process", "browser"] },
         skills: ["advisor-engineer-workflow", "modbus", "bacnet", "energy-optimization", "anomaly-correlation"],
       },
-      forvaltare: {
+      "advisor-forvaltare": {
         workspace: "~/.openclaw/workspace-forvaltare",
         tools: { allow: ["read", "message"], deny: ["exec", "write", "edit", "apply_patch", "process", "browser"] },
         skills: ["advisor-engineer-workflow", "fdd"],
@@ -154,9 +171,11 @@ and channel binding differ. Confirmed against OpenClaw's multi-agent config (see
     },
   },
   bindings: [
-    { agentId: "driftstekniker", match: { channel: "msteams", accountId: "*", peer: { kind: "*" } } },
-    { agentId: "energisamordnare", match: { channel: "msteams", accountId: "*", peer: { kind: "*" } } },
-    { agentId: "forvaltare", match: { channel: "msteams", accountId: "*", peer: { kind: "*" } } },
+    // Each peer.id below must be that persona's own Teams channel ID for this deployment — three
+    // identical wildcards is broken config, not a placeholder to copy verbatim.
+    { agentId: "advisor-driftstekniker", match: { channel: "msteams", accountId: "*", peer: { kind: "channel", id: "${DRIFTSTEKNIKER_TEAMS_CHANNEL_ID}" } } },
+    { agentId: "advisor-energisamordnare", match: { channel: "msteams", accountId: "*", peer: { kind: "channel", id: "${ENERGISAMORDNARE_TEAMS_CHANNEL_ID}" } } },
+    { agentId: "advisor-forvaltare", match: { channel: "msteams", accountId: "*", peer: { kind: "channel", id: "${FORVALTARE_TEAMS_CHANNEL_ID}" } } },
   ],
 }
 ```
@@ -173,7 +192,7 @@ skills is what keeps each persona least-privilege.
 ```bash
 openclaw cron create \
   --name "energisamordnare-weekly-report" \
-  --agent energisamordnare \
+  --agent advisor-energisamordnare \
   --schedule "0 7 * * 1" \
   --message "Run the weekly energy report workflow and post it to Teams." \
   --announce
@@ -182,7 +201,7 @@ openclaw cron create \
 ```bash
 openclaw cron create \
   --name "forvaltare-forecast-check" \
-  --agent forvaltare \
+  --agent advisor-forvaltare \
   --schedule "0 6 * * *" \
   --message "Update the facility-status view and flag anything crossing a decision threshold." \
   --announce

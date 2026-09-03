@@ -97,7 +97,14 @@ value, never a range:
 | Single uncalibrated rule, no corroboration | low | ≤ 0.5 |
 | Single calibrated rule, no corroboration | medium | 0.5–0.7 |
 | Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9 |
-| Corroborated finding plus a safety-relevant signature (high-limit trip, freeze-stat, fire/smoke interlock) | critical | 0.9+, escalate regardless of the confidence math |
+| Corroborated finding, no safety-relevant signature | critical | 0.9+, escalate regardless of the confidence math |
+
+**Safety override — corroboration is never a precondition for `critical`:** a safety-relevant
+signature (high-limit trip, freeze-stat, fire/smoke interlock) makes a finding `critical`
+immediately, whether or not any other rule or skill corroborates it. A single calibrated rule that
+*is* a safety-relevant signature — a lone fire/smoke interlock trip, no corroboration — is
+`critical`, not `medium`; don't wait for a second finding to escalate a life-safety signal.
+Corroboration still raises confidence, it just never gates the risk level for a safety signature.
 
 What Advisor does with the result:
 
@@ -140,6 +147,13 @@ Recommended check: verify damper actuator response and linkage.
 Risk: high. Confidence: 0.75.
 Case case-2026-0142 opened — Engineer review recommended before next occupied cycle.
 ```
+
+> This example assumes a working `create_case_note`/`create_work_order` capability exists (the
+> target contract — see the `openaut-backing-capabilities` metadata above). No such tool is wired up
+> yet, and today's reference implementation ([`deploy/advisor-agent`](../../deploy/advisor-agent/README.md))
+> only grants `read`/`message`. Until a capability gateway exists, Advisor must ask a human/Engineer
+> to open the case and say so explicitly, never claim one was opened — see that bundle's
+> `workspace/AGENTS.md` for the actual phrasing to use today.
 
 **Workflow prompt:**
 
@@ -274,6 +288,10 @@ each one — several of these are **not** provable from OpenClaw config alone:
   finding, not a suppressed child.
 - Advisor opens a case for every `risk = high` or `risk = critical` finding — it never leaves a
   critical finding as Teams-only chat with no case.
+- **A lone, uncorroborated safety-relevant signature (a single fire/smoke interlock trip, freeze-stat,
+  or high-limit trip with no other finding backing it) is still classified `critical`** — test this
+  specifically, since it's the case most likely to be mis-scored as `low`/`medium` by a
+  corroboration-count heuristic.
 - Security can observe Advisor/Engineer activity but cannot write to field/Forge/Teams or approve a
   case, and neither acting agent can suppress its audit/alert path (full checks in `security-instance`).
 
