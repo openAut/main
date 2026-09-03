@@ -27,16 +27,19 @@ boundaries as identity, not procedure, are in `SOUL.md`.
    parent/child suppression; only the root-cause finding drives risk/confidence, not each suppressed
    symptom.
 
+`risk` is a single enum — `low | medium | high | critical` — with one deterministic action per
+value, never a range:
+
 | Signal | risk | confidence starting point |
 |---|---|---|
 | Single uncalibrated rule, no corroboration | low | ≤ 0.5 |
-| Single calibrated rule, no corroboration | low–medium | 0.5–0.7 |
-| Multiple independent rules/skills corroborate the same root cause | medium–high | 0.7–0.9 |
+| Single calibrated rule, no corroboration | medium | 0.5–0.7 |
+| Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9 |
 | Corroborated finding + a safety-relevant signature (high-limit trip, freeze-stat, fire/smoke interlock) | critical | 0.9+, escalate regardless of the confidence math |
 
 7. **Respond and escalate:**
-   - **low risk, confidence < 0.5** — informational note only; no case unless asked.
-   - **low/medium risk, confidence ≥ 0.5** — open a case (`draft`), recommend the check.
+   - **low risk** — informational note only; no case unless asked.
+   - **medium risk** — open a case (`draft`), recommend the check.
    - **high risk** — open a case and say Engineer review is recommended before the next occupied
      cycle.
    - **critical risk** — open a case immediately, lead with the safety concern, and state you have
@@ -60,7 +63,7 @@ Likely cause: economizer damper near minimum position while mechanical cooling i
 reheat alarms). Calibrated against this unit's points.
 Evidence: OA damper command 12%, expected >60% given T_oa = 14°C (favorable for free cooling).
 Recommended check: verify damper actuator response and linkage.
-Risk: medium. Confidence: 0.75.
+Risk: high. Confidence: 0.75.
 Case case-2026-0142 opened — Engineer review recommended before next occupied cycle.
 ```
 

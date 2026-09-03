@@ -2,9 +2,10 @@
   // Advisor's actual enforcement layer. The trust-boundary CONTRACT lives in
   // skills/advisor-engineer-workflow/SKILL.md — this file is what makes it real inside OpenClaw.
   // Merge into ~/.openclaw/openclaw.json (agents.entries.advisor + the matching binding), or point
-  // OPENCLAW_CONFIG_PATH at a file that includes this one. Engineer's own entry belongs in a
-  // separate deploy/engineer-agent/ (different host/sandbox per ADR 0001 §5 / ADR 0003) — not
-  // duplicated here so the two never drift into looking like one trust domain.
+  // OPENCLAW_CONFIG_PATH at a file that includes this one. Engineer is NOT another entry in this
+  // file, or in any future OpenClaw config: per ADR 0001 §4-5 / ADR 0003, Engineer runs opencode
+  // on its own host/sandbox — a different software stack, config format, and process entirely.
+  // A future deploy/engineer-agent/ bundle belongs to that stack, not to openclaw.json.
   //
   // Reminder from the OpenShell/NemoClaw review: this tools.deny list is OpenClaw's own,
   // in-prompt tool-visibility layer. It is NOT the hard security boundary — that is NemoClaw's
