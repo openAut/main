@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Minimal Microsoft Teams <-> OpenClaw gateway webhook bridge.
+"""RETIRED — Microsoft Teams <-> OpenClaw gateway webhook bridge.
+
+Do not run this. TEAMS_INCOMING_WEBHOOK_URL posts to webhook.office.com, which stopped working
+when Microsoft retired Office 365 Connectors (rollout completed 2026-05-22). Use OpenClaw's native
+msteams channel plugin instead — see ../../skills/nemoclaw-provision/SKILL.md Step 5 and
+README.md in this directory. Kept only as a historical reference of the pre-retirement design.
+
+Original docstring, for historical reference:
+
+Minimal Microsoft Teams <-> OpenClaw gateway webhook bridge.
 
 Reference stub for the openAut NemoClaw channel default. Two directions:
 
@@ -15,6 +24,15 @@ Config comes from environment (source ../../config.env first):
 
 Stdlib only — no Flask. Not production-hardened; see README security notes.
 """
+import sys
+
+sys.exit(
+    "RETIRED: this bridge relies on Teams Incoming Webhooks (Office 365 Connectors), which "
+    "Microsoft discontinued (rollout completed 2026-05-22). Use OpenClaw's native msteams "
+    "channel plugin instead. See bridges/teams-webhook/README.md and "
+    "skills/nemoclaw-provision/SKILL.md Step 5."
+)
+
 import base64
 import hashlib
 import hmac

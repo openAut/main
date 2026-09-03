@@ -1,58 +1,45 @@
-# Teams ↔ OpenClaw webhook bridge
+# Teams ↔ OpenClaw — retired approach, see msteams plugin
 
-NemoClaw/OpenClaw ships Telegram, Discord, and Slack channels — but **not Microsoft Teams**.
-openAut defaults to Teams, so this minimal bridge maps the two directions using Teams' built-in
-webhook surfaces — no Azure Bot registration, no app manifest.
+> **This bridge is retired.** It relied on Microsoft Teams' **Incoming Webhook** (an Office 365
+> Connector). Microsoft retired Office 365 Connectors in Teams in a rollout that completed
+> **2026-05-22** — `TEAMS_INCOMING_WEBHOOK_URL` posts to `webhook.office.com` no longer work.
+> Do not deploy this bridge. Kept only as a historical record of the earlier design.
+
+## What replaced it
+
+OpenClaw ships a **native, bundled Microsoft Teams channel plugin** (`msteams`, Bot Framework /
+Azure Bot based). The original premise for this bridge — "NemoClaw/OpenClaw has no native Teams
+channel" — was incorrect. Use the native plugin instead:
+
+- Config lives in `channels.msteams` in `openclaw.json` (or `MSTEAMS_APP_ID`/`MSTEAMS_APP_PASSWORD`/
+  `MSTEAMS_TENANT_ID` env vars — see `config.env.example`).
+- Setup: [`nemoclaw-provision`](../../skills/nemoclaw-provision/SKILL.md) Step 5.
+- Egress/network implications: [`nemoclaw-sandbox-policy`](../../skills/nemoclaw-sandbox-policy/SKILL.md).
+- Persona channel bindings: [`nemoclaw-agent-workflow`](../../skills/nemoclaw-agent-workflow/SKILL.md).
+
+## The open design question
+
+Unlike this retired bridge (outbound-only: the gateway posted *out* to Teams, and Teams called an
+Outgoing Webhook only on @mention), the native `msteams` plugin needs Teams' cloud to reach **your**
+endpoint (`/api/messages`) — that's an **inbound** requirement, not just another egress allow-list
+entry. That cuts against openAut's deny-by-default, outbound-only sandbox posture and is a real
+architectural cost, not a config detail.
+
+**This is intentionally left open for now** — proceed with the native plugin for a dev/lab setup
+(e.g. a `devtunnel`/`tailscale funnel` tunnel), but do not treat the inbound path design (direct
+exposure vs. a DMZ relay that re-terminates into the sandbox) as decided. Revisit before any
+production or live-BMS deployment.
+
+## Why this bridge existed (historical)
+
+Before Teams' native OpenClaw support was confirmed, this bridge mapped:
 
 ```
- Teams channel  --(Outgoing Webhook, HMAC-signed)-->  bridge /teams  --> OpenClaw gateway
- OpenClaw gateway --(local POST)--> bridge /to-teams --(Incoming Webhook)--> Teams channel
+Teams channel  --(Outgoing Webhook, HMAC-signed)-->  bridge /teams  --> OpenClaw gateway
+OpenClaw gateway --(local POST)--> bridge /to-teams --(Incoming Webhook)--> Teams channel
 ```
 
-Two Teams features do the work:
-
-- **Incoming Webhook** (gateway → Teams): a per-channel URL you POST a JSON card to. Goes in
-  `TEAMS_INCOMING_WEBHOOK_URL`.
-- **Outgoing Webhook** (Teams → gateway): Teams POSTs to your endpoint when the bot is @mentioned,
-  signed with an HMAC shared secret. Goes in `TEAMS_OUTGOING_SECRET`, endpoint
-  `http://$TEAMS_BRIDGE_HOST:$TEAMS_BRIDGE_PORT/teams`.
-
-> Outgoing Webhooks only fire on @mention and only reply within that channel. That fits the openAut
-> personas (alarm threads, weekly summaries, decision pings). If you later need proactive 1:1
-> messages or adaptive cards at scale, graduate to Azure Bot Service — the bridge contract
-> (gateway ↔ HTTP) stays the same, only this process is replaced.
-
-## Setup
-
-1. **Incoming Webhook** — in the target Teams channel: *Connectors → Incoming Webhook → Create*,
-   copy the URL into `TEAMS_INCOMING_WEBHOOK_URL` in `config.env`.
-2. **Outgoing Webhook** — *Team → Manage → Outgoing Webhooks → Create*; callback URL =
-   `http://<bridge-host>:<port>/teams`; copy the generated HMAC secret into `TEAMS_OUTGOING_SECRET`.
-3. **Local gateway token** — set `TEAMS_TO_TEAMS_TOKEN` to a random bearer token. Gateway/agent calls
-   to `/to-teams` must include `Authorization: Bearer $TEAMS_TO_TEAMS_TOKEN`.
-4. **Run the bridge** co-located with the gateway (simplest: on the sandbox host, loopback):
-
-   ```bash
-   set -a; . ./config.env; set +a
-   python3 bridges/teams-webhook/teams_bridge.py
-   ```
-
-5. **Bind the gateway** to the bridge: point the gateway's generic webhook/webchat surface at
-   `http://$TEAMS_BRIDGE_HOST:$TEAMS_BRIDGE_PORT/from-gateway`, or have your agents POST replies
-   there. (Exact gateway webhook config depends on your OpenClaw version.)
-6. **Egress** — ensure `nemoclaw-sandbox-policy` allow-lists the bridge host and the Teams webhook
-   domain; everything else stays denied.
-
-## Security notes
-
-- The bridge **verifies the HMAC signature** on every inbound Teams request and rejects unsigned or
-  mismatched ones — without this, anyone who learns the URL could inject messages to your agent.
-- The local `/to-teams` endpoint requires `TEAMS_TO_TEAMS_TOKEN`, so an accidentally exposed bridge
-  cannot be used as an unauthenticated Teams posting relay.
-- It binds to `$TEAMS_BRIDGE_HOST` (loopback by default). Do not expose it on a public interface;
-  if Teams' cloud must reach it, front it with a tunnel/reverse proxy that terminates TLS.
-- Treat all Teams text as untrusted input to the agent (prompt-injection surface) — the sandbox
-  policy is the backstop.
-
-> This is a reference stub: it shows the contract and the security checks, not a production service.
-> Live behaviour is unverified until wired to a real Teams channel and gateway.
+The Incoming Webhook half is now dead (see above). The Outgoing Webhook half (Teams → bridge, only
+on @mention) is a separate, older Teams feature not directly affected by the Connector retirement,
+but building new production infrastructure on it is not recommended given Microsoft's clear
+direction away from all classic webhook-style Teams integration toward Bot Framework and Workflows.

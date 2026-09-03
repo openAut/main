@@ -44,10 +44,10 @@ openAut-specific defaults:
 
 | Default | Choice | Why |
 |---|---|---|
-| **Communication channel** | **Microsoft Teams** (via webhook bridge) | openAut targets the Microsoft stack (Teams + Power BI). NemoClaw has no native Teams channel, so a small bridge maps Teams ↔ the OpenClaw gateway. |
+| **Communication channel** | **Microsoft Teams** (via OpenClaw's native `msteams` plugin) | openAut targets the Microsoft stack (Teams + Power BI). The earlier premise here — "NemoClaw has no native Teams channel, so a bridge maps Teams ↔ the gateway" — was wrong; OpenClaw ships Teams as a bundled channel plugin (Bot Framework / Azure Bot). The old webhook bridge relied on Teams Incoming Webhooks, which Microsoft has since retired. |
 | **Inference** | **Remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** on a separate machine, **egress-locked + TLS** | Keeps inference on a dedicated GPU system (e.g. ASUS Ascent GX10), reachable only from the sandbox over an encrypted, allow-listed link. |
 
-> These defaults are configurable. Set `TEAMS_*` and `NEMOTRON_*` in `config.env` to point at
+> These defaults are configurable. Set `MSTEAMS_*` and `NEMOTRON_*` in `config.env` to point at
 > your own bridge and inference host; every skill sources that file.
 
 ## Skills
@@ -56,8 +56,8 @@ openAut-specific defaults:
 
 | Skill | What it does |
 |---|---|
-| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
-| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host + local Forge only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
+| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** endpoint → attach **Teams** via OpenClaw's native msteams plugin → verify. The end-to-end install runbook. |
+| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Nemotron host + local Forge + verified msteams/Bot Framework hosts only (the msteams **inbound** path is a separately tracked open question), TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
 | [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the openAut trust domains: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams; **Security** is a separate read-only watch instance ([`security-instance`](skills/security-instance/SKILL.md)). Per ADR 0001 §5 and [ADR 0003](docs/adr/0003-engineer-runtime-containment.md), Advisor and Engineer run on **different software stacks** — Advisor on **NemoClaw**, Engineer on **OpenCode** — in separate runtime sandboxes on separate hosts. Actions move through approved cases in the Systemdatabas. |
 | [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut **operator personas** (jobs-to-be-done) — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. Personas are served chiefly by **Advisor** (read-only); writes/deploys go through **Engineer** via an approved case, while **Security** watches across both. A persona is not itself a trust domain. |
 
@@ -108,7 +108,9 @@ Supporting:
 - [`docs/LAB.md`](docs/LAB.md) — a local verification path for the MQTT/topic/database contracts.
 - [`docs/HYPERV-CI-BOUNDARY.md`](docs/HYPERV-CI-BOUNDARY.md) — host-enforced isolation for an
   untrusted Forgejo CI VM on Hyper-V management/NAT networks.
-- [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.
+- [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — **retired**; kept as a historical
+  record of why the webhook approach stopped working and what replaced it (OpenClaw's native
+  `msteams` plugin, see `nemoclaw-provision` Step 5).
 - [`config.env.example`](config.env.example) — copy to `config.env` and fill in.
 
 ## Using these skills

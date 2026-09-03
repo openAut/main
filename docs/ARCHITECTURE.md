@@ -26,7 +26,7 @@ done*. Advisor/Engineer/Security describe the trust boundaries those jobs must r
 │ LAYER 4 — INTERFACE                                                           │
 │   Microsoft Teams  ·  web dashboard  ·  Power BI  ·  REST API                 │
 │        ▲                                                                      │
-│        │  Teams webhook bridge  (bridges/teams-webhook)         ◀── DEFAULT   │
+│        │  msteams plugin (Bot Framework; inbound path TBD)      ◀── DEFAULT   │
 │        │                                                                      │
 │ ┌──────┴───────────────────────────────────────────────────────────────────┐│
 │ │ LAYER 3 — AI (on-prem)                                                     ││
@@ -74,7 +74,7 @@ ADR 0003 describe once Engineer and Security ship. The gap is called out rather 
 
 | Host (env var in `config.env.example`) | Example | Installs | Defined in |
 |---|---|---|---|
-| `SANDBOX_HOST` | `dgx-spark.local` | NemoClaw (Advisor) + OpenShell sandbox; Teams webhook bridge co-located | `nemoclaw-provision`, `bridges/teams-webhook` |
+| `SANDBOX_HOST` | `dgx-spark.local` | NemoClaw (Advisor) + OpenShell sandbox; native `msteams` plugin | `nemoclaw-provision`, `nemoclaw-sandbox-policy` |
 | `NEMOTRON_HOST` | `192.168.1.43` (GX10 — Bertil/test box) | vLLM + Nemotron 3 Super + TLS reverse proxy | `nemoclaw-sandbox-policy` |
 | `EMQX_HOST` = `TSDB_HOST` (same host in the reference config) | `192.168.1.10` — the "AI-tier"/"Lokal AI-server" host | EMQX (mutual-TLS broker) + Telegraf ingest + TimescaleDB/PostgreSQL + Systemdatabas schema | `mqtt-tls-broker`, `timeseries-stack`, `system-database` |
 | `FORGE_HOST` | `192.168.1.20` | Forgejo | `forge-stack`, `forge-governance` |
@@ -95,7 +95,7 @@ flowchart LR
 
     subgraph SANDBOXH["SANDBOX_HOST"]
         ADV["Advisor<br/>NemoClaw + OpenShell sandbox"]
-        TB["Teams bridge<br/>(co-located)"]
+        TB["msteams plugin<br/>(Bot Framework; inbound path TBD)"]
     end
 
     subgraph GPU["NEMOTRON_HOST"]
@@ -111,7 +111,7 @@ flowchart LR
     ADV -->|TLS, single allow-listed inference dest| PROXY
     ADV -->|reads verified docs, read-only| FORGE
     ADV --> TB
-    TB -->|webhook| TEAMS["Microsoft Teams / Power BI<br/>(external, Layer 4)"]
+    TB -->|Bot Framework Connector| TEAMS["Microsoft Teams / Power BI<br/>(external, Layer 4)"]
 ```
 
 ### Full target posture (ADR 0001 §5 / ADR 0003 — not yet in `config.env.example`)
@@ -148,11 +148,11 @@ public-upstream dependency source.
 
 | Skill | Layer | Responsibility |
 |---|---|---|
-| [`nemoclaw-provision`](../skills/nemoclaw-provision/SKILL.md) | 3 | Install NemoClaw on the sandbox host; onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint; attach the **Teams** bridge; verify. |
-| [`nemoclaw-sandbox-policy`](../skills/nemoclaw-sandbox-policy/SKILL.md) | 3 | Lock the sandbox: deny-by-default egress to **only** the Nemotron host + local Forge + Teams bridge; TLS in front of vLLM; IEC 62443 / NIS2 / CRA review. |
+| [`nemoclaw-provision`](../skills/nemoclaw-provision/SKILL.md) | 3 | Install NemoClaw on the sandbox host; onboard a sandbox pointed at the **remote Nemotron 3 Super** endpoint; attach **Teams** via OpenClaw's native `msteams` plugin; verify. |
+| [`nemoclaw-sandbox-policy`](../skills/nemoclaw-sandbox-policy/SKILL.md) | 3 | Lock the sandbox: deny-by-default egress to **only** the Nemotron host + local Forge + verified msteams/Bot Framework hosts; TLS in front of vLLM; IEC 62443 / NIS2 / CRA review. msteams' **inbound** path is a separately tracked open question. |
 | [`advisor-engineer-workflow`](../skills/advisor-engineer-workflow/SKILL.md) | 3→4 | Define Advisor (read-only, Teams), Engineer (SSH/deploy, no Teams), and the approved-case handoff through the Systemdatabas. |
 | [`nemoclaw-agent-workflow`](../skills/nemoclaw-agent-workflow/SKILL.md) | 3→4 | Define the older three role personas as jobs-to-be-done; useful for mapping operational tasks into Advisor/Engineer boundaries. |
-| [`bridges/teams-webhook`](../bridges/teams-webhook/README.md) | 4 | Map Teams ↔ the OpenClaw gateway (NemoClaw has no native Teams channel). |
+| [`bridges/teams-webhook`](../bridges/teams-webhook/README.md) | 4 | **Retired** — historical record of the earlier (now-broken) webhook approach; superseded by OpenClaw's native `msteams` plugin. |
 | [`mqtt-tls-broker`](../skills/mqtt-tls-broker/SKILL.md) | 3 | EMQX mutual-TLS broker, per-node cert PKI, CN-bound ACL topic schema — the encrypted ingest backbone. |
 | [`timeseries-stack`](../skills/timeseries-stack/SKILL.md) | 3 | TimescaleDB + PostgreSQL, MQTT→DB ingest, retention/aggregates, least-privilege roles. |
 | [`system-database`](../skills/system-database/SKILL.md) | 3 | Define the Systemdatabas contract: equipment, points, documents, cases, approvals, generated artifacts, and audit events. |
@@ -166,10 +166,13 @@ public-upstream dependency source.
 
 ## The two defaults, and why
 
-- **Microsoft Teams as the channel.** openAut targets the Microsoft stack (Teams + Power BI). NemoClaw
-  ships Telegram/Discord/Slack but not Teams, so the pack adds a webhook bridge and points every
-  persona at it. Swap it by editing `TEAMS_*` in `config.env`, or graduate to Azure Bot Service later
-  without changing the agents.
+- **Microsoft Teams as the channel.** openAut targets the Microsoft stack (Teams + Power BI).
+  OpenClaw ships Teams as a **native, bundled channel plugin** (`msteams`, Bot Framework / Azure
+  Bot) — the earlier "NemoClaw has no native Teams channel, so the pack adds a webhook bridge"
+  premise was wrong; the webhook approach it described also stopped working when Microsoft retired
+  Teams Incoming Webhooks. Configure via `MSTEAMS_*` in `config.env`. Unlike the old egress-only
+  bridge, `msteams` needs an **inbound** path from Teams' cloud — see `nemoclaw-sandbox-policy` for
+  the still-open question of how that's exposed.
 - **Local Forgejo as the project forge.** Code, manuals, runbooks, generated docs, migrations, and
   deployable artifacts live in a local forge in the AI/management zone, with scoped agent access and
   CI/review gates before anything becomes trusted or deployable.
@@ -184,9 +187,11 @@ public-upstream dependency source.
    data; validated before it reaches an agent.
 2. **Agent → model** — sandbox → Nemotron over **TLS, single allow-listed destination**. No fallback
    to public LLM APIs (AI Act provider control).
-3. **Advisor → people** — Advisor speaks through the Teams bridge, which **HMAC-verifies** inbound
-   Teams calls. Inbound Teams text is treated as untrusted (prompt-injection surface); the sandbox
-   policy and read-only tool grant are the backstop.
+3. **Advisor → people** — Advisor speaks through OpenClaw's native `msteams` plugin (Bot Framework
+   auth, not the retired webhook bridge's HMAC scheme). Inbound Teams text is treated as untrusted
+   (prompt-injection surface); the sandbox policy and read-only tool grant are the backstop. The
+   inbound network path Teams uses to reach the plugin is a separately tracked open design question
+   (see `nemoclaw-sandbox-policy`), not yet resolved here.
 4. **Advisor → Engineer** — no direct chat-to-SSH path. Advisor creates a case/approval request in
    the Systemdatabas; Engineer acts only on approved cases from the management plane.
 5. **Agents → Forge** — Advisor reads verified docs, Engineer writes branches/PRs, and Security
