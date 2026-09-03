@@ -25,8 +25,9 @@ flowchart TD
     VERIFIED --> USERS["Engineer, Advisor, and future agents"]
 ```
 
-A request may name an exact product and document, or describe an information need such as a protocol
-register map, commissioning procedure, PICS, EDE file, certificate, or firmware note.
+Advisor, Engineer, and future authorised agents may submit a request. A request may name an exact
+product and document, or describe an information need such as a protocol register map,
+commissioning procedure, PICS, EDE file, certificate, or firmware note.
 
 The Documentation Agent shall:
 
@@ -61,15 +62,23 @@ It is responsible for:
 It may propose documentation for verification but does not grant `verified` status to its own
 output.
 
+### Advisor
+
+Advisor may create a documentation request when verified local material is missing or insufficient
+for explaining an alarm, analysing a fault, supporting an operational recommendation, or answering
+an operator's technical question.
+
+Advisor consumes verified documentation for read-only analysis, explanations, and recommendations.
+It does not search the public Internet, download external documents, process untrusted source
+material, or approve the resulting documentation.
+
 ### Engineer
 
-Engineer states the documentation need and consumes approved documentation from the local store.
-Its engineering workflow can then focus on integration planning, configuration, programming,
-testing, deployment, and generated site documentation.
+Engineer may create a documentation request when it needs product knowledge for integration
+planning, configuration, programming, testing, deployment, or generated site documentation.
 
-When the required documentation is missing, Engineer creates a documentation request instead of
-searching the public Internet or processing untrusted external documents in the Engineer trust
-domain.
+Engineer consumes approved documentation from the local store. It does not search the public
+Internet or process untrusted external documents in the Engineer trust domain.
 
 ### Human reviewer
 
@@ -88,16 +97,17 @@ It remains an independent, non-approving trust domain.
 External documents are data, not agent instructions. Search results, web pages, PDFs, office
 documents, archives, and embedded links are treated as untrusted input.
 
-| Capability | Documentation Agent | Engineer |
-|---|---:|---:|
-| Search approved Internet sources | Yes | No |
-| Download external technical documents | Yes | No |
-| Parse, OCR, and convert external documents | Yes, isolated | No |
-| Read and write working branches in `openaut/manuals` | Yes | Read verified content; write generated engineering artifacts |
-| Assign `verified` trust level | No | No |
-| Access OT networks or field devices | No | Case-scoped and approved |
-| SSH or deploy to edge nodes | No | Case-scoped and approved |
-| Modify its own policy or credentials | No | No |
+| Capability | Documentation Agent | Advisor | Engineer |
+|---|---:|---:|---:|
+| Submit documentation requests | Receives | Yes | Yes |
+| Search approved Internet sources | Yes | No | No |
+| Download external technical documents | Yes | No | No |
+| Parse, OCR, and convert external documents | Yes, isolated | No | No |
+| Read and write working branches in `openaut/manuals` | Yes | Read verified content | Read verified content; write generated engineering artifacts |
+| Assign `verified` trust level | No | No | No |
+| Access OT networks or field devices | No | No | Case-scoped and approved |
+| SSH or deploy to edge nodes | No | No | Case-scoped and approved |
+| Modify its own policy or credentials | No | No | No |
 
 The Documentation Agent has no OT route, no edge-node credentials, no deployment capability, and no
 access to Engineer's work directory. Its Internet allow-list and Forge credentials are separate
@@ -109,12 +119,12 @@ deployment paths, or access to other trust domains.
 
 ## Documentation request contract
 
-A documentation request should contain the known identity and the engineering purpose without
-requiring the requester to know the exact document title.
+A documentation request should contain the known identity and its operational or engineering
+purpose without requiring the requester to know the exact document title.
 
 ```yaml
 request_id: docreq-...
-requested_by: engineer
+requested_by: advisor | engineer
 manufacturer: Siemens
 product_family: Desigo PXC4
 model: PXC4.E16
@@ -215,14 +225,15 @@ lets current and future proof-of-concept work contribute to the shared documenta
 
 The target capability is complete when:
 
-- Engineer can request documentation without using public Internet access;
+- Advisor and Engineer can request documentation without using public Internet access;
 - the Documentation Agent finds and distinguishes exact product and revision matches;
 - every staged document has source provenance, identity metadata, a source hash, and a trust level;
 - conversion runs in an isolated, disposable workspace;
 - new content enters Forgejo through a branch or pull request and defaults to quarantine;
 - only an independent review can promote content to verified;
 - verified content is resolvable by stable Forge URI and linked from Systemdatabasen;
-- Engineer can consume the verified content without access to the original Internet source; and
+- Advisor and Engineer can consume verified content within their respective permissions and
+  without access to the original Internet source; and
 - audit evidence covers the request, discovery, ingestion, review, and resulting Forge revision.
 
 > **Target architecture:** This document defines the intended documentation-supply capability.
