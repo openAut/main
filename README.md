@@ -76,7 +76,7 @@ openAut-specific defaults:
 | Skill | What it does |
 |---|---|
 | [`forge-stack`](skills/forge-stack/SKILL.md) | Provision local **Forgejo** in the AI/management zone: TLS, backups, runners, storage, agent access, and sandbox egress. |
-| [`documentation-store`](skills/documentation-store/SKILL.md) | Define how manuals, runbooks, generated docs, point maps, and AI-readable source material live in Forge and link to `documents.uri` / `documents.sha256`. |
+| [`documentation-store`](skills/documentation-store/SKILL.md) | Define how manuals, runbooks, generated docs, point maps, FAT/SAT notes, and AI-readable source material live in Forge and link to `documents.uri` / `documents.sha256`. |
 | [`manual-ingest`](skills/manual-ingest/SKILL.md) | Convert technical product manuals to traceable Markdown, assign stable product/document identities, validate source hashes, and generate the `openaut/manuals` catalog. |
 | [`forge-governance`](skills/forge-governance/SKILL.md) | Define branch protection, PR review, CODEOWNERS, commit/artifact signing, CI gates, and scoped agent permissions. |
 
@@ -105,6 +105,7 @@ Supporting:
 
 - [`CONTEXT.md`](CONTEXT.md) — the canonical glossary: **persona** vs. **agent / trust domain** vs. **runtime skill**.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
+- [`docs/architecture/documentation-agent.md`](docs/architecture/documentation-agent.md) — target architecture for a separate Internet-facing Documentation Agent that supplies verified local product knowledge.
 - [`docs/LAB.md`](docs/LAB.md) — a local verification path for the MQTT/topic/database contracts.
 - [`docs/HYPERV-CI-BOUNDARY.md`](docs/HYPERV-CI-BOUNDARY.md) — host-enforced isolation for an
   untrusted Forgejo CI VM on Hyper-V management/NAT networks.
