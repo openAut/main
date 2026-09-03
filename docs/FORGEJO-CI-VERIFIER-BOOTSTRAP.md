@@ -42,8 +42,9 @@ The reviewed runtime implementation is
 extended adapter ACLs outside the guest: exact Forgejo IPv4/TCP 443 is the sole runtime allow, while
 all other IPv4/IPv6 egress and unsolicited ingress are denied. Do not substitute basic adapter ACLs,
 a guest firewall, a hostname wildcard, or a broad management subnet allow. Provisioning access must
-be removed before this policy is applied, and changing the exact destination requires a reviewed
-`-ReplaceManagedPolicy` execution.
+be removed before this policy is applied. Install a static Forgejo hostname mapping and verify clock
+synchronization during provisioning because runtime DNS/NTP are not allowed. Changing the exact
+destination requires a reviewed `-ReplaceManagedPolicy` execution.
 
 The bootstrap stops an existing CI VM before topology inspection or ACL changes and leaves it off.
 Do not start it when adapter validation, ACL verification, or runtime network proofs fail.

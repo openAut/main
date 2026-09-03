@@ -84,7 +84,12 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn('-Direction Inbound -RemoteIPAddress "ANY" -Weight $denyWeight', script)
         self.assertIn("$allowWeight = 62000", script)
         self.assertIn("$denyWeight = 61000", script)
+        self.assertIn("$guardWeight = 63000", script)
         self.assertIn("$rule.Stateful -eq $true", script)
+        self.assertIn("Test-AnySelector $rule.Protocol", script)
+        self.assertIn("$rule.IsolationID -eq 0", script)
+        self.assertIn("[uint64]4294967295", script)
+        self.assertNotIn("[uint64]0xffffffff", script)
         self.assertNotRegex(script, r"(?:192\.168|172\.\d+|10\.\d+)\.\d+\.\d+")
 
     def test_runtime_policy_stops_vm_and_requires_field_boundary(self):
@@ -96,6 +101,19 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("Existing unrecognized extended ACL has higher priority", script)
         self.assertIn("Unexpected higher-priority extended ACL", script)
         self.assertIn("-ReplaceManagedPolicy", script)
+        self.assertIn("ForgejoIpv4 must not overlap denied field CIDR", script)
+        self.assertIn("Guard denies are not effective", script)
+
+    def test_runtime_policy_installs_guard_denies_before_final_allow(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        guard = script.index('-Direction Outbound -RemoteIPAddress "ANY" -Weight $guardWeight')
+        final_deny = script.index('-Direction Outbound -RemoteIPAddress "ANY" -Weight $denyWeight')
+        final_allow = script.index('-RemotePort "443" -Protocol "TCP"', final_deny)
+        remove_guard = script.index("New runtime ACL set is incomplete", final_allow)
+        self.assertLess(guard, final_deny)
+        self.assertLess(final_deny, final_allow)
+        self.assertLess(final_allow, remove_guard)
 
     def test_runtime_report_keeps_registration_blocked_until_guest_proofs(self):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
@@ -112,6 +130,8 @@ class HyperVCiContractTests(unittest.TestCase):
             self.assertIn(expected, docs)
         self.assertIn("normal certificate chain", docs)
         self.assertIn("Get-VMNetworkAdapterExtendedAcl", docs)
+        self.assertIn("static hostname mapping", docs)
+        self.assertIn("runtime DNS and NTP are intentionally not allowed", docs)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,36 @@ if (-not [System.Net.IPAddress]::TryParse($ForgejoIpv4, [ref]$parsedForgejoIp) -
 if (-not $DeniedFieldCidrs -or @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) })) {
     throw "At least one field CIDR is required."
 }
+
+function Convert-Ipv4ToUInt32([System.Net.IPAddress]$address) {
+    $bytes = $address.GetAddressBytes()
+    return [uint32]($bytes[0] * 16777216 + $bytes[1] * 65536 + $bytes[2] * 256 + $bytes[3])
+}
+
+$forgejoValue = Convert-Ipv4ToUInt32 $parsedForgejoIp
+foreach ($cidr in $DeniedFieldCidrs) {
+    if ($cidr -notmatch "^([^/]+)/([0-9]|[12][0-9]|3[0-2])$") {
+        throw "DeniedFieldCidrs must contain canonical IPv4 CIDRs."
+    }
+    $networkIp = [System.Net.IPAddress]::None
+    if (-not [System.Net.IPAddress]::TryParse($Matches[1], [ref]$networkIp) -or
+        $networkIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
+        throw "DeniedFieldCidrs must contain canonical IPv4 CIDRs."
+    }
+    $prefixLength = [int]$Matches[2]
+    $networkValue = Convert-Ipv4ToUInt32 $networkIp
+    $mask = if ($prefixLength -eq 0) {
+        [uint32]0
+    } else {
+        [uint32](([uint64]4294967295 -shl (32 - $prefixLength)) -band [uint64]4294967295)
+    }
+    if (($networkValue -band $mask) -ne $networkValue) {
+        throw "Denied field CIDR '$cidr' is not a canonical network address."
+    }
+    if (($forgejoValue -band $mask) -eq $networkValue) {
+        throw "ForgejoIpv4 must not overlap denied field CIDR '$cidr'."
+    }
+}
 if (-not (Get-Command Add-VMNetworkAdapterExtendedAcl -ErrorAction SilentlyContinue)) {
     throw "This host does not provide Hyper-V extended adapter ACLs."
 }
@@ -64,7 +94,8 @@ foreach ($cidr in $fieldCidrs) {
 
 $allowWeight = 62000
 $denyWeight = 61000
-$managedWeights = @($allowWeight, $denyWeight)
+$guardWeight = 63000
+$managedWeights = @($guardWeight, $allowWeight, $denyWeight)
 $existing = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
 $managed = @($existing | Where-Object { $_.Weight -in $managedWeights })
 $unmanagedHigherPriority = @($existing | Where-Object {
@@ -74,21 +105,35 @@ if ($unmanagedHigherPriority.Count -gt 0) {
     throw "Existing unrecognized extended ACL has higher priority than the runtime deny."
 }
 
+function Test-AnySelector($value) {
+    return [string]::IsNullOrEmpty([string]$value) -or [string]$value -eq "ANY"
+}
+
 function Test-AllowRule($rule) {
     return $rule.Action -eq "Allow" -and
         $rule.Direction -eq "Outbound" -and
+        (Test-AnySelector $rule.LocalIPAddress) -and
         $rule.RemoteIPAddress -eq $ForgejoIpv4 -and
+        (Test-AnySelector $rule.LocalPort) -and
         $rule.RemotePort -eq "443" -and
         $rule.Protocol -eq "TCP" -and
         $rule.Weight -eq $allowWeight -and
-        $rule.Stateful -eq $true
+        $rule.Stateful -eq $true -and
+        $rule.IdleSessionTimeout -eq 3600 -and
+        $rule.IsolationID -eq 0
 }
 
-function Test-DenyRule($rule, [string]$direction) {
+function Test-DenyRule($rule, [string]$direction, [int]$weight = $denyWeight) {
     return $rule.Action -eq "Deny" -and
         $rule.Direction -eq $direction -and
+        (Test-AnySelector $rule.LocalIPAddress) -and
         $rule.RemoteIPAddress -eq "ANY" -and
-        $rule.Weight -eq $denyWeight
+        (Test-AnySelector $rule.LocalPort) -and
+        (Test-AnySelector $rule.RemotePort) -and
+        (Test-AnySelector $rule.Protocol) -and
+        $rule.Weight -eq $weight -and
+        $rule.Stateful -eq $false -and
+        $rule.IsolationID -eq 0
 }
 
 $policyComplete =
@@ -101,16 +146,47 @@ if (-not $policyComplete -and $managed.Count -gt 0 -and -not $ReplaceManagedPoli
     throw "Managed runtime ACL weights already contain a different or partial policy; use -ReplaceManagedPolicy after review."
 }
 if (-not $policyComplete) {
-    foreach ($rule in $managed) {
+    $guards = @($managed | Where-Object { $_.Weight -eq $guardWeight })
+    if ($guards.Count -eq 0) {
+        Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Deny `
+            -Direction Outbound -RemoteIPAddress "ANY" -Weight $guardWeight
+        Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Deny `
+            -Direction Inbound -RemoteIPAddress "ANY" -Weight $guardWeight
+    } elseif ($guards.Count -ne 2 -or
+        @($guards | Where-Object { Test-DenyRule $_ "Outbound" $guardWeight }).Count -ne 1 -or
+        @($guards | Where-Object { Test-DenyRule $_ "Inbound" $guardWeight }).Count -ne 1) {
+        throw "Managed guard ACLs are malformed; refusing policy replacement."
+    }
+
+    $effectiveGuards = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic | Where-Object {
+        $_.Weight -eq $guardWeight
+    })
+    if ($effectiveGuards.Count -ne 2 -or
+        @($effectiveGuards | Where-Object { Test-DenyRule $_ "Outbound" $guardWeight }).Count -ne 1 -or
+        @($effectiveGuards | Where-Object { Test-DenyRule $_ "Inbound" $guardWeight }).Count -ne 1) {
+        throw "Guard denies are not effective; refusing to remove the existing runtime policy."
+    }
+
+    foreach ($rule in @($managed | Where-Object { $_.Weight -ne $guardWeight })) {
         Remove-VMNetworkAdapterExtendedAcl -InputObject $rule
     }
-    Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
-        -Direction Outbound -RemoteIPAddress $ForgejoIpv4 -RemotePort "443" -Protocol "TCP" `
-        -Weight $allowWeight -Stateful $true -IdleSessionTimeout 3600
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Deny `
         -Direction Outbound -RemoteIPAddress "ANY" -Weight $denyWeight
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Deny `
         -Direction Inbound -RemoteIPAddress "ANY" -Weight $denyWeight
+    Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
+        -Direction Outbound -RemoteIPAddress $ForgejoIpv4 -RemotePort "443" -Protocol "TCP" `
+        -Weight $allowWeight -Stateful $true -IdleSessionTimeout 3600
+
+    $withGuards = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
+    if (@($withGuards | Where-Object { Test-AllowRule $_ }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DenyRule $_ "Outbound" }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DenyRule $_ "Inbound" }).Count -ne 1) {
+        throw "New runtime ACL set is incomplete; guard denies remain active."
+    }
+    foreach ($rule in @($withGuards | Where-Object { $_.Weight -eq $guardWeight })) {
+        Remove-VMNetworkAdapterExtendedAcl -InputObject $rule
+    }
 }
 
 $effective = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)

@@ -68,7 +68,10 @@ all other outbound IPv4 and IPv6 traffic and all unsolicited inbound traffic. A 
 accepted as the network allow-list: the guest must resolve the expected Forgejo TLS hostname to the
 operator-supplied address and validate that hostname through the normal certificate chain.
 
-Apply only after the Forgejo address is stable and its CA is installed in the guest:
+Apply only after the Forgejo address is stable, its CA is installed in the guest, and a release-
+authority-owned static hostname mapping resolves the TLS name to that exact address. Synchronize and
+verify the guest clock during provisioning; runtime DNS and NTP are intentionally not allowed by this
+minimal policy.
 
 ```powershell
 .\scripts\set_hyperv_ci_runtime_egress.ps1 `
@@ -79,10 +82,13 @@ Apply only after the Forgejo address is stable and its CA is installed in the gu
 ```
 
 The script stops the VM before inspection, requires the basic inbound/outbound field denies from the
-bootstrap, reserves high ACL weights for the managed runtime policy, and refuses a partial or changed
-policy unless `-ReplaceManagedPolicy` is explicitly supplied after review. It also refuses any
-unrecognized rule with higher priority than the default deny. It leaves the VM off and reports
-`RunnerRegistrationAllowed=false`; applying rules is not connectivity proof.
+bootstrap, rejects a Forgejo address inside a denied field CIDR, and reserves high ACL weights for the
+managed runtime policy. It refuses a partial or changed policy unless `-ReplaceManagedPolicy` is
+explicitly supplied after review. A replacement first installs still-higher temporary inbound and
+outbound guard denies; they remain if any later operation fails and are removed only after the final
+deny/allow set is complete. The script also refuses any unrecognized rule with higher priority than
+the default deny. It leaves the VM off and reports `RunnerRegistrationAllowed=false`; applying rules
+is not connectivity proof.
 
 Start the VM only for the review-evidenced test matrix. Verify normal Forgejo TLS succeeds while a
 field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port other than 443, and UDP 443
