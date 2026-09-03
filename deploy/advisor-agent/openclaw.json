@@ -31,6 +31,14 @@
       }
     }
   },
+  // This binding matches every account/peer in the configured tenant (tenantId above scopes the
+  // tenant, nothing here scopes which channels/users within it can reach Advisor). That's broad,
+  // not least-privilege, for an agent whose whole job is accepting untrusted Teams-sourced text
+  // (prompt-injection surface — see advisor-engineer-workflow's Verification section). Narrow
+  // "peer" to your deployment's actually-approved channels/users once you've confirmed the exact
+  // match shape your OpenClaw version supports (docs reference peer.kind/peer.id; verified schema
+  // for an allow-list of specific channels is still unconfirmed here) — do not ship the wildcard
+  // below into anything Teams-facing beyond a controlled dev/lab test.
   "bindings": [
     {
       "agentId": "advisor",

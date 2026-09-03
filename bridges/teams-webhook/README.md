@@ -23,10 +23,16 @@ channel" — was incorrect. Use the native plugin instead:
 
 ## The open design question
 
-Unlike this retired bridge (outbound-only: the gateway posted *out* to Teams, and Teams called an
-Outgoing Webhook only on @mention), the native `msteams` plugin needs Teams' cloud to reach **your**
-endpoint (`/api/messages`) — that's an **inbound** requirement, not just another egress allow-list
-entry. That cuts against openAut's deny-by-default, outbound-only sandbox posture and is a real
+**This retired bridge already had an inbound path too** — its Outgoing Webhook half was Teams
+calling *into* the bridge's `/teams` endpoint on @mention, HMAC-signed. The difference isn't
+"outbound-only vs. inbound": it's *narrower, event-triggered* inbound (fires only on @mention, one
+HMAC-verified request at a time) vs. the native `msteams` plugin's *standing* inbound requirement —
+Teams' cloud must be able to reach **your** `/api/messages` endpoint at any time, authenticated by
+Bot Framework rather than a shared HMAC secret. That's a bigger, always-on surface, not a new
+category of exposure — and to be clear, **this retired bridge's own inbound path was never resolved
+for production either**; it was a reference stub (see its Security notes, preserved below), not a
+hardened answer. Don't read "the old bridge was simpler" as "the old bridge had no open questions."
+That cuts against openAut's deny-by-default, outbound-only sandbox posture and is a real
 architectural cost, not a config detail.
 
 **This is intentionally left open for now** — proceed with the native plugin for a dev/lab setup

@@ -1,4 +1,10 @@
-# deploy/advisor-agent — Advisor, ready to run
+# deploy/advisor-agent — Advisor reference configuration
+
+> **This is a reference configuration, not a deployable Advisor.** The `openclaw.json` shape and
+> prompt files are ready to merge as-is; the data connections and case-creation tool behind them are
+> not (see "What's still open" below — no backing capabilities are wired up). Treat every claim
+> Advisor makes about reading live data or opening a case as something to verify against what this
+> bundle can actually do today, not the target contract in `advisor-engineer-workflow/SKILL.md`.
 
 > **This directory configures Advisor only.** Everything under here — `openclaw.json`, `workspace/`
 > — is OpenClaw config, because Advisor runs on NemoClaw/OpenClaw. **Engineer is not here and never
@@ -63,6 +69,10 @@ folder without that policy applied gives you a well-behaved agent, not a safe on
 
 - The `msteams` **inbound** path (direct exposure vs. a DMZ relay) — see
   [`bridges/teams-webhook`](../../bridges/teams-webhook/README.md) and `nemoclaw-sandbox-policy`.
+- The Teams **binding** in `openclaw.json` matches every account/peer in the tenant — broad, not
+  least-privilege, for an agent whose job is accepting untrusted Teams-sourced text. Narrow it to
+  approved channels/users once you've confirmed the exact `match` shape your OpenClaw version
+  supports (see the comment above the `bindings` block in `openclaw.json`).
 - A matching bundle for Engineer does not exist yet. Per [ADR 0001](../../docs/adr/0001-delivery-and-trust-model.md)
   §4-5 and [ADR 0003](../../docs/adr/0003-engineer-runtime-containment.md), Engineer is **not**
   another OpenClaw `agents.entries` — it runs **opencode**, on its own host and its own sandbox, a

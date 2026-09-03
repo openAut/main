@@ -111,7 +111,8 @@ flowchart LR
     ADV -->|TLS, single allow-listed inference dest| PROXY
     ADV -->|reads verified docs, read-only| FORGE
     ADV --> TB
-    TB -->|Bot Framework Connector, inbound path TBD| TEAMS["Microsoft Teams / Power BI<br/>(external, Layer 4)"]
+    TB -->|Bot Framework Connector| TEAMS["Microsoft Teams / Power BI<br/>(external, Layer 4)"]
+    TEAMS -.->|"/api/messages — inbound path TBD, see below"| TB
 ```
 
 ### Full target posture (ADR 0001 §5 / ADR 0003 — not yet in `config.env.example`)
