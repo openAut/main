@@ -92,19 +92,23 @@ decision below, not each suppressed symptom.
 `risk` is a single enum — `low | medium | high | critical` — with one deterministic action per
 value, never a range:
 
+These three rows apply when no safety-relevant signature is present (see the override immediately
+below for when one is):
+
 | Signal | risk | confidence starting point |
 |---|---|---|
 | Single uncalibrated rule, no corroboration | low | ≤ 0.5 |
 | Single calibrated rule, no corroboration | medium | 0.5–0.7 |
-| Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9 |
-| Corroborated finding, no safety-relevant signature | critical | 0.9+, escalate regardless of the confidence math |
+| Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9, cap at 0.9 |
 
-**Safety override — corroboration is never a precondition for `critical`:** a safety-relevant
-signature (high-limit trip, freeze-stat, fire/smoke interlock) makes a finding `critical`
-immediately, whether or not any other rule or skill corroborates it. A single calibrated rule that
-*is* a safety-relevant signature — a lone fire/smoke interlock trip, no corroboration — is
-`critical`, not `medium`; don't wait for a second finding to escalate a life-safety signal.
-Corroboration still raises confidence, it just never gates the risk level for a safety signature.
+**Safety override — always wins over the table above, and corroboration is never a precondition:**
+a safety-relevant signature (high-limit trip, freeze-stat, fire/smoke interlock) makes a finding
+`critical` immediately, whether or not any other rule or skill corroborates it — including a
+finding that would otherwise land in the `high` row above. A single calibrated rule that *is* a
+safety-relevant signature — a lone fire/smoke interlock trip, no corroboration — is `critical`, not
+`medium`; don't wait for a second finding to escalate a life-safety signal. Corroboration still
+raises confidence, it just never gates the risk level for a safety signature. Confidence for a
+critical finding starts at 0.9+ regardless of which row it would otherwise have matched.
 
 What Advisor does with the result:
 

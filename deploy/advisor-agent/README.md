@@ -68,9 +68,15 @@ folder without that policy applied gives you a well-behaved agent, not a safe on
   another OpenClaw `agents.entries` — it runs **opencode**, on its own host and its own sandbox, a
   deliberately different software stack from Advisor/NemoClaw. When that bundle is built, it
   belongs in opencode's own config format, not folded into this folder's `openclaw.json`.
-- Advisor's granted tools (`read`, `message` — see `openclaw.json`) have no write path into the
-  Systemdatabas. `create_case_note` / `create_work_order` (referenced in `advisor-engineer-workflow`'s
-  `openaut-backing-capabilities` metadata) are not implemented tools here; no capability gateway
-  exists yet (see that skill's frontmatter). Until one does, treat this bundle as a **demonstration
-  configuration**: when `workspace/AGENTS.md` says "open a case," a human must actually create it in
-  the Systemdatabas — Advisor cannot, and nothing here should be read as claiming otherwise.
+- **No backing capabilities are wired up here — neither read nor write.** Advisor's granted tools
+  (`read`, `message` — see `openclaw.json`) are OpenClaw's generic, local-file-scoped tools. The
+  capabilities `workspace/AGENTS.md` instructs Advisor to use — `get_equipment_context`,
+  `query_timeseries`, `read_verified_document` for reads, `create_case_note` / `create_work_order`
+  for writes (all referenced in `advisor-engineer-workflow`'s `openaut-backing-capabilities`
+  metadata) — are **not implemented as tools here**; no capability gateway exists yet (see that
+  skill's frontmatter). Until one does, treat this bundle as a **demonstration configuration**: it
+  shows the prompt/config shape, not a live-data-connected agent. `workspace/AGENTS.md`'s steps that
+  say "read telemetry" or "read equipment context" assume that data has already been made available
+  in context some other way (e.g. pasted into the conversation) — Advisor cannot fetch it itself
+  yet, and when `AGENTS.md` says "ask a human to open a case," a human must actually do that — Advisor
+  cannot, and nothing here should be read as claiming otherwise.

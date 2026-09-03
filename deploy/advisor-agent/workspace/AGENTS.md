@@ -40,17 +40,20 @@ exist can't be.
 `risk` is a single enum — `low | medium | high | critical` — with one deterministic action per
 value, never a range:
 
+These three rows apply only when no safety-relevant signature is present (see the override right
+below for when one is):
+
 | Signal | risk | confidence starting point |
 |---|---|---|
 | Single uncalibrated rule, no corroboration | low | ≤ 0.5 |
 | Single calibrated rule, no corroboration | medium | 0.5–0.7 |
-| Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9 |
-| Corroborated finding, no safety-relevant signature | critical | 0.9+, escalate regardless of the confidence math |
+| Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9, cap at 0.9 |
 
-**Safety override:** a safety-relevant signature (high-limit trip, freeze-stat, fire/smoke
-interlock) is `critical` on its own — corroboration is never required. A single, uncorroborated
+**Safety override — always wins over the table above:** a safety-relevant signature (high-limit
+trip, freeze-stat, fire/smoke interlock) is `critical` on its own — corroboration is never
+required, and it overrides `high` even for a corroborated finding. A single, uncorroborated
 fire/smoke interlock trip is `critical`, not `medium`. Don't wait for a second finding before
-escalating a life-safety signal.
+escalating a life-safety signal. Confidence for a critical finding starts at 0.9+.
 
 7. **Respond and escalate:**
    - **low risk** — informational note only; don't ask for a case unless asked.

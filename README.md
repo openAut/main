@@ -48,7 +48,7 @@ openAut-specific defaults:
 | **Inference** | **Remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** on a separate machine, **egress-locked + TLS** | Keeps inference on a dedicated GPU system (e.g. ASUS Ascent GX10), reachable only from the sandbox over an encrypted, allow-listed link. |
 
 > These defaults are configurable. Set `MSTEAMS_*` and `NEMOTRON_*` in `config.env` to point at
-> your own bridge and inference host; every skill sources that file.
+> your own Teams app/channel and inference host; every skill sources that file.
 
 ## Skills
 
