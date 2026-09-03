@@ -1,5 +1,13 @@
 # deploy/advisor-agent — Advisor, ready to run
 
+> **This directory configures Advisor only.** Everything under here — `openclaw.json`, `workspace/`
+> — is OpenClaw config, because Advisor runs on NemoClaw/OpenClaw. **Engineer is not here and never
+> belongs here**: per [ADR 0001](../../docs/adr/0001-delivery-and-trust-model.md) §4-5 and
+> [ADR 0003](../../docs/adr/0003-engineer-runtime-containment.md), Engineer is a separate **opencode**
+> installation on its own host and sandbox — a different software stack, not another OpenClaw agent
+> entry. If you're building Engineer's equivalent bundle, it goes in opencode's own config format,
+> not as a second `agents.entries` alongside this one.
+
 This is where the Advisor **contract** (`skills/advisor-engineer-workflow/SKILL.md`) becomes an
 **actual OpenClaw agent**. Three layers, each doing a different job — don't collapse them:
 
@@ -8,6 +16,12 @@ This is where the Advisor **contract** (`skills/advisor-engineer-workflow/SKILL.
 | Contract | `../../skills/advisor-engineer-workflow/SKILL.md` | The trust-boundary definition: what Advisor is, the Advisor/Engineer/Security split, case states. Read on trigger, not every turn. |
 | Enforcement | `openclaw.json` | `agents.entries.advisor` — workspace, `tools.deny`, `skills` allowlist, Teams channel binding. This is OpenClaw's own tool-visibility layer. |
 | Behavior | `workspace/AGENTS.md`, `workspace/SOUL.md`, `workspace/TOOLS.md` | Injected every turn. Day-to-day procedure, identity/boundaries, and tool-usage notes. |
+
+`workspace/AGENTS.md` is not a summary of the contract skill — it duplicates its calibration check,
+document-trust check, and risk/confidence decision table verbatim, because that's the file actually
+injected into the running agent's prompt. If you change the decision logic in one, change it in the
+other; they're checked for drift by inspection, not by tooling, so a change to one without the other
+is a silent regression.
 
 ## What this does NOT do
 
