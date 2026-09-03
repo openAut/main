@@ -59,5 +59,37 @@ is tracked by openAut/main#68. Do not register a runner until #68 is review-evid
 network proofs pass. Runner registration must remain repository-scoped and ephemeral, using a
 human-generated secret that is never committed or passed to an Engineer.
 
+## Runtime egress policy
+
+Issue openAut/main#68 is implemented by a separate Hyper-V extended adapter ACL policy. Extended
+ACLs are required because the basic field ACL cannot restrict protocol and port. The runtime policy
+allows one exact Forgejo IPv4 destination on TCP port 443 with stateful return traffic, then denies
+all other outbound IPv4 and IPv6 traffic and all unsolicited inbound traffic. A hostname is not
+accepted as the network allow-list: the guest must resolve the expected Forgejo TLS hostname to the
+operator-supplied address and validate that hostname through the normal certificate chain.
+
+Apply only after the Forgejo address is stable and its CA is installed in the guest:
+
+```powershell
+.\scripts\set_hyperv_ci_runtime_egress.ps1 `
+  -VmName openaut-ci `
+  -ForgejoIpv4 "<exact-forgejo-management-ip>" `
+  -DeniedFieldCidrs "<field-cidr>" `
+  -ReportPath "<existing-report-directory>\openaut-ci-runtime.json"
+```
+
+The script stops the VM before inspection, requires the basic inbound/outbound field denies from the
+bootstrap, reserves high ACL weights for the managed runtime policy, and refuses a partial or changed
+policy unless `-ReplaceManagedPolicy` is explicitly supplied after review. It also refuses any
+unrecognized rule with higher priority than the default deny. It leaves the VM off and reports
+`RunnerRegistrationAllowed=false`; applying rules is not connectivity proof.
+
+Start the VM only for the review-evidenced test matrix. Verify normal Forgejo TLS succeeds while a
+field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port other than 443, and UDP 443
+all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to prove the allow and denies
+are host-owned. Repeat after guest restart and after a host restart. Record the exact policy report,
+guest results, and post-restart ACL output. If any negative test succeeds, stop the VM and keep runner
+registration blocked.
+
 The disposable PostgreSQL `case-policy` gate is tracked by openAut/main#60. Systemdatabas migrations,
 roles, and grants remain tracked by openAut/main#42.

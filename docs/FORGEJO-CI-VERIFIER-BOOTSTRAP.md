@@ -37,6 +37,14 @@ engine because compromise is then bounded to that dedicated VM.
    control tracked by openAut/main#68. Verify that Forgejo remains reachable while a field target
    and an arbitrary internet target are blocked.
 
+The reviewed runtime implementation is
+[`set_hyperv_ci_runtime_egress.ps1`](../scripts/set_hyperv_ci_runtime_egress.ps1). It uses Hyper-V
+extended adapter ACLs outside the guest: exact Forgejo IPv4/TCP 443 is the sole runtime allow, while
+all other IPv4/IPv6 egress and unsolicited ingress are denied. Do not substitute basic adapter ACLs,
+a guest firewall, a hostname wildcard, or a broad management subnet allow. Provisioning access must
+be removed before this policy is applied, and changing the exact destination requires a reviewed
+`-ReplaceManagedPolicy` execution.
+
 The bootstrap stops an existing CI VM before topology inspection or ACL changes and leaves it off.
 Do not start it when adapter validation, ACL verification, or runtime network proofs fail.
 
@@ -98,7 +106,8 @@ field equipment. The CI runner and Forge verifier are deliberately separate iden
 ## Order of operations
 
 1. Review and merge the TLS/reverse-proxy and dedicated-CI-VM configuration.
-2. Complete openAut/main#68 and its positive/negative runtime network proofs.
+2. Complete openAut/main#68: apply the reviewed extended ACL policy and record positive/negative
+   runtime network proofs before and after guest and host restart.
 3. Register one repository-scoped ephemeral runner and obtain a green `case-policy` result for the
    exact current PR head.
 4. Human reviewer approves that head; `openaut-admin` merges it.
