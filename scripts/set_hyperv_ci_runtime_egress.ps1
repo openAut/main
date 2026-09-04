@@ -146,10 +146,20 @@ foreach ($cidr in $fieldCidrs) {
     }
 }
 
-$allowWeight = 62000
+$forgejoAllowWeight = 62000
+$dhcpBroadcastWeight = 61900
+$dhcpServerOutboundWeight = 61800
+$dhcpServerInboundWeight = 61700
 $denyWeight = 61000
 $guardWeight = 63000
-$managedWeights = @($guardWeight, $allowWeight, $denyWeight)
+$managedWeights = @(
+    $guardWeight,
+    $forgejoAllowWeight,
+    $dhcpBroadcastWeight,
+    $dhcpServerOutboundWeight,
+    $dhcpServerInboundWeight,
+    $denyWeight
+)
 $existing = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
 $managed = @($existing | Where-Object { $_.Weight -in $managedWeights })
 $unmanagedHigherPriority = @($existing | Where-Object {
@@ -171,13 +181,13 @@ function Test-ForgejoAllowRule($rule) {
         (Test-AnySelector $rule.LocalPort) -and
         $rule.RemotePort -eq "443" -and
         $rule.Protocol -eq "TCP" -and
-        $rule.Weight -eq $allowWeight -and
+        $rule.Weight -eq $forgejoAllowWeight -and
         $rule.Stateful -eq $true -and
         $rule.IdleSessionTimeout -eq 3600 -and
         $rule.IsolationID -eq 0
 }
 
-function Test-DhcpRule($rule, [string]$direction, [string]$remoteAddress) {
+function Test-DhcpRule($rule, [string]$direction, [string]$remoteAddress, [int]$weight) {
     return $rule.Action -eq "Allow" -and
         $rule.Direction -eq $direction -and
         (Test-AnySelector $rule.LocalIPAddress) -and
@@ -185,7 +195,7 @@ function Test-DhcpRule($rule, [string]$direction, [string]$remoteAddress) {
         $rule.LocalPort -eq "68" -and
         $rule.RemotePort -eq "67" -and
         $rule.Protocol -eq "UDP" -and
-        $rule.Weight -eq $allowWeight -and
+        $rule.Weight -eq $weight -and
         $rule.Stateful -eq $false -and
         $rule.IsolationID -eq 0
 }
@@ -205,9 +215,9 @@ function Test-DenyRule($rule, [string]$direction, [int]$weight = $denyWeight) {
 
 $policyComplete =
     @($managed | Where-Object { Test-ForgejoAllowRule $_ }).Count -eq 1 -and
-    @($managed | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" }).Count -eq 1 -and
-    @($managed | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 }).Count -eq 1 -and
-    @($managed | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 }).Count -eq 1 -and
+    @($managed | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" $dhcpBroadcastWeight }).Count -eq 1 -and
+    @($managed | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 $dhcpServerOutboundWeight }).Count -eq 1 -and
+    @($managed | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 $dhcpServerInboundWeight }).Count -eq 1 -and
     @($managed | Where-Object { Test-DenyRule $_ "Outbound" }).Count -eq 1 -and
     @($managed | Where-Object { Test-DenyRule $_ "Inbound" }).Count -eq 1 -and
     $managed.Count -eq 6
@@ -258,22 +268,22 @@ if (-not $policyComplete) {
         -Direction Inbound -RemoteIPAddress "ANY" -Weight $denyWeight
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
         -Direction Outbound -RemoteIPAddress $ForgejoIpv4 -RemotePort "443" -Protocol "TCP" `
-        -Weight $allowWeight -Stateful $true -IdleSessionTimeout 3600
+        -Weight $forgejoAllowWeight -Stateful $true -IdleSessionTimeout 3600
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
         -Direction Outbound -RemoteIPAddress "255.255.255.255" -LocalPort "68" -RemotePort "67" `
-        -Protocol "UDP" -Weight $allowWeight
+        -Protocol "UDP" -Weight $dhcpBroadcastWeight
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
         -Direction Outbound -RemoteIPAddress $DhcpServerIpv4 -LocalPort "68" -RemotePort "67" `
-        -Protocol "UDP" -Weight $allowWeight
+        -Protocol "UDP" -Weight $dhcpServerOutboundWeight
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
         -Direction Inbound -RemoteIPAddress $DhcpServerIpv4 -LocalPort "68" -RemotePort "67" `
-        -Protocol "UDP" -Weight $allowWeight
+        -Protocol "UDP" -Weight $dhcpServerInboundWeight
 
     $withGuards = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
     if (@($withGuards | Where-Object { Test-ForgejoAllowRule $_ }).Count -ne 1 -or
-        @($withGuards | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" }).Count -ne 1 -or
-        @($withGuards | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 }).Count -ne 1 -or
-        @($withGuards | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" $dhcpBroadcastWeight }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 $dhcpServerOutboundWeight }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 $dhcpServerInboundWeight }).Count -ne 1 -or
         @($withGuards | Where-Object { Test-DenyRule $_ "Outbound" }).Count -ne 1 -or
         @($withGuards | Where-Object { Test-DenyRule $_ "Inbound" }).Count -ne 1) {
         throw "New runtime ACL set is incomplete; guard denies remain active."
@@ -287,9 +297,9 @@ $effective = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
 $higherPriority = @($effective | Where-Object { $_.Weight -gt $denyWeight })
 if ($higherPriority.Count -ne 4 -or
     @($higherPriority | Where-Object { Test-ForgejoAllowRule $_ }).Count -ne 1 -or
-    @($higherPriority | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" }).Count -ne 1 -or
-    @($higherPriority | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 }).Count -ne 1 -or
-    @($higherPriority | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 }).Count -ne 1) {
+    @($higherPriority | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" $dhcpBroadcastWeight }).Count -ne 1 -or
+    @($higherPriority | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 $dhcpServerOutboundWeight }).Count -ne 1 -or
+    @($higherPriority | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 $dhcpServerInboundWeight }).Count -ne 1) {
     throw "Unexpected higher-priority extended ACL could bypass or shadow the runtime policy."
 }
 if (@($effective | Where-Object { Test-DenyRule $_ "Outbound" }).Count -ne 1 -or

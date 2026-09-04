@@ -109,6 +109,10 @@ Hyper-V DHCP Guard to be `On`; the host vNIC that provides the real switch servi
 guest peer. The operator confirmation remains required because this deterministic check cannot prove
 the absence of every non-VM spoofing path in every switch implementation.
 
+Hyper-V requires each extended ACL to have a unique weight within a direction. The Forgejo allow,
+DHCP broadcast request, DHCP server request, DHCP server reply, default denies, and temporary guards
+therefore use separate reserved weights; sharing the Forgejo weight across DHCP rules is invalid.
+
 Start the VM only for the review-evidenced test matrix. Verify DHCP assigns an address and normal
 Forgejo TLS succeeds while a field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port
 other than 443, and UDP 443 all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to
