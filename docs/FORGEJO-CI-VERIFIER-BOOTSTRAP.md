@@ -53,10 +53,24 @@ confirming `-DhcpSourceSpoofingMitigated`, inventory every adapter on the manage
 that no untrusted peer can spoof the configured server address, either by using an isolated switch or
 host-owned DHCP guard/anti-spoofing controls on every non-server peer.
 
-Before runner registration, record the DHCP server identifier and lease timers and verify cold-start
-DORA, T1 unicast renewal, and T2 broadcast rebinding through the effective host ACL. The configured
-`DhcpServerIpv4` must match the actual reply source; a gateway address inferred without lease evidence
-is not sufficient.
+The production target is to record the DHCP server identifier and lease timers and verify cold-start
+DORA, T1 unicast renewal, and T2 broadcast rebinding through the effective host ACL before runner
+registration. The configured `DhcpServerIpv4` must match the actual reply source; a gateway address
+inferred without lease evidence is not sufficient.
+
+For this isolated, non-production POC only, the asset owner may explicitly accept deferral of the T1,
+T2, and host-restart proofs in the pull request that introduces the exception. Before using that
+exception, cold-start DORA, the actual server identifier and timers, Forgejo TLS, the complete negative
+egress matrix, guest-restart persistence, and the exact effective host ACL must already be recorded.
+Keep the deferred proofs tracked as hardening work. This exception does not apply to a production,
+live-building, occupied-space, or safety-critical runner. It does not permit field access, deployment
+credentials, a broader egress allow-list, a non-ephemeral runner, or instance/organization scope. The
+runtime script defaults to `RunnerRegistrationAllowed=false`. Only the asset owner may finalize the
+POC exception after verifying an `APPROVED` review tied to the exact risk-acceptance revision. Run the
+same script with all `Poc*` evidence switches, `-PocRepository "openaut/system-db"`,
+`-PocRunnerMode Ephemeral`, the approved 40-character `-PocRiskAcceptanceRevision`, and a report path.
+The script rejects a partial exception and writes `RunnerRegistrationAllowed=true` only after it also
+revalidates the exact host ACL. Preserve that report as the machine-readable exception evidence.
 
 The bootstrap stops an existing CI VM before topology inspection or ACL changes and leaves it off.
 Do not start it when adapter validation, ACL verification, or runtime network proofs fail.
@@ -119,10 +133,11 @@ field equipment. The CI runner and Forge verifier are deliberately separate iden
 ## Order of operations
 
 1. Review and merge the TLS/reverse-proxy and dedicated-CI-VM configuration.
-2. Complete openAut/main#68: apply the reviewed extended ACL policy and record positive/negative
-   runtime network proofs before and after guest and host restart.
-3. Register one repository-scoped ephemeral runner and obtain a green `case-policy` result for the
-   exact current PR head.
+2. Apply the reviewed extended ACL policy and record positive/negative runtime network proofs after a
+   guest restart. Complete openAut/main#68 before production use; the isolated POC may defer T1, T2,
+   and host-restart proofs only through the explicit risk-acceptance process above.
+3. Require a report with `RunnerRegistrationAllowed=true`, then register one repository-scoped
+   ephemeral runner and obtain a green `case-policy` result for the exact current PR head.
 4. Human reviewer approves that head; `openaut-admin` merges it.
    Before merge, the Forgejo reviews API must show `APPROVED` tied to the exact head SHA;
    `REQUEST_REVIEW` records only a pending review request and is not approval evidence.
