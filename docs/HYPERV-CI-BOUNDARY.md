@@ -116,16 +116,22 @@ therefore use separate reserved weights; sharing the Forgejo weight across DHCP 
 Start the VM only for the review-evidenced test matrix. Verify DHCP assigns an address and normal
 Forgejo TLS succeeds while a field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port
 other than 443, and UDP 443 all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to
-prove the allows and denies are host-owned. Repeat after guest restart and after a host restart.
+prove the allows and denies are host-owned. Repeat after guest restart. The production target also
+requires repetition after a host restart.
 Record the exact policy report, guest results, lease/server address, management-switch peer inventory,
-anti-spoofing evidence, and post-restart ACL output. If any negative test succeeds, stop the VM and
-keep runner registration blocked.
+anti-spoofing evidence, and the restart evidence required for the selected assurance level. If any
+negative test succeeds, stop the VM and keep runner registration blocked.
 
-DHCP proof must cover more than initial address acquisition. Record the lease's server identifier,
-T1, T2, and lifetime; confirm the packet source equals `DhcpServerIpv4`; force or observe a T1 unicast
-renewal; and observe a T2 broadcast rebinding while the runtime ACL remains active. A cold-start DORA
-success alone is insufficient. Keep runner registration blocked until renewal and rebinding retain a
-valid lease and Forgejo TLS still succeeds.
+The production target requires DHCP proof beyond initial address acquisition. Record the lease's
+server identifier, T1, T2, and lifetime; confirm the packet source equals `DhcpServerIpv4`; force or
+observe a T1 unicast renewal; and observe a T2 broadcast rebinding while the runtime ACL remains
+active. A cold-start DORA success alone is insufficient for production assurance.
+
+The isolated, non-production POC may defer T1, T2, and host-restart proofs only through the explicit
+human risk-acceptance process in `FORGEJO-CI-VERIFIER-BOOTSTRAP.md`. Cold-start DORA, the actual DHCP
+server and timers, the complete network matrix, guest-restart persistence, and exact host ACL remain
+mandatory before registration. The deferred proofs remain open hardening work and the exception must
+not be carried into a production or live-building environment.
 
 Before recording the positive result, inspect the allowed address/port from the management side and
 prove it terminates only the Forgejo TLS service, offers no forward-proxy or CONNECT behavior, and is

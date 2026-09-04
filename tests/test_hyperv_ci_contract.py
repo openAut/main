@@ -174,6 +174,11 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("actual reply source", docs)
         self.assertIn("not server authentication", docs)
         self.assertIn("host-owned DHCP guard/anti-spoofing", docs)
+        self.assertIn("isolated, non-production POC only", docs)
+        self.assertIn("explicitly accept deferral", docs)
+        self.assertIn("guest-restart persistence", docs)
+        self.assertIn("RunnerRegistrationAllowed=false", docs)
+        self.assertIn("does not permit field access", docs)
 
 
 if __name__ == "__main__":
