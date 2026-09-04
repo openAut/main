@@ -80,6 +80,7 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[string\]\$ForgejoIpv4")
         self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[string\]\$DhcpServerIpv4")
         self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[switch\]\$DedicatedForgejoEndpointConfirmed")
+        self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[switch\]\$DhcpSourceSpoofingMitigated")
         self.assertIn("tuple is dedicated to Forgejo", script)
         self.assertIn("Add-VMNetworkAdapterExtendedAcl", script)
         self.assertIn('-RemotePort "443" -Protocol "TCP"', script)
@@ -106,6 +107,12 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("-ReplaceManagedPolicy", script)
         self.assertIn("ForgejoIpv4 must not overlap denied field CIDR", script)
         self.assertIn("DhcpServerIpv4 must not overlap denied field CIDR", script)
+        self.assertIn("DhcpServerIpv4 must be a usable unicast address", script)
+        self.assertIn('$DhcpServerIpv4 -eq "255.255.255.255"', script)
+        self.assertIn("DHCP source anti-spoofing or an isolated management switch", script)
+        self.assertIn("Get-VMNetworkAdapter -All", script)
+        self.assertIn('$_.DhcpGuard -ne "On"', script)
+        self.assertIn("Management-switch VM peers lack DHCP Guard", script)
         self.assertIn("Guard denies are not effective", script)
         self.assertIn("@($DeniedFieldCidrs).Count -eq 0", script)
         self.assertIn("$outboundGuards.Count -eq 0", script)
@@ -162,6 +169,8 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("T1 unicast renewal", docs)
         self.assertIn("T2 broadcast rebinding", docs)
         self.assertIn("actual reply source", docs)
+        self.assertIn("not server authentication", docs)
+        self.assertIn("host-owned DHCP guard/anti-spoofing", docs)
 
 
 if __name__ == "__main__":

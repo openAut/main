@@ -48,6 +48,11 @@ removed before this policy is applied. Install a static Forgejo hostname mapping
 synchronization during provisioning because runtime DNS/NTP are not allowed. Changing either exact
 management destination requires a reviewed `-ReplaceManagedPolicy` execution.
 
+The DHCP inbound exception is stateless source-/port filtering, not server authentication. Before
+confirming `-DhcpSourceSpoofingMitigated`, inventory every adapter on the management switch and prove
+that no untrusted peer can spoof the configured server address, either by using an isolated switch or
+host-owned DHCP guard/anti-spoofing controls on every non-server peer.
+
 Before runner registration, record the DHCP server identifier and lease timers and verify cold-start
 DORA, T1 unicast renewal, and T2 broadcast rebinding through the effective host ACL. The configured
 `DhcpServerIpv4` must match the actual reply source; a gateway address inferred without lease evidence

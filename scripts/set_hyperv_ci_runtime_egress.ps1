@@ -12,6 +12,9 @@ param(
     [Parameter(Mandatory)]
     [switch]$DedicatedForgejoEndpointConfirmed,
 
+    [Parameter(Mandatory)]
+    [switch]$DhcpSourceSpoofingMitigated,
+
     [string]$VmName = "openaut-ci",
     [string]$ManagementAdapterName = "management",
     [string]$ReportPath,
@@ -33,12 +36,23 @@ if (-not [System.Net.IPAddress]::TryParse($DhcpServerIpv4, [ref]$parsedDhcpServe
     $DhcpServerIpv4 -ne $parsedDhcpServerIp.ToString()) {
     throw "DhcpServerIpv4 must be one canonical IPv4 host address, not a hostname or CIDR."
 }
+$dhcpOctets = $parsedDhcpServerIp.GetAddressBytes()
+if ($DhcpServerIpv4 -eq "0.0.0.0" -or
+    $DhcpServerIpv4 -eq "255.255.255.255" -or
+    $dhcpOctets[0] -eq 127 -or
+    ($dhcpOctets[0] -eq 169 -and $dhcpOctets[1] -eq 254) -or
+    $dhcpOctets[0] -ge 224) {
+    throw "DhcpServerIpv4 must be a usable unicast address."
+}
 if (@($DeniedFieldCidrs).Count -eq 0 -or
     @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
     throw "At least one field CIDR is required."
 }
 if (-not $DedicatedForgejoEndpointConfirmed) {
     throw "The operator must confirm that the allowed IPv4/TCP 443 tuple is dedicated to Forgejo."
+}
+if (-not $DhcpSourceSpoofingMitigated) {
+    throw "The operator must confirm DHCP source anti-spoofing or an isolated management switch."
 }
 $reportParent = $null
 if ($ReportPath) {
@@ -106,6 +120,16 @@ if ($adapters.Count -ne 1 -or $adapters[0].Name -ne $ManagementAdapterName) {
     throw "$VmName must have exactly one adapter named '$ManagementAdapterName'."
 }
 $managementNic = $adapters[0]
+$managementPeers = @(Get-VMNetworkAdapter -All | Where-Object {
+    $_.SwitchName -eq $managementNic.SwitchName -and
+    -not [string]::IsNullOrEmpty($_.VMName) -and
+    $_.VMName -ne $VmName
+})
+$unprotectedDhcpPeers = @($managementPeers | Where-Object { $_.DhcpGuard -ne "On" })
+if ($unprotectedDhcpPeers.Count -gt 0) {
+    $peerNames = @($unprotectedDhcpPeers | ForEach-Object { "$($_.VMName)/$($_.Name)" }) -join ","
+    throw "Management-switch VM peers lack DHCP Guard: $peerNames"
+}
 
 $fieldCidrs = @($DeniedFieldCidrs | Sort-Object -Unique)
 $basicAcls = @(Get-VMNetworkAdapterAcl -VMNetworkAdapter $managementNic)
@@ -284,6 +308,8 @@ $report = [ordered]@{
     DhcpServerIpv4 = $DhcpServerIpv4
     DhcpClientPort = 68
     DhcpServerPort = 67
+    DhcpSourceSpoofingMitigated = [bool]$DhcpSourceSpoofingMitigated
+    DhcpGuardedVmPeers = @($managementPeers | ForEach-Object { "$($_.VMName)/$($_.Name)" })
     DedicatedForgejoEndpointConfirmed = [bool]$DedicatedForgejoEndpointConfirmed
     DeniedFieldCidrs = $fieldCidrs
     DefaultIpv4Outbound = "Deny"

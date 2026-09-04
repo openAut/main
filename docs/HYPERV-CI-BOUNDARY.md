@@ -65,9 +65,13 @@ Issue openAut/main#68 is implemented by a separate Hyper-V extended adapter ACL 
 ACLs are required because the basic field ACL cannot restrict protocol and port. The runtime policy
 allows one exact IPv4/TCP 443 tuple with stateful return traffic plus DHCP client traffic (UDP 68 to
 UDP 67) to the operator-supplied management-switch DHCP server and the IPv4 broadcast address. It
-then denies all other outbound IPv4 and IPv6 traffic and all unsolicited inbound traffic except the
-matching DHCP reply. DHCP is required because the Hyper-V management switch assigns a new lease after
-a cold VM start; omitting it leaves the guest without an address. This is an L3/L4 boundary, not
+then denies all other outbound IPv4 and IPv6 traffic and all unsolicited inbound traffic except a
+source-/port-filtered DHCP packet from the configured server address. This stateless ACL does not
+authenticate the server and its source address can be spoofed by another peer on the same virtual
+switch. Require either an isolated management switch with no untrusted peers or host-owned DHCP
+guard/anti-spoofing controls on every peer that is not the real DHCP service. DHCP is required because
+the Hyper-V management switch assigns a new lease after a cold VM start; omitting it leaves the guest
+without an address. This is an L3/L4 boundary, not
 service-identity enforcement: a compromised guest can address the Forgejo tuple directly. The
 endpoint must therefore be dedicated to Forgejo, not a shared TLS virtual host, forward proxy, or
 CONNECT service. A hostname is not accepted as the network allow-list: the legitimate client must
@@ -86,6 +90,7 @@ minimal policy.
   -DhcpServerIpv4 "<management-switch-dhcp-ip>" `
   -DeniedFieldCidrs "<field-cidr>" `
   -DedicatedForgejoEndpointConfirmed `
+  -DhcpSourceSpoofingMitigated `
   -ReportPath "<existing-report-directory>\openaut-ci-runtime.json"
 ```
 
@@ -99,12 +104,18 @@ repair a partial guard pair. Guards are removed only after the final deny/allow 
 script also refuses any unrecognized rule with higher priority than the default deny. It leaves the
 VM off and reports `RunnerRegistrationAllowed=false`; applying rules is not connectivity proof.
 
+For a shared management switch, the script also inventories every other VM adapter and requires
+Hyper-V DHCP Guard to be `On`; the host vNIC that provides the real switch service is not treated as a
+guest peer. The operator confirmation remains required because this deterministic check cannot prove
+the absence of every non-VM spoofing path in every switch implementation.
+
 Start the VM only for the review-evidenced test matrix. Verify DHCP assigns an address and normal
 Forgejo TLS succeeds while a field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port
 other than 443, and UDP 443 all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to
 prove the allows and denies are host-owned. Repeat after guest restart and after a host restart.
-Record the exact policy report, guest results, lease/server address, and post-restart ACL output. If
-any negative test succeeds, stop the VM and keep runner registration blocked.
+Record the exact policy report, guest results, lease/server address, management-switch peer inventory,
+anti-spoofing evidence, and post-restart ACL output. If any negative test succeeds, stop the VM and
+keep runner registration blocked.
 
 DHCP proof must cover more than initial address acquisition. Record the lease's server identifier,
 T1, T2, and lifetime; confirm the packet source equals `DhcpServerIpv4`; force or observe a T1 unicast
