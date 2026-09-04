@@ -18,7 +18,17 @@ param(
     [string]$VmName = "openaut-ci",
     [string]$ManagementAdapterName = "management",
     [string]$ReportPath,
-    [switch]$ReplaceManagedPolicy
+    [switch]$ReplaceManagedPolicy,
+    [switch]$PocRiskAcceptanceApproved,
+    [string]$PocRiskAcceptanceRevision,
+    [string]$PocRepository,
+    [ValidateSet("Ephemeral")]
+    [string]$PocRunnerMode,
+    [switch]$PocColdStartDoraVerified,
+    [switch]$PocDhcpLeaseEvidenceRecorded,
+    [switch]$PocForgejoTlsVerified,
+    [switch]$PocNegativeEgressVerified,
+    [switch]$PocGuestRestartVerified
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,6 +72,34 @@ if ($ReportPath) {
     }
     if (-not (Test-Path -LiteralPath $reportParent -PathType Container)) {
         throw "Report parent does not exist: $reportParent"
+    }
+}
+$pocParameterNames = @(
+    "PocRiskAcceptanceApproved",
+    "PocRiskAcceptanceRevision",
+    "PocRepository",
+    "PocRunnerMode",
+    "PocColdStartDoraVerified",
+    "PocDhcpLeaseEvidenceRecorded",
+    "PocForgejoTlsVerified",
+    "PocNegativeEgressVerified",
+    "PocGuestRestartVerified"
+)
+$pocExceptionRequested = @($pocParameterNames | Where-Object {
+    $PSBoundParameters.ContainsKey($_)
+}).Count -gt 0
+if ($pocExceptionRequested) {
+    if (-not $PocRiskAcceptanceApproved -or
+        $PocRiskAcceptanceRevision -notmatch "^[0-9a-f]{40}$" -or
+        $PocRepository -cne "openaut/system-db" -or
+        $PocRunnerMode -cne "Ephemeral" -or
+        -not $PocColdStartDoraVerified -or
+        -not $PocDhcpLeaseEvidenceRecorded -or
+        -not $PocForgejoTlsVerified -or
+        -not $PocNegativeEgressVerified -or
+        -not $PocGuestRestartVerified -or
+        -not $ReportPath) {
+        throw "POC registration requires approved exact-revision risk acceptance, all POC proofs, the openaut/system-db repository, Ephemeral mode, and a report path."
     }
 }
 
@@ -307,12 +345,21 @@ if (@($effective | Where-Object { Test-DenyRule $_ "Outbound" }).Count -ne 1 -or
     throw "The effective deny-by-default runtime policy is incomplete."
 }
 
+$guestNetworkProofsCompleted = $false
+$runnerRegistrationAllowed = $false
+$boundaryState = "RuntimeEgressPolicyPrepared"
+if ($pocExceptionRequested) {
+    $guestNetworkProofsCompleted = $true
+    $runnerRegistrationAllowed = $true
+    $boundaryState = "PocRunnerRegistrationApproved"
+}
+
 $report = [ordered]@{
     Name = $vm.Name
     State = [string]$vm.State
     AdapterName = $managementNic.Name
     SwitchName = $managementNic.SwitchName
-    BoundaryState = "RuntimeEgressPolicyPrepared"
+    BoundaryState = $boundaryState
     ForgejoIpv4 = $ForgejoIpv4
     ForgejoTcpPort = 443
     DhcpServerIpv4 = $DhcpServerIpv4
@@ -325,8 +372,17 @@ $report = [ordered]@{
     DefaultIpv4Outbound = "Deny"
     DefaultIpv6Outbound = "Deny"
     UnsolicitedInbound = "Deny"
-    GuestNetworkProofsCompleted = $false
-    RunnerRegistrationAllowed = $false
+    GuestNetworkProofsCompleted = $guestNetworkProofsCompleted
+    RunnerRegistrationAllowed = $runnerRegistrationAllowed
+    PocRiskAcceptanceApproved = [bool]$PocRiskAcceptanceApproved
+    PocRiskAcceptanceRevision = $PocRiskAcceptanceRevision
+    PocRepository = $PocRepository
+    PocRunnerMode = $PocRunnerMode
+    PocColdStartDoraVerified = [bool]$PocColdStartDoraVerified
+    PocDhcpLeaseEvidenceRecorded = [bool]$PocDhcpLeaseEvidenceRecorded
+    PocForgejoTlsVerified = [bool]$PocForgejoTlsVerified
+    PocNegativeEgressVerified = [bool]$PocNegativeEgressVerified
+    PocGuestRestartVerified = [bool]$PocGuestRestartVerified
     ExtendedAcls = @($effective | Sort-Object Weight -Descending | ForEach-Object {
         [ordered]@{
             Direction = [string]$_.Direction
@@ -344,4 +400,8 @@ if ($ReportPath) {
     $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
 }
 
-Write-Host "OPENAUT_CI_RUNTIME_EGRESS_PREPARED vm=$VmName state=off forgejo_tcp=443 guest_tests=pending runner_registration=blocked"
+if ($runnerRegistrationAllowed) {
+    Write-Host "OPENAUT_CI_POC_REGISTRATION_APPROVED vm=$VmName state=off repository=$PocRepository revision=$PocRiskAcceptanceRevision runner_mode=ephemeral"
+} else {
+    Write-Host "OPENAUT_CI_RUNTIME_EGRESS_PREPARED vm=$VmName state=off forgejo_tcp=443 guest_tests=pending runner_registration=blocked"
+}

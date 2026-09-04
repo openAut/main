@@ -131,7 +131,9 @@ The isolated, non-production POC may defer T1, T2, and host-restart proofs only 
 human risk-acceptance process in `FORGEJO-CI-VERIFIER-BOOTSTRAP.md`. Cold-start DORA, the actual DHCP
 server and timers, the complete network matrix, guest-restart persistence, and exact host ACL remain
 mandatory before registration. The deferred proofs remain open hardening work and the exception must
-not be carried into a production or live-building environment.
+not be carried into a production or live-building environment. Registration remains blocked until the
+asset-owner finalization produces a report with `RunnerRegistrationAllowed=true` for
+`openaut/system-db`, the exact approved risk-acceptance revision, and `Ephemeral` runner mode.
 
 Before recording the positive result, inspect the allowed address/port from the management side and
 prove it terminates only the Forgejo TLS service, offers no forward-proxy or CONNECT behavior, and is

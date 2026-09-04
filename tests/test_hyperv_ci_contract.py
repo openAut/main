@@ -155,10 +155,31 @@ class HyperVCiContractTests(unittest.TestCase):
     def test_runtime_report_keeps_registration_blocked_until_guest_proofs(self):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn('BoundaryState = "RuntimeEgressPolicyPrepared"', script)
-        self.assertIn("GuestNetworkProofsCompleted = $false", script)
-        self.assertIn("RunnerRegistrationAllowed = $false", script)
+        self.assertIn('$boundaryState = "RuntimeEgressPolicyPrepared"', script)
+        self.assertIn("$guestNetworkProofsCompleted = $false", script)
+        self.assertIn("$runnerRegistrationAllowed = $false", script)
         self.assertIn("runner_registration=blocked", script)
+
+    def test_poc_exception_is_exact_and_fail_closed(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('$PocRiskAcceptanceRevision -notmatch "^[0-9a-f]{40}$"', script)
+        self.assertIn('$PocRepository -cne "openaut/system-db"', script)
+        self.assertIn('$PocRunnerMode -cne "Ephemeral"', script)
+        for proof in (
+            "PocColdStartDoraVerified",
+            "PocDhcpLeaseEvidenceRecorded",
+            "PocForgejoTlsVerified",
+            "PocNegativeEgressVerified",
+            "PocGuestRestartVerified",
+        ):
+            self.assertIn(f"-not ${proof}", script)
+            self.assertIn(f"{proof} = [bool]${proof}", script)
+        self.assertIn("-not $ReportPath", script)
+        self.assertIn('$runnerRegistrationAllowed = $false', script)
+        self.assertIn('$runnerRegistrationAllowed = $true', script)
+        self.assertIn('BoundaryState = $boundaryState', script)
+        self.assertIn('"PocRunnerRegistrationApproved"', script)
 
     def test_runtime_docs_require_complete_network_matrix(self):
         docs = BOUNDARY.read_text(encoding="utf-8") + RUNBOOK.read_text(encoding="utf-8")
@@ -178,7 +199,12 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("explicitly accept deferral", docs)
         self.assertIn("guest-restart persistence", docs)
         self.assertIn("RunnerRegistrationAllowed=false", docs)
+        self.assertIn("RunnerRegistrationAllowed=true", docs)
         self.assertIn("does not permit field access", docs)
+        self.assertIn('PocRepository "openaut/system-db"', docs)
+        self.assertIn("PocRunnerMode Ephemeral", docs)
+        self.assertIn("exact risk-acceptance revision", docs)
+        self.assertIn("instance/organization scope", docs)
 
 
 if __name__ == "__main__":

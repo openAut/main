@@ -65,8 +65,12 @@ egress matrix, guest-restart persistence, and the exact effective host ACL must 
 Keep the deferred proofs tracked as hardening work. This exception does not apply to a production,
 live-building, occupied-space, or safety-critical runner. It does not permit field access, deployment
 credentials, a broader egress allow-list, a non-ephemeral runner, or instance/organization scope. The
-runtime script's `RunnerRegistrationAllowed=false` remains a fail-closed technical status; the reviewed
-human risk acceptance is separate evidence and must name the exact runner scope and revision.
+runtime script defaults to `RunnerRegistrationAllowed=false`. Only the asset owner may finalize the
+POC exception after verifying an `APPROVED` review tied to the exact risk-acceptance revision. Run the
+same script with all `Poc*` evidence switches, `-PocRepository "openaut/system-db"`,
+`-PocRunnerMode Ephemeral`, the approved 40-character `-PocRiskAcceptanceRevision`, and a report path.
+The script rejects a partial exception and writes `RunnerRegistrationAllowed=true` only after it also
+revalidates the exact host ACL. Preserve that report as the machine-readable exception evidence.
 
 The bootstrap stops an existing CI VM before topology inspection or ACL changes and leaves it off.
 Do not start it when adapter validation, ACL verification, or runtime network proofs fail.
@@ -132,8 +136,8 @@ field equipment. The CI runner and Forge verifier are deliberately separate iden
 2. Apply the reviewed extended ACL policy and record positive/negative runtime network proofs after a
    guest restart. Complete openAut/main#68 before production use; the isolated POC may defer T1, T2,
    and host-restart proofs only through the explicit risk-acceptance process above.
-3. Register one repository-scoped ephemeral runner and obtain a green `case-policy` result for the
-   exact current PR head.
+3. Require a report with `RunnerRegistrationAllowed=true`, then register one repository-scoped
+   ephemeral runner and obtain a green `case-policy` result for the exact current PR head.
 4. Human reviewer approves that head; `openaut-admin` merges it.
    Before merge, the Forgejo reviews API must show `APPROVED` tied to the exact head SHA;
    `REQUEST_REVIEW` records only a pending review request and is not approval evidence.
