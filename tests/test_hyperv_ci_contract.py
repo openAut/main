@@ -78,7 +78,9 @@ class HyperVCiContractTests(unittest.TestCase):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
 
         self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[string\]\$ForgejoIpv4")
+        self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[string\]\$DhcpServerIpv4")
         self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[switch\]\$DedicatedForgejoEndpointConfirmed")
+        self.assertRegex(script, r"\[Parameter\(Mandatory\)\]\s+\[switch\]\$DhcpSourceSpoofingMitigated")
         self.assertIn("tuple is dedicated to Forgejo", script)
         self.assertIn("Add-VMNetworkAdapterExtendedAcl", script)
         self.assertIn('-RemotePort "443" -Protocol "TCP"', script)
@@ -104,10 +106,28 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("Unexpected higher-priority extended ACL", script)
         self.assertIn("-ReplaceManagedPolicy", script)
         self.assertIn("ForgejoIpv4 must not overlap denied field CIDR", script)
+        self.assertIn("DhcpServerIpv4 must not overlap denied field CIDR", script)
+        self.assertIn("DhcpServerIpv4 must be a usable unicast address", script)
+        self.assertIn('$DhcpServerIpv4 -eq "255.255.255.255"', script)
+        self.assertIn("DHCP source anti-spoofing or an isolated management switch", script)
+        self.assertIn("Get-VMNetworkAdapter -All", script)
+        self.assertIn('$_.DhcpGuard -ne "On"', script)
+        self.assertIn("Management-switch VM peers lack DHCP Guard", script)
         self.assertIn("Guard denies are not effective", script)
         self.assertIn("@($DeniedFieldCidrs).Count -eq 0", script)
         self.assertIn("$outboundGuards.Count -eq 0", script)
         self.assertIn("$inboundGuards.Count -eq 0", script)
+
+    def test_runtime_policy_allows_only_explicit_dhcp_exchange(self):
+        script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('Test-DhcpRule $_ "Outbound" "255.255.255.255"', script)
+        self.assertIn('Test-DhcpRule $_ "Outbound" $DhcpServerIpv4', script)
+        self.assertIn('Test-DhcpRule $_ "Inbound" $DhcpServerIpv4', script)
+        self.assertIn('$rule.LocalPort -eq "68"', script)
+        self.assertIn('$rule.RemotePort -eq "67"', script)
+        self.assertIn('$rule.Protocol -eq "UDP"', script)
+        self.assertIn("$higherPriority.Count -ne 4", script)
 
     def test_runtime_report_path_is_validated_before_acl_changes(self):
         script = RUNTIME_SCRIPT.read_text(encoding="utf-8")
@@ -146,6 +166,11 @@ class HyperVCiContractTests(unittest.TestCase):
         self.assertIn("Get-VMNetworkAdapterExtendedAcl", docs)
         self.assertIn("static hostname mapping", docs)
         self.assertIn("runtime DNS and NTP are intentionally not allowed", docs)
+        self.assertIn("T1 unicast renewal", docs)
+        self.assertIn("T2 broadcast rebinding", docs)
+        self.assertIn("actual reply source", docs)
+        self.assertIn("not server authentication", docs)
+        self.assertIn("host-owned DHCP guard/anti-spoofing", docs)
 
 
 if __name__ == "__main__":

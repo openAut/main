@@ -4,10 +4,16 @@ param(
     [string]$ForgejoIpv4,
 
     [Parameter(Mandatory)]
+    [string]$DhcpServerIpv4,
+
+    [Parameter(Mandatory)]
     [string[]]$DeniedFieldCidrs,
 
     [Parameter(Mandatory)]
     [switch]$DedicatedForgejoEndpointConfirmed,
+
+    [Parameter(Mandatory)]
+    [switch]$DhcpSourceSpoofingMitigated,
 
     [string]$VmName = "openaut-ci",
     [string]$ManagementAdapterName = "management",
@@ -24,12 +30,29 @@ if (-not [System.Net.IPAddress]::TryParse($ForgejoIpv4, [ref]$parsedForgejoIp) -
     $ForgejoIpv4 -ne $parsedForgejoIp.ToString()) {
     throw "ForgejoIpv4 must be one canonical IPv4 host address, not a hostname or CIDR."
 }
+$parsedDhcpServerIp = [System.Net.IPAddress]::None
+if (-not [System.Net.IPAddress]::TryParse($DhcpServerIpv4, [ref]$parsedDhcpServerIp) -or
+    $parsedDhcpServerIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork -or
+    $DhcpServerIpv4 -ne $parsedDhcpServerIp.ToString()) {
+    throw "DhcpServerIpv4 must be one canonical IPv4 host address, not a hostname or CIDR."
+}
+$dhcpOctets = $parsedDhcpServerIp.GetAddressBytes()
+if ($DhcpServerIpv4 -eq "0.0.0.0" -or
+    $DhcpServerIpv4 -eq "255.255.255.255" -or
+    $dhcpOctets[0] -eq 127 -or
+    ($dhcpOctets[0] -eq 169 -and $dhcpOctets[1] -eq 254) -or
+    $dhcpOctets[0] -ge 224) {
+    throw "DhcpServerIpv4 must be a usable unicast address."
+}
 if (@($DeniedFieldCidrs).Count -eq 0 -or
     @($DeniedFieldCidrs | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
     throw "At least one field CIDR is required."
 }
 if (-not $DedicatedForgejoEndpointConfirmed) {
     throw "The operator must confirm that the allowed IPv4/TCP 443 tuple is dedicated to Forgejo."
+}
+if (-not $DhcpSourceSpoofingMitigated) {
+    throw "The operator must confirm DHCP source anti-spoofing or an isolated management switch."
 }
 $reportParent = $null
 if ($ReportPath) {
@@ -48,6 +71,7 @@ function Convert-Ipv4ToUInt32([System.Net.IPAddress]$address) {
 }
 
 $forgejoValue = Convert-Ipv4ToUInt32 $parsedForgejoIp
+$dhcpServerValue = Convert-Ipv4ToUInt32 $parsedDhcpServerIp
 foreach ($cidr in $DeniedFieldCidrs) {
     if ($cidr -notmatch "^([^/]+)/([0-9]|[12][0-9]|3[0-2])$") {
         throw "DeniedFieldCidrs must contain canonical IPv4 CIDRs."
@@ -69,6 +93,9 @@ foreach ($cidr in $DeniedFieldCidrs) {
     }
     if (($forgejoValue -band $mask) -eq $networkValue) {
         throw "ForgejoIpv4 must not overlap denied field CIDR '$cidr'."
+    }
+    if (($dhcpServerValue -band $mask) -eq $networkValue) {
+        throw "DhcpServerIpv4 must not overlap denied field CIDR '$cidr'."
     }
 }
 if (-not (Get-Command Add-VMNetworkAdapterExtendedAcl -ErrorAction SilentlyContinue)) {
@@ -93,6 +120,16 @@ if ($adapters.Count -ne 1 -or $adapters[0].Name -ne $ManagementAdapterName) {
     throw "$VmName must have exactly one adapter named '$ManagementAdapterName'."
 }
 $managementNic = $adapters[0]
+$managementPeers = @(Get-VMNetworkAdapter -All | Where-Object {
+    $_.SwitchName -eq $managementNic.SwitchName -and
+    -not [string]::IsNullOrEmpty($_.VMName) -and
+    $_.VMName -ne $VmName
+})
+$unprotectedDhcpPeers = @($managementPeers | Where-Object { $_.DhcpGuard -ne "On" })
+if ($unprotectedDhcpPeers.Count -gt 0) {
+    $peerNames = @($unprotectedDhcpPeers | ForEach-Object { "$($_.VMName)/$($_.Name)" }) -join ","
+    throw "Management-switch VM peers lack DHCP Guard: $peerNames"
+}
 
 $fieldCidrs = @($DeniedFieldCidrs | Sort-Object -Unique)
 $basicAcls = @(Get-VMNetworkAdapterAcl -VMNetworkAdapter $managementNic)
@@ -126,7 +163,7 @@ function Test-AnySelector($value) {
     return [string]::IsNullOrEmpty([string]$value) -or [string]$value -eq "ANY"
 }
 
-function Test-AllowRule($rule) {
+function Test-ForgejoAllowRule($rule) {
     return $rule.Action -eq "Allow" -and
         $rule.Direction -eq "Outbound" -and
         (Test-AnySelector $rule.LocalIPAddress) -and
@@ -137,6 +174,19 @@ function Test-AllowRule($rule) {
         $rule.Weight -eq $allowWeight -and
         $rule.Stateful -eq $true -and
         $rule.IdleSessionTimeout -eq 3600 -and
+        $rule.IsolationID -eq 0
+}
+
+function Test-DhcpRule($rule, [string]$direction, [string]$remoteAddress) {
+    return $rule.Action -eq "Allow" -and
+        $rule.Direction -eq $direction -and
+        (Test-AnySelector $rule.LocalIPAddress) -and
+        $rule.RemoteIPAddress -eq $remoteAddress -and
+        $rule.LocalPort -eq "68" -and
+        $rule.RemotePort -eq "67" -and
+        $rule.Protocol -eq "UDP" -and
+        $rule.Weight -eq $allowWeight -and
+        $rule.Stateful -eq $false -and
         $rule.IsolationID -eq 0
 }
 
@@ -154,10 +204,13 @@ function Test-DenyRule($rule, [string]$direction, [int]$weight = $denyWeight) {
 }
 
 $policyComplete =
-    @($managed | Where-Object { Test-AllowRule $_ }).Count -eq 1 -and
+    @($managed | Where-Object { Test-ForgejoAllowRule $_ }).Count -eq 1 -and
+    @($managed | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" }).Count -eq 1 -and
+    @($managed | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 }).Count -eq 1 -and
+    @($managed | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 }).Count -eq 1 -and
     @($managed | Where-Object { Test-DenyRule $_ "Outbound" }).Count -eq 1 -and
     @($managed | Where-Object { Test-DenyRule $_ "Inbound" }).Count -eq 1 -and
-    $managed.Count -eq 3
+    $managed.Count -eq 6
 
 if (-not $policyComplete -and $managed.Count -gt 0 -and -not $ReplaceManagedPolicy) {
     throw "Managed runtime ACL weights already contain a different or partial policy; use -ReplaceManagedPolicy after review."
@@ -206,9 +259,21 @@ if (-not $policyComplete) {
     Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
         -Direction Outbound -RemoteIPAddress $ForgejoIpv4 -RemotePort "443" -Protocol "TCP" `
         -Weight $allowWeight -Stateful $true -IdleSessionTimeout 3600
+    Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
+        -Direction Outbound -RemoteIPAddress "255.255.255.255" -LocalPort "68" -RemotePort "67" `
+        -Protocol "UDP" -Weight $allowWeight
+    Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
+        -Direction Outbound -RemoteIPAddress $DhcpServerIpv4 -LocalPort "68" -RemotePort "67" `
+        -Protocol "UDP" -Weight $allowWeight
+    Add-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic -Action Allow `
+        -Direction Inbound -RemoteIPAddress $DhcpServerIpv4 -LocalPort "68" -RemotePort "67" `
+        -Protocol "UDP" -Weight $allowWeight
 
     $withGuards = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
-    if (@($withGuards | Where-Object { Test-AllowRule $_ }).Count -ne 1 -or
+    if (@($withGuards | Where-Object { Test-ForgejoAllowRule $_ }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 }).Count -ne 1 -or
+        @($withGuards | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 }).Count -ne 1 -or
         @($withGuards | Where-Object { Test-DenyRule $_ "Outbound" }).Count -ne 1 -or
         @($withGuards | Where-Object { Test-DenyRule $_ "Inbound" }).Count -ne 1) {
         throw "New runtime ACL set is incomplete; guard denies remain active."
@@ -220,7 +285,11 @@ if (-not $policyComplete) {
 
 $effective = @(Get-VMNetworkAdapterExtendedAcl -VMNetworkAdapter $managementNic)
 $higherPriority = @($effective | Where-Object { $_.Weight -gt $denyWeight })
-if ($higherPriority.Count -ne 1 -or -not (Test-AllowRule $higherPriority[0])) {
+if ($higherPriority.Count -ne 4 -or
+    @($higherPriority | Where-Object { Test-ForgejoAllowRule $_ }).Count -ne 1 -or
+    @($higherPriority | Where-Object { Test-DhcpRule $_ "Outbound" "255.255.255.255" }).Count -ne 1 -or
+    @($higherPriority | Where-Object { Test-DhcpRule $_ "Outbound" $DhcpServerIpv4 }).Count -ne 1 -or
+    @($higherPriority | Where-Object { Test-DhcpRule $_ "Inbound" $DhcpServerIpv4 }).Count -ne 1) {
     throw "Unexpected higher-priority extended ACL could bypass or shadow the runtime policy."
 }
 if (@($effective | Where-Object { Test-DenyRule $_ "Outbound" }).Count -ne 1 -or
@@ -236,6 +305,11 @@ $report = [ordered]@{
     BoundaryState = "RuntimeEgressPolicyPrepared"
     ForgejoIpv4 = $ForgejoIpv4
     ForgejoTcpPort = 443
+    DhcpServerIpv4 = $DhcpServerIpv4
+    DhcpClientPort = 68
+    DhcpServerPort = 67
+    DhcpSourceSpoofingMitigated = [bool]$DhcpSourceSpoofingMitigated
+    DhcpGuardedVmPeers = @($managementPeers | ForEach-Object { "$($_.VMName)/$($_.Name)" })
     DedicatedForgejoEndpointConfirmed = [bool]$DedicatedForgejoEndpointConfirmed
     DeniedFieldCidrs = $fieldCidrs
     DefaultIpv4Outbound = "Deny"
