@@ -39,13 +39,19 @@ engine because compromise is then bounded to that dedicated VM.
 
 The reviewed runtime implementation is
 [`set_hyperv_ci_runtime_egress.ps1`](../scripts/set_hyperv_ci_runtime_egress.ps1). It uses Hyper-V
-extended adapter ACLs outside the guest: one dedicated Forgejo IPv4/TCP 443 tuple is the sole runtime
-allow, while all other IPv4/IPv6 egress and unsolicited ingress are denied. Confirm that this tuple is
-not a shared virtual host, forward proxy, or CONNECT service. Do not substitute basic adapter ACLs, a
-guest firewall, a hostname wildcard, or a broad management subnet allow. Provisioning access must be
+extended adapter ACLs outside the guest: one dedicated Forgejo IPv4/TCP 443 tuple and narrowly scoped
+DHCP client exchange with the explicit management-switch DHCP server are the only runtime allows.
+All other IPv4/IPv6 egress and unsolicited ingress are denied. Confirm that the Forgejo tuple is not a
+shared virtual host, forward proxy, or CONNECT service. Do not substitute basic adapter ACLs, a guest
+firewall, a hostname wildcard, or a broad management subnet allow. Provisioning access must be
 removed before this policy is applied. Install a static Forgejo hostname mapping and verify clock
-synchronization during provisioning because runtime DNS/NTP are not allowed. Changing the exact
-destination requires a reviewed `-ReplaceManagedPolicy` execution.
+synchronization during provisioning because runtime DNS/NTP are not allowed. Changing either exact
+management destination requires a reviewed `-ReplaceManagedPolicy` execution.
+
+Before runner registration, record the DHCP server identifier and lease timers and verify cold-start
+DORA, T1 unicast renewal, and T2 broadcast rebinding through the effective host ACL. The configured
+`DhcpServerIpv4` must match the actual reply source; a gateway address inferred without lease evidence
+is not sufficient.
 
 The bootstrap stops an existing CI VM before topology inspection or ACL changes and leaves it off.
 Do not start it when adapter validation, ACL verification, or runtime network proofs fail.

@@ -63,12 +63,16 @@ human-generated secret that is never committed or passed to an Engineer.
 
 Issue openAut/main#68 is implemented by a separate Hyper-V extended adapter ACL policy. Extended
 ACLs are required because the basic field ACL cannot restrict protocol and port. The runtime policy
-allows one exact IPv4/TCP 443 tuple with stateful return traffic, then denies all other outbound IPv4
-and IPv6 traffic and all unsolicited inbound traffic. This is an L3/L4 boundary, not service-identity
-enforcement: a compromised guest can address the tuple directly. The endpoint must therefore be
-dedicated to Forgejo, not a shared TLS virtual host, forward proxy, or CONNECT service. A hostname is
-not accepted as the network allow-list: the legitimate client must resolve the expected Forgejo TLS
-hostname to the operator-supplied address and validate it through the normal certificate chain.
+allows one exact IPv4/TCP 443 tuple with stateful return traffic plus DHCP client traffic (UDP 68 to
+UDP 67) to the operator-supplied management-switch DHCP server and the IPv4 broadcast address. It
+then denies all other outbound IPv4 and IPv6 traffic and all unsolicited inbound traffic except the
+matching DHCP reply. DHCP is required because the Hyper-V management switch assigns a new lease after
+a cold VM start; omitting it leaves the guest without an address. This is an L3/L4 boundary, not
+service-identity enforcement: a compromised guest can address the Forgejo tuple directly. The
+endpoint must therefore be dedicated to Forgejo, not a shared TLS virtual host, forward proxy, or
+CONNECT service. A hostname is not accepted as the network allow-list: the legitimate client must
+resolve the expected Forgejo TLS hostname to the operator-supplied address and validate it through the
+normal certificate chain.
 
 Apply only after the Forgejo address is stable, its CA is installed in the guest, and a release-
 authority-owned static hostname mapping resolves the TLS name to that exact address. Synchronize and
@@ -79,26 +83,34 @@ minimal policy.
 .\scripts\set_hyperv_ci_runtime_egress.ps1 `
   -VmName openaut-ci `
   -ForgejoIpv4 "<exact-forgejo-management-ip>" `
+  -DhcpServerIpv4 "<management-switch-dhcp-ip>" `
   -DeniedFieldCidrs "<field-cidr>" `
   -DedicatedForgejoEndpointConfirmed `
   -ReportPath "<existing-report-directory>\openaut-ci-runtime.json"
 ```
 
 The script stops the VM before inspection, requires the basic inbound/outbound field denies from the
-bootstrap, rejects a Forgejo address inside a denied field CIDR, and reserves high ACL weights for the
-managed runtime policy. It refuses a partial or changed policy unless `-ReplaceManagedPolicy` is
+bootstrap, rejects a Forgejo or DHCP-server address inside a denied field CIDR, and reserves high ACL
+weights for the managed runtime policy. It refuses a partial or changed policy unless
+`-ReplaceManagedPolicy` is
 explicitly supplied after review. A replacement first installs still-higher temporary inbound and
 outbound guard denies; they remain if any later operation fails and a later reviewed replacement can
 repair a partial guard pair. Guards are removed only after the final deny/allow set is complete. The
 script also refuses any unrecognized rule with higher priority than the default deny. It leaves the
 VM off and reports `RunnerRegistrationAllowed=false`; applying rules is not connectivity proof.
 
-Start the VM only for the review-evidenced test matrix. Verify normal Forgejo TLS succeeds while a
-field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port other than 443, and UDP 443
-all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to prove the allow and denies
-are host-owned. Repeat after guest restart and after a host restart. Record the exact policy report,
-guest results, and post-restart ACL output. If any negative test succeeds, stop the VM and keep runner
-registration blocked.
+Start the VM only for the review-evidenced test matrix. Verify DHCP assigns an address and normal
+Forgejo TLS succeeds while a field target, arbitrary public IPv4 target, IPv6 target, Forgejo TCP port
+other than 443, and UDP 443 all fail. Inspect `Get-VMNetworkAdapterExtendedAcl -VMName openaut-ci` to
+prove the allows and denies are host-owned. Repeat after guest restart and after a host restart.
+Record the exact policy report, guest results, lease/server address, and post-restart ACL output. If
+any negative test succeeds, stop the VM and keep runner registration blocked.
+
+DHCP proof must cover more than initial address acquisition. Record the lease's server identifier,
+T1, T2, and lifetime; confirm the packet source equals `DhcpServerIpv4`; force or observe a T1 unicast
+renewal; and observe a T2 broadcast rebinding while the runtime ACL remains active. A cold-start DORA
+success alone is insufficient. Keep runner registration blocked until renewal and rebinding retain a
+valid lease and Forgejo TLS still succeeds.
 
 Before recording the positive result, inspect the allowed address/port from the management side and
 prove it terminates only the Forgejo TLS service, offers no forward-proxy or CONNECT behavior, and is
