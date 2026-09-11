@@ -2,9 +2,21 @@
 
 This runbook captures lessons from physical integrations in an isolated POC. Apply it with
 [`engineer-integration`](../skills/engineer-integration/SKILL.md), the selected protocol skill,
-and the applicable case and approval process. The three trust domains remain separate hosts;
+and the applicable case and approval process. The three trust domains use separate hosts in this lab;
 deployment is Engineer work, never a direct Teams-to-SSH path. The POC must not connect to a live
 building, occupied space, or safety-critical equipment.
+
+## Proportionate POC scope
+
+For this isolated lab, a lightweight local case, explicit operator confirmation, pinned/hash-checked
+artifacts, verification and rollback are sufficient for the described experiments. Separate hosts
+describe the lab topology; the trust-domain identities and permissions remain distinct.
+
+This lab exception is not an alternative production delivery path. Under
+[ADR 0001](adr/0001-delivery-and-trust-model.md), persistent delivery across the production air gap
+uses only the reviewed, pinned, self-contained signed Main release with SBOM. Dependency material
+comes from the verified `refresh` cache and is included by `build` in that release. Standalone vendor
+staging below is an isolated POC procedure; these tools do not implement release attestation.
 
 ## Commissioning sequence
 
@@ -83,13 +95,17 @@ is recovery evidence, not proof that the underlying adapter fault has been fixed
 
 The public reference publisher already creates `event_id` before spooling, and ingest deduplicates
 on `(ts, node, event_id)`. Apply the same rule to every equipment-specific bridge: generate one
-random 32-character lowercase hexadecimal ID per newly created event, store the complete payload,
+cryptographically generated 32-character lowercase hexadecimal ID per newly created event (for
+example `secrets.token_hex(16)`; the existing publisher uses OS-random `uuid.uuid4().hex`), store the
+complete payload,
 and replay its original bytes after reconnect or process restart. Do not regenerate IDs during
 queue draining or derive them from timestamp/value, which can collapse distinct observations.
 
-Legacy events without IDs remain compatible but are not deduplicated. Database conflict handling
-requires only column-level SELECT on the conflict key in addition to INSERT. Preserve that narrow
-permission in both initialization and existing-volume migrations.
+Legacy events without IDs remain compatible but are not deduplicated. For the reference ingest's
+explicit `ON CONFLICT (ts, node, event_id) DO NOTHING` statement, the tested PostgreSQL 16/TimescaleDB
+configuration uses INSERT plus column-level SELECT on that conflict key. Preserve those tested
+permissions in initialization and existing-volume migrations; do not infer table-wide SELECT or
+UPDATE privileges from this example. Reverify permissions if the SQL statement changes.
 
 PUBACK proves broker receipt, not database commit. Event deduplication does not by itself make the
 entire chain exactly-once or lossless; ingest failure, broker persistence and bounded-queue overflow
@@ -114,3 +130,4 @@ and unresolved faults. Keep dated reports separate from living capability guidan
 approval or test is not evidence of public pre-merge review.
 
 See the [sanitized physical POC report](verification/physical-edge-integrations-2026-09-11.md).
+The next experiments use the [small recovery test matrix](EDGE-POC-RECOVERY-TESTS.md).
