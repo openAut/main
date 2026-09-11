@@ -168,6 +168,11 @@ must never be activated by extending this point map.
 
 ## Step 5 — Store-and-forward buffering
 
+Equipment-specific bridges can reuse the opt-in
+[reliability reference tools](../../docs/EDGE-RELIABILITY-TOOLS.md) for independent offline vendor
+artifacts and target import verification. These tools do not change this installer's venv contract
+or implement the generic field-reader stub; adopting them requires an explicit deployment artifact.
+
 `edge_agent.py` assigns a stable `event_id` and persists each reading to SQLite **before** publishing
 with QoS 1. It removes a row only
 after Paho receives the broker's PUBACK. `connect_async()` and bounded reconnect delays retry the
