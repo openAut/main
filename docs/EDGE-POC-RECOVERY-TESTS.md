@@ -33,8 +33,10 @@ not justify quietly widening permissions or adding infrastructure during the tes
 ## Separate physical follow-up
 
 After the synthetic tests, confirm a reversible serial disconnect on the isolated RTU test rig.
-Use the existing 15-second polling schedule and a 60-second stale threshold; disconnect for 60
-seconds. Require a recorded field fault/stale indication, bounded transport close/reopen, and a
+Use the existing 15-second polling schedule; stale means last-success age strictly greater than
+60 seconds (`> 60 s`). Disconnect for 90 seconds and require stale to be observed and logged before
+restoration. If it is not observed, restore at 90 seconds and mark that criterion failed rather
+than extending the outage indefinitely. Require bounded transport close/reopen and a
 valid FC04 response within 90 seconds after restoration without a process restart. Verify sibling
 service health, management access, fresh timestamps and draining spool. Restore the connection and,
 if automatic recovery fails, use the case's controlled service restart as rollback, recording the

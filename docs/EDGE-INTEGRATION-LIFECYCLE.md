@@ -106,6 +106,9 @@ explicit `ON CONFLICT (ts, node, event_id) DO NOTHING` statement, the tested Pos
 configuration uses INSERT plus column-level SELECT on that conflict key. Preserve those tested
 permissions in initialization and existing-volume migrations; do not infer table-wide SELECT or
 UPDATE privileges from this example. Reverify permissions if the SQL statement changes.
+PostgreSQL 16's [INSERT reference](https://www.postgresql.org/docs/16/sql-insert.html), under
+`index_column_name`, explicitly states: "SELECT privilege on index_column_name is required."
+This applies to our explicit conflict target even with `DO NOTHING`; it is not a `DO UPDATE` grant.
 
 PUBACK proves broker receipt, not database commit. Event deduplication does not by itself make the
 entire chain exactly-once or lossless; ingest failure, broker persistence and bounded-queue overflow
