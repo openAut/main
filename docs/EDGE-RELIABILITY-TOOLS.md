@@ -31,6 +31,8 @@ python scripts/build_edge_vendor.py requirements.lock /approved/wheelhouse /stag
 
 The lock must contain reviewed exact pins and SHA-256 hashes. The wheelhouse must contain only
 portable `py3-none-any` wheels; native dependencies require a separately reviewed target-ABI build.
+The builder checks WHEEL metadata (`Root-Is-Purelib` and `Tag`) and rejects common native-library
+and executable suffixes. This catches mislabeled wheels; it is not a general package safety scan.
 The builder runs pip under isolated Python, with no index, required hashes, no compilation, and
 refuses an existing output. A failed build cannot replace the old runtime. Pin the Python/pip build environment and
 record the lock and delivered artifact hashes with the case.

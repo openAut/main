@@ -87,3 +87,47 @@ class EdgeVendorTests(unittest.TestCase):
             lock.write_text("probe @ https://example.invalid/probe.whl\n")
             with self.assertRaises(ValueError):
                 BUILDER.build(lock, root, root / "vendor")
+
+    def test_mislabeled_wheels_are_rejected_before_pip(self):
+        cases = [
+            ("true", "py3-none-any", "probe/native.so"),
+            ("true", "py3-none-any", "probe/native.PYD"),
+            ("true", "py3-none-any", "probe/native.dll"),
+            ("false", "py3-none-any", None),
+            ("true", "cp312-cp312-linux_x86_64", None),
+        ]
+        for pure, tag, native in cases:
+            with self.subTest(pure=pure, tag=tag, native=native), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                wheel = root / "probe-1.0-py3-none-any.whl"
+                with zipfile.ZipFile(wheel, "w") as archive:
+                    archive.writestr("probe-1.0.dist-info/WHEEL",
+                                     f"Wheel-Version: 1.0\nRoot-Is-Purelib: {pure}\nTag: {tag}\n")
+                    if native:
+                        archive.writestr(native, b"native placeholder")
+                lock = root / "requirements.lock"
+                lock.write_text("probe==1.0 --hash=sha256:" + hashlib.sha256(wheel.read_bytes()).hexdigest())
+                with patch.object(BUILDER.subprocess, "run") as pip:
+                    with self.assertRaises(ValueError):
+                        BUILDER.build(lock, root, root / "vendor")
+                    pip.assert_not_called()
+                self.assertFalse((root / "vendor").exists())
+
+    def test_symlink_vendor_root_is_rejected_in_both_cli_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            vendor, link = root / "vendor", root / "vendor-link"
+            vendor.mkdir()
+            (vendor / "edge_probe.py").write_text("VALUE = 1\n")
+            try:
+                link.symlink_to(vendor, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"directory symlinks unavailable: {exc}")
+            for flags in ([], ["-I", "-S"]):
+                with self.subTest(flags=flags):
+                    result = subprocess.run(
+                        [sys.executable, *flags, str(VERIFY), str(link), "edge_probe"],
+                        capture_output=True, text=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("vendor root must not be a symlink", result.stderr)

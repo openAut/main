@@ -9,7 +9,10 @@ import sys
 
 
 def verify(vendor, modules):
-    vendor = Path(vendor).resolve(strict=True)
+    vendor = Path(vendor)
+    if vendor.is_symlink():
+        raise ValueError("vendor root must not be a symlink")
+    vendor = vendor.resolve(strict=True)
     if not vendor.is_dir() or any(p.is_symlink() for p in vendor.rglob("*")):
         raise ValueError("vendor must be an independent directory without symlinks")
     if not (sys.flags.isolated and sys.flags.no_site):
@@ -31,7 +34,7 @@ def main():
     if not (sys.flags.isolated and sys.flags.no_site):
         result = subprocess.run([
             sys.executable, "-I", "-S", str(Path(__file__).resolve()),
-            str(Path(args.vendor).resolve()), *args.modules,
+            str(Path(args.vendor).absolute()), *args.modules,
         ])
         raise SystemExit(result.returncode)
     verify(args.vendor, args.modules)
