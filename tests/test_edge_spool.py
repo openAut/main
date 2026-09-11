@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import queue
 import sqlite3
@@ -28,6 +29,46 @@ def memory_spool():
 
 
 class EdgeSpoolTests(unittest.TestCase):
+    def test_event_id_and_legacy_payload_survive_failed_publish_and_spool_reopen(self):
+        edge = load_edge()
+        payloads = [
+            json.dumps({"event_id": "0123456789abcdef0123456789abcdef", "ts": 1700000000, "value": 21.5}),
+            json.dumps({"ts": 1700000001, "value": 21.6}),
+        ]
+
+        class Client:
+            def __init__(self, rc):
+                self.rc = rc
+                self.published = []
+
+            def publish(self, topic, payload, qos):
+                self.published.append((topic, payload, qos))
+                return type("Info", (), {"rc": self.rc, "mid": len(self.published)})()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            edge.SPOOL = str(Path(temporary) / "spool.sqlite")
+            db = edge.spool_db()
+            for body in payloads:
+                edge.spool_payload(db, "openaut/lab/edge/ahu/temp", body)
+            failed = Client(1)
+            edge.drain(failed, db, {})
+            self.assertEqual(db.execute("SELECT count(*) FROM q").fetchone()[0], 2)
+            db.close()
+            db = edge.spool_db()
+            try:
+                replay = Client(0)
+                inflight = {}
+                edge.drain(replay, db, inflight)
+                self.assertEqual([row[1] for row in replay.published], payloads)
+                self.assertEqual(db.execute("SELECT count(*) FROM q").fetchone()[0], 2)
+                events = queue.SimpleQueue()
+                for mid in tuple(inflight):
+                    events.put(("ack", mid))
+                edge.process_events(db, inflight, events)
+                self.assertEqual(db.execute("SELECT count(*) FROM q").fetchone()[0], 0)
+            finally:
+                db.close()
+
     def test_spool_payload_caps_rows(self):
         edge = load_edge()
         db = memory_spool()

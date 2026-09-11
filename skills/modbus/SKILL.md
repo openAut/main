@@ -68,6 +68,10 @@ not prove complete or fresh field data.
 
 ## Tips & troubleshooting
 
+For a bounded FC04-only adapter pattern with separate field health and exception-triggered reopen,
+see [read-only reliability](references/readonly-reliability.md). It is opt-in and unit-tested;
+the generic edge scaffold is not automatically connected to it.
+
 - **Timeouts (RTU):** baud/parity mismatch, wrong slave id, A/B wiring swapped, missing termination.
 - **Wrong numbers:** off-by-one addressing (1-based map vs 0-based API), or word order on 32-bit.
 - **Gateway devices:** one IP, many unit ids — don't assume unit 1.
