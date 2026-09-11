@@ -1,11 +1,8 @@
 ---
 name: nemoclaw-agent-workflow
 description: Define the three openAut operator personas as NemoClaw agent workflows — Driftstekniker (operations technician), Energisamordnare (energy coordinator), and Förvaltare (technical manager) — each defaulting to Microsoft Teams and granted only the runtime skills it needs. These personas are jobs-to-be-done, not trust domains; the Advisor / Engineer / Security trust boundaries they run inside are defined in advisor-engineer-workflow. Use when creating openAut operator personas, writing NemoClaw agent workflow prompts, assigning per-agent tool permissions, or wiring a persona's output to a Teams channel.
-permissions:
-  knowledge_only: true
-  exec: none
-  network: none
-  delegated_capabilities: "agent-role design; the documented 'ssh -t ... nemoclaw connect' step is operator/Engineer-executed, not performed by this skill"
+metadata:
+  openaut-permissions: '{"knowledge_only":true,"exec":"none","network":"none","delegated_capabilities":"agent-role design; the agents.entries/skills-allowlist config and cron jobs are operator/Engineer-executed, not performed by this skill"}'
 ---
 
 # nemoclaw-agent-workflow — the openAut operator personas
@@ -39,11 +36,13 @@ Assumes `config.env` is sourced.
 
 ## Channel default: Teams
 
-Every persona below addresses the user through the **Teams webhook bridge**, not Telegram/Slack.
-The agent does not call Teams directly — it posts to the gateway, which the bridge forwards to the
-Teams channel. So "send to Teams" in a workflow means: produce a message for the gateway's default
-surface, which is bound to the bridge (see [`bridges/teams-webhook`](../../bridges/teams-webhook/README.md)).
-Keep the bridge host on the egress allow-list.
+Every persona below addresses the user through OpenClaw's **native `msteams` channel plugin**
+(Bot Framework / Azure Bot), not Telegram/Slack and not the retired webhook bridge — see
+[`bridges/teams-webhook`](../../bridges/teams-webhook/README.md) for why. "Send to Teams" in a
+workflow means: the agent's reply is delivered through its `msteams` channel binding (see
+[Creating an agent](#creating-an-agent) below). Note the msteams plugin needs an **inbound** path
+from Teams' cloud, which is a still-open design question — see
+[`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md).
 
 ## Runtime skills the agents draw on
 
@@ -67,7 +66,7 @@ via an approved Systemdatabas case (see [`advisor-engineer-workflow`](../advisor
 **Workflow prompt (personalise the bracketed parts):**
 
 ```
-You are the openAut Driftstekniker agent for [site name].
+You are openAut Advisor, serving the Driftstekniker persona, for [site name].
 When an alarm arrives on [MQTT topic / EMQX subscription]:
   1. Pull the related points via bacnet/modbus around the alarm time window.
   2. Run fdd + anomaly-correlation to rank likely root causes.
@@ -92,7 +91,7 @@ timeseries read access (TimescaleDB). **No** write/override tools.
 **Workflow prompt:**
 
 ```
-You are the openAut Energisamordnare agent for [site name].
+You are openAut Advisor, serving the Energisamordnare persona, for [site name].
 On a weekly schedule [cron]:
   1. Query the last 7 days of energy/consumption series from TimescaleDB.
   2. Compare against the trailing baseline; flag anomalies and likely drivers
@@ -102,7 +101,8 @@ On a weekly schedule [cron]:
 Read-only: you never write to field devices.
 ```
 
-**Schedule:** a NemoClaw/OpenClaw cron job triggers the weekly run; output goes to Teams.
+**Schedule:** `openclaw cron create --agent advisor-energisamordnare --schedule "0 7 * * 1" ...` — see
+[Creating an agent](#creating-an-agent) below for the full command.
 
 ## Persona 3 — Förvaltare (Technical Manager)
 
@@ -115,7 +115,7 @@ Teams notifications for items needing a decision.
 **Workflow prompt:**
 
 ```
-You are the openAut Förvaltare agent for [portfolio/site].
+You are openAut Advisor, serving the Förvaltare persona, for [portfolio/site].
   1. Maintain a facility-status view (equipment health, open faults, trends) for
      the web dashboard.
   2. Produce maintenance forecasts from fdd trend analysis.
@@ -124,22 +124,99 @@ You are the openAut Förvaltare agent for [portfolio/site].
 Be concise and decision-oriented; route detail to the dashboard, decisions to Teams.
 ```
 
-## Creating an agent in the sandbox
+## Creating an agent
 
-Each persona is an agent/session inside the `$SANDBOX_NAME` sandbox. With multi-agent routing, give
-each its own agent identity, workflow prompt, tool allow-list, and (for 2 & 3) its schedule. Pattern:
+**These are not new trust domains.** Per [`CONTEXT.md`](../../CONTEXT.md)'s persona vs. trust-domain
+glossary, a persona is *realised through* a trust domain — chiefly **Advisor** — and "is not itself
+an agent or a trust domain." All three personas share Advisor's exact tool grant (`read`, `message`
+only, everything else denied — see [`deploy/advisor-agent`](../../deploy/advisor-agent/README.md))
+and none holds field-write authority; only their skill allowlist and channel binding differ.
 
-```bash
-# Connect to the sandbox, then define the agent + its tool allow-list and prompt.
-ssh -t "$SANDBOX_SSH_USER@$SANDBOX_HOST" "nemoclaw $SANDBOX_NAME connect"
-# Inside: create the agent, set tools.allow to the granted list above, paste the workflow prompt,
-# bind its channel to the Teams bridge surface, and (Energisamordnare/Förvaltare) add the cron job.
+OpenClaw's multi-agent config (see `docs.openclaw.ai/tools/multi-agent-sandbox-tools` and
+`docs.openclaw.ai/tools/skills`) requires a separate `agents.entries.<id>` per distinct skill
+allowlist / channel binding, so each persona still needs its own entry technically — but the ids
+below are prefixed `advisor-` and the identical tool grant is repeated verbatim rather than varied,
+specifically so nothing here reads as three independent agents. If your OpenClaw version supports
+selecting a skill set per-binding on a single agent entry, prefer that over three entries — it
+removes the ambiguity entirely.
+
+The `bindings.match` blocks below must resolve to **disjoint** Teams scopes — OpenClaw needs some
+way to tell which persona a given incoming message is for. Three entries all matching
+`accountId: "*", peer: { kind: "*" }` (as an earlier draft of this file had) is not routable
+config: nothing distinguishes them, so at best the first-registered binding wins and the other two
+never fire, at worst it's rejected as a conflict. Route each persona to its **own Teams channel**
+instead — one bot install per role-specific channel, or filed under a single Teams app bound to
+distinct channel IDs — and treat the exact `bindings.match` shape (`peer.id` vs. a separate
+`channelId` field, etc.) as unverified until checked against a live OpenClaw + Teams install:
+
+```json5
+{
+  agents: {
+    entries: {
+      "advisor-driftstekniker": {
+        workspace: "~/.openclaw/workspace-driftstekniker",
+        tools: { allow: ["read", "message"], deny: ["exec", "write", "edit", "apply_patch", "process", "browser"] },
+        skills: ["advisor-engineer-workflow", "bacnet", "modbus", "fdd", "anomaly-correlation"],
+      },
+      "advisor-energisamordnare": {
+        workspace: "~/.openclaw/workspace-energisamordnare",
+        tools: { allow: ["read", "message"], deny: ["exec", "write", "edit", "apply_patch", "process", "browser"] },
+        skills: ["advisor-engineer-workflow", "modbus", "bacnet", "energy-optimization", "anomaly-correlation"],
+      },
+      "advisor-forvaltare": {
+        workspace: "~/.openclaw/workspace-forvaltare",
+        tools: { allow: ["read", "message"], deny: ["exec", "write", "edit", "apply_patch", "process", "browser"] },
+        skills: ["advisor-engineer-workflow", "fdd"],
+      },
+    },
+  },
+  bindings: [
+    // Each peer.id below must be that persona's own Teams channel ID for this deployment — three
+    // identical wildcards is broken config, not a placeholder to copy verbatim.
+    { agentId: "advisor-driftstekniker", match: { channel: "msteams", accountId: "*", peer: { kind: "channel", id: "${DRIFTSTEKNIKER_TEAMS_CHANNEL_ID}" } } },
+    { agentId: "advisor-energisamordnare", match: { channel: "msteams", accountId: "*", peer: { kind: "channel", id: "${ENERGISAMORDNARE_TEAMS_CHANNEL_ID}" } } },
+    { agentId: "advisor-forvaltare", match: { channel: "msteams", accountId: "*", peer: { kind: "channel", id: "${FORVALTARE_TEAMS_CHANNEL_ID}" } } },
+  ],
+}
 ```
 
-> Exact agent-definition commands depend on your NemoClaw/OpenClaw version's multi-agent config
-> (`openclaw.json` agents/bindings, or the CLI agent subcommands). The invariants to preserve:
-> **least-privilege tools per persona, all chat-facing personas read-only with field writes only
-> through Engineer after an approved case, and Teams as the default channel.**
+Put each persona's workflow prompt into that workspace's `AGENTS.md` (loaded every turn — see
+[`advisor-engineer-workflow`](../advisor-engineer-workflow/SKILL.md) for why AGENTS.md, not just
+this skill, is the right home for day-to-day operating instructions). The `skills` allowlist above
+enforces the "runtime skills the agents draw on" table earlier in this document — a non-empty
+`skills` list *replaces* the default, it does not merge with it, so listing exactly the granted
+skills is what keeps each persona least-privilege.
+
+**Energisamordnare and Förvaltare's schedules use OpenClaw's real cron CLI**, not a placeholder:
+
+```bash
+openclaw cron create \
+  --name "energisamordnare-weekly-report" \
+  --agent advisor-energisamordnare \
+  --schedule "0 7 * * 1" \
+  --message "Run the weekly energy report workflow and post it to Teams." \
+  --announce
+```
+
+```bash
+openclaw cron create \
+  --name "forvaltare-forecast-check" \
+  --agent advisor-forvaltare \
+  --schedule "0 6 * * *" \
+  --message "Update the facility-status view and flag anything crossing a decision threshold." \
+  --announce
+```
+
+`--announce` delivers the run's final reply to the agent's bound Teams channel; see
+`docs.openclaw.ai/automation/cron-jobs` for retry, timeout, and delivery options.
+
+> **What's confirmed vs. still to verify:** the `agents.entries`/`bindings`/`skills`-allowlist shape
+> and the `openclaw cron create` flags are confirmed against OpenClaw's documentation as of this
+> writing, and the channel is confirmed to be the native `msteams` plugin (the earlier
+> webhook-bridge premise was wrong — see `bridges/teams-webhook`). Still open: the msteams **inbound**
+> path (direct exposure vs. DMZ relay) is deliberately unresolved — see `nemoclaw-sandbox-policy` —
+> and the exact `bindings.match` shape for msteams accounts/scopes should be checked against a live
+> Teams app installation before copying the block above verbatim.
 
 ## Verify
 

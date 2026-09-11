@@ -1,11 +1,9 @@
 ---
 name: advisor-engineer-workflow
-description: Define the openAut Advisor / Engineer / Security trust split as NemoClaw/OpenClaw workflows — Advisor is read-only and Teams-facing, Engineer has SSH/deploy capability but is not exposed to Teams, Security is a separate read-only watch-and-audit instance (canonical runbook in security-instance), and all use the local Forge/Systemdatabas handoff. Use when defining the trust domains, assigning tool permissions, routing approvals through the system database, governing Forge PRs, or aligning openAut/main with the public openAut architecture.
-permissions:
-  knowledge_only: true
-  exec: none
-  network: none
-  delegated_capabilities: "governing workflow policy; Engineer (not this skill) performs Forge writes/PRs, deploy runbooks and edge SSH, owner-approved via the Systemdatabas"
+description: Define the openAut Advisor / Engineer / Security trust split — Advisor is read-only and Teams-facing on NemoClaw/OpenClaw, Engineer has SSH/deploy capability on its own separate opencode installation (different host, different sandbox, not exposed to Teams — see ADR 0001 §4-5 and ADR 0003), Security is a separate read-only watch-and-audit instance (canonical runbook in security-instance), and all use the local Forge/Systemdatabas handoff. Use when defining the trust domains, assigning tool permissions, routing approvals through the system database, governing Forge PRs, or aligning openAut/main with the public openAut architecture.
+metadata:
+  openaut-permissions: '{"knowledge_only":true,"exec":"none","network":"none","delegated_capabilities":"governing workflow policy; Engineer (not this skill) performs Forge writes/PRs, deploy runbooks and edge SSH, owner-approved via the Systemdatabas"}'
+  openaut-backing-capabilities: 'Advisor: get_equipment_context, query_timeseries, read_verified_document, create_case_note, create_work_order, propose_setpoint_change. Engineer: get_equipment_context, read_verified_document, draft_edge_deploy_plan, open_change_pr, deploy_edge_config, publish_mqtt_command, enroll_edge_node, rotate_node_certificate. Per the draft capability catalog (docs/architecture/capability-catalog.md, RFC 0001 - not yet an accepted ADR); this skill remains the authoritative trust-boundary contract until RFC 0001 is accepted and a gateway exists.'
 ---
 
 # advisor-engineer-workflow — Advisor / Engineer / Security split
@@ -69,20 +67,139 @@ changes are involved.
 - no raw secret access
 - no Forge push or merge permission
 
+**Calibration — binding generic rules to a site:**
+
+`fdd` and `energy-optimization` rules (ASHRAE Guideline 36 / APAR style) are generic templates until
+bound to a specific `equipment_id`'s actual points. Before trusting a finding:
+
+1. Resolve the equipment's points and read `min_value`, `max_value`, and `safe_value` from
+   `system.points` — this is the site-specific envelope, not the generic rule threshold.
+2. Read `system.equipment.metadata` for operating parameters (design setpoints, deadbands,
+   economizer changeover) where available.
+3. If a point has neither calibration values nor an equipment metadata override, treat the finding
+   as **uncalibrated**: still report it, but cap confidence at 0.5 and say so explicitly in Teams
+   ("generic threshold, not yet calibrated to this site").
+4. Calibration data is Engineer-owned (it comes from FAT/SAT or commissioning documents). Advisor
+   never writes `points.min_value` / `max_value` / `safe_value` — it can only ask a human case owner
+   to open a case proposing a calibration correction for Engineer to review and write.
+
+**Decision logic — from findings to one recommendation:**
+
+`fdd`, `anomaly-correlation`, and `energy-optimization` each return ranked findings with evidence.
+Anomaly-correlation's parent/child suppression runs first — only the root-cause finding drives the
+decision below, not each suppressed symptom.
+
+`risk` is a single enum — `low | medium | high | critical` — with one deterministic action per
+value, never a range:
+
+These three rows apply when no safety-relevant signature is present (see the override immediately
+below for when one is):
+
+| Signal | risk | confidence starting point |
+|---|---|---|
+| Single uncalibrated rule, no corroboration | low | ≤ 0.5 |
+| Single calibrated rule, no corroboration | medium | 0.5–0.7 |
+| Multiple independent rules/skills corroborate the same root cause | high | 0.7–0.9, cap at 0.9 |
+
+**Safety override — always wins over the table above, and corroboration is never a precondition:**
+a safety-relevant signature (high-limit trip, freeze-stat, fire/smoke interlock) makes a finding
+`critical` immediately, whether or not any other rule or skill corroborates it — including a
+finding that would otherwise land in the `high` row above. A single calibrated rule that *is* a
+safety-relevant signature — a lone fire/smoke interlock trip, no corroboration — is `critical`, not
+`medium`; don't wait for a second finding to escalate a life-safety signal.
+
+**`risk` and `confidence` are independent — the override only sets `risk`.** `risk = critical`
+means escalate now, unconditionally; it says nothing about how sure Advisor is of the underlying
+evidence. `confidence` still follows the same evidence-quality rules as everywhere else in this
+document — the calibration check, the corroboration table above, the document-trust caps, and the
+missing/conflicting-telemetry caps below all still apply on top of a critical classification, not
+instead of it. A lone fire/smoke interlock reading with missing corroborating telemetry is `risk:
+critical, confidence: ≤0.4` — say exactly that, with the reason, rather than rounding confidence up
+because the situation is urgent. Overstated confidence on a critical finding is its own hazard: it
+reads as certainty the evidence doesn't support. Escalate on `risk`, never inflate `confidence` to
+match it.
+
+What Advisor does with the result — this describes the target contract (a `create_case_note`/
+`create_work_order` capability per the `openaut-backing-capabilities` metadata above); until that
+capability gateway exists, every "open a case" below means *ask a human case owner to open one*, and
+Advisor states that request explicitly rather than claiming a case exists — see
+[`deploy/advisor-agent`](../../deploy/advisor-agent/README.md) for today's actual phrasing:
+
+- **low risk** — informational Teams note only; no case unless asked.
+- **medium risk** — open a case (`draft`), recommend the check.
+- **high risk** — open a case and say explicitly that Engineer review is recommended before the next
+  occupied cycle.
+- **critical risk** — open a case immediately, lead the Teams message with the safety concern, and
+  state explicitly that Advisor has no authority to stop equipment and is not a substitute for
+  life-safety systems or an emergency call.
+
+**Document trust check:**
+
+Before citing a manual or generated doc (see [`documentation-store`](../documentation-store/SKILL.md)),
+check `documents.trust_level`:
+
+- `verified` — cite normally with the Forge URI and commit.
+- `quarantine` / `untrusted` — may still use it for extraction, but say so ("based on an unverified
+  manual excerpt") and do not let it raise confidence above 0.5 on its own.
+- `superseded` — do not use for a new case; if it is the only match, say no verified source was found.
+
+**Error handling:**
+
+- **Missing telemetry** for the relevant window — say so explicitly; do not infer a value. Cap
+  confidence at 0.4 rather than silently excluding the gap.
+- **Conflicting readings** (e.g. two sensors disagree beyond expected tolerance) — report the
+  conflict itself as the finding (possible sensor drift/fault) rather than picking one value.
+- **No product/manual match** for the equipment — proceed with telemetry-only analysis, note the
+  gap, and suggest `manual-ingest` as a follow-up rather than blocking the answer.
+
+**Example Teams response:**
+
+```text
+AHU-3, Building A — high supply air temperature during cooling call
+Likely cause: economizer damper near minimum position while mechanical cooling is staged
+(fdd rule AHU-ECON-01, corroborated by anomaly-correlation clustering with 3 downstream VAV
+reheat alarms). Calibrated against this unit's points.
+Evidence: OA damper command 12%, expected >60% given T_oa = 14°C (favorable for free cooling).
+Recommended check: verify damper actuator response and linkage.
+Risk: high. Confidence: 0.75.
+Case case-2026-0142 opened — Engineer review recommended before next occupied cycle.
+```
+
+> This example assumes a working `create_case_note`/`create_work_order` capability exists (the
+> target contract — see the `openaut-backing-capabilities` metadata above). No such tool is wired up
+> yet, and today's reference implementation ([`deploy/advisor-agent`](../../deploy/advisor-agent/README.md))
+> only grants `read`/`message`. Until a capability gateway exists, Advisor must ask a human case owner
+> to open the case and say so explicitly, never claim one was opened — see that bundle's
+> `workspace/AGENTS.md` for the actual phrasing to use today.
+
 **Workflow prompt:**
 
 ```text
 You are openAut Advisor for [site or portfolio].
 
+You do not currently have a tool that creates a Systemdatabas case — if your tool grant is
+read/message only, "create a case" below means ask a human case owner to create it, and say so
+explicitly. Never claim a case was created without a tool result confirming one.
+
 When an alarm, anomaly, or operator question arrives:
   1. Read the relevant equipment, point, document, and recent telemetry context.
   2. Run the appropriate analysis skill: fdd, anomaly-correlation, or energy-optimization.
-  3. Respond in Teams with: situation, likely cause, evidence, recommended next check,
+  3. Check calibration: does this equipment have min_value/max_value/safe_value or
+     equipment.metadata to bind the rule to, or is this a generic/uncalibrated finding?
+  4. Check document trust_level before citing any manual or generated doc.
+  5. If telemetry is missing or conflicting, say so explicitly rather than inferring a value.
+  6. Apply the risk/confidence decision logic to pick one root cause (respecting
+     anomaly-correlation's parent/child suppression) and set risk. Set confidence independently
+     from evidence quality (calibration, corroboration, document trust, telemetry completeness) —
+     a critical risk does not by itself justify high confidence.
+  7. Respond in Teams with: situation, likely cause, evidence, recommended next check,
      risk, confidence, and whether Engineer approval is needed.
-  4. If a deploy/write/manual-integration action is needed, create a case in Systemdatabasen.
-     Do not perform the action yourself.
+  8. If a deploy/write/manual-integration/calibration action is needed, ask a human case owner to
+     create a case in Systemdatabasen. Do not perform the action yourself, and do not claim the
+     case was created.
 
 Keep Teams messages short and decision-oriented. Never claim a field action has been performed.
+For critical risk, lead with the safety concern and state you have no authority to stop equipment.
 ```
 
 ## Engineer workflow
@@ -168,16 +285,48 @@ Every state transition should be audit logged with actor, timestamp, source, and
 
 ## Verification
 
-For a lab setup, prove these invariants before any live use:
+For a lab setup, prove these invariants before any live use. Note which layer actually enforces
+each one — several of these are **not** provable from OpenClaw config alone:
 
-- Advisor cannot open SSH or deploy to an edge node.
+- **Advisor cannot open SSH or deploy to an edge node.** Enforced by NemoClaw's **OpenShell**
+  sandbox policy (process/filesystem/network isolation), not just OpenClaw's `tools.deny` — see
+  [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md). Test this against the sandbox
+  directly (attempt SSH from inside it), not just by reading the agent config.
 - Engineer cannot receive commands from Teams.
 - Engineer refuses a case without approved status.
 - Engineer refuses deployable work without a green, reviewed Forge revision.
 - Engineer refuses a control/deploy action when no safety envelope or point limits exist.
-- Advisor and Engineer use separate credentials and separate sandbox identities.
+- **Advisor and Engineer use separate credentials and separate sandbox identities.** Advisor is an
+  OpenClaw `agents.entries` on NemoClaw, with its own `workspace` and hence its own
+  `auth-profiles.json` (not shared automatically) — see
+  [`deploy/advisor-agent`](../../deploy/advisor-agent/README.md). Engineer is **not** another
+  OpenClaw agent entry: per [ADR 0001](../../docs/adr/0001-delivery-and-trust-model.md) §4-5 and
+  [ADR 0003](../../docs/adr/0003-engineer-runtime-containment.md), Engineer runs **opencode**, on
+  its own host and sandbox, under its own OS account and credentials — a different software stack
+  entirely, not a second entry in Advisor's config.
+- Advisor never reports confidence above 0.5 for an uncalibrated rule or an unverified
+  (`quarantine`/`untrusted`) document used as sole support.
+- Advisor never writes `points.min_value`, `max_value`, or `safe_value` — only Engineer does,
+  and only via an approved case.
+- In a multi-alarm flood, Advisor's reported root cause matches anomaly-correlation's parent
+  finding, not a suppressed child.
+- Advisor requests a case (via its current tools: creates one if a `create_case_note` capability
+  exists, otherwise explicitly asks a human case owner to open one) for every `risk = high` or
+  `risk = critical` finding — it never leaves such a finding as Teams-only chat with no case
+  requested, and never claims a case exists without a tool result confirming it.
+- **A lone, uncorroborated safety-relevant signature (a single fire/smoke interlock trip, freeze-stat,
+  or high-limit trip with no other finding backing it) is still classified `critical`** — test this
+  specifically, since it's the case most likely to be mis-scored as `low`/`medium` by a
+  corroboration-count heuristic.
+- **A `critical`-risk finding built on weak evidence still reports low confidence** — e.g. a safety
+  signature with missing corroborating telemetry is `risk: critical, confidence: ≤0.4`, not `0.9+`.
+  `risk` and `confidence` are scored independently; test that Advisor doesn't inflate one to match
+  the other.
 - Security can observe Advisor/Engineer activity but cannot write to field/Forge/Teams or approve a
   case, and neither acting agent can suppress its audit/alert path (full checks in `security-instance`).
+
+A working reference implementation of Advisor's config/workspace layer (not just this contract) is
+in [`deploy/advisor-agent`](../../deploy/advisor-agent/README.md).
 
 > **Live behaviour is unverified.** This workflow is a trust-boundary contract for future openAut
 > agent definitions, not a production-ready agent configuration.
