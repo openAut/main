@@ -50,6 +50,17 @@ openAut-specific defaults:
 > These defaults are configurable. Set `TEAMS_*` and `NEMOTRON_*` in `config.env` to point at
 > your own bridge and inference host; every skill sources that file.
 
+## First milestone: agent-led integration POC
+
+The goal is for a user with limited AI knowledge to start with a documented 64 GB Windows
+workstation, OpenCode, an attached LLM, and a startup prompt, then build an integration lab with
+agent assistance. The journey covers Ubuntu VMs, POC services, a physical read-only integration,
+dashboards, and manuals in Forgejo that Advisor can use for evidence-backed troubleshooting in Teams.
+
+See [Milestone 1 — Agent-led integration POC](docs/MILESTONE-1.md) for scope, delivery workstreams,
+and acceptance criteria. This is a delivery target; the complete fresh-install journey is not yet
+verified.
+
 ## Skills
 
 **Agent tier — create the NemoClaw agents:**
