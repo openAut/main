@@ -171,7 +171,9 @@ must never be activated by extending this point map.
 Equipment-specific bridges can reuse the opt-in
 [reliability reference tools](../../docs/EDGE-RELIABILITY-TOOLS.md) for independent offline vendor
 artifacts and target import verification. These tools do not change this installer's venv contract
-or implement the generic field-reader stub; adopting them requires an explicit deployment artifact.
+or implement the generic field-reader stub. Standalone staging is an isolated POC exception;
+production dependencies must be included in ADR 0001's signed Main release and SBOM, built from
+verified refresh material, rather than installed through a separate vendor-artifact path.
 
 `edge_agent.py` assigns a stable `event_id` and persists each reading to SQLite **before** publishing
 with QoS 1. It removes a row only

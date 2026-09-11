@@ -122,3 +122,23 @@ class ReadOnlyTransportTests(unittest.TestCase):
             values = {"device_id": 1, "blocks": [(16, 1)]} | kwargs
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 MODULE.ReadOnlyTransport(self.client, **values)
+
+    def test_malformed_responses_do_not_crash_or_reopen_transport(self):
+        def broken_is_error():
+            raise RuntimeError("broken response")
+
+        responses = [None, object(), SimpleNamespace(isError=broken_is_error),
+                     SimpleNamespace(isError=lambda: False),
+                     SimpleNamespace(isError=lambda: False, registers=None),
+                     SimpleNamespace(isError=lambda: False, registers=42)]
+        for response in responses:
+            with self.subTest(response=response):
+                self.client.response = response
+                self.assertIsNone(self.reader.read(16, 1))
+                self.assertIsNone(self.reader.last_success)
+                self.assertFalse(self.reader.health()["field_protocol_healthy"])
+                self.assertEqual(self.client.close_calls, 0)
+        self.assertEqual(self.reader.consecutive_errors, len(responses))
+        self.client.response = SimpleNamespace(isError=lambda: False, registers=[215])
+        self.assertEqual(self.reader.read(16, 1), [215])
+        self.assertTrue(self.reader.health()["field_protocol_healthy"])

@@ -32,10 +32,11 @@ def build(lock, wheelhouse, output):
             raise ValueError("lock must contain offline package pins and SHA-256 hashes only")
     with tempfile.TemporaryDirectory(prefix="edge-vendor-", dir=output.parent) as temporary:
         target = Path(temporary) / "vendor"
-        environment = {key: value for key, value in os.environ.items() if not key.startswith("PIP_")}
+        environment = {key: value for key, value in os.environ.items()
+                       if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR"}}
         environment["PIP_CONFIG_FILE"] = os.devnull
         subprocess.run([
-            sys.executable, "-m", "pip", "--isolated", "install", "--disable-pip-version-check",
+            sys.executable, "-I", "-m", "pip", "--isolated", "install", "--disable-pip-version-check",
             "--no-index", "--only-binary=:all:", "--require-hashes", "--no-compile",
             "--find-links", str(wheelhouse), "--requirement", str(lock), "--target", str(target),
         ], check=True, env=environment)

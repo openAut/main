@@ -3,6 +3,18 @@
 These opt-in tools extract reusable lessons from the isolated POC. They do not install a service,
 contain an equipment register map or replace the generic edge scaffold with a working field driver.
 
+## POC boundary
+
+The standalone staging commands below are for isolated lab experiments under a lightweight local
+case, explicit operator confirmation, hash checks, verification and rollback. They do not require
+building a production release pipeline to try the POC.
+
+For production ingress, these are build primitives only: [ADR 0001](adr/0001-delivery-and-trust-model.md)
+requires dependencies from the verified `refresh` cache to be included by `build` in the pinned,
+self-contained signed Main release and SBOM. Standalone vendor transfer/installation outside that
+release is not a production deployment path. These helpers verify neither release signatures nor
+attestations; the production release verifier must do so before installation.
+
 ## Field reads and health
 
 See [the FC04 adapter pattern](../skills/modbus/references/readonly-reliability.md) for explicit
@@ -19,11 +31,12 @@ python scripts/build_edge_vendor.py requirements.lock /approved/wheelhouse /stag
 
 The lock must contain reviewed exact pins and SHA-256 hashes. The wheelhouse must contain only
 portable `py3-none-any` wheels; native dependencies require a separately reviewed target-ABI build.
-The builder uses isolated pip, no index, required hashes, no compilation, and refuses an existing
-output. A failed build cannot replace the old runtime. Pin the Python/pip build environment and
+The builder runs pip under isolated Python, with no index, required hashes, no compilation, and
+refuses an existing output. A failed build cannot replace the old runtime. Pin the Python/pip build environment and
 record the lock and delivered artifact hashes with the case.
 
-Transfer the artifact using the approved management path. On the target, without pip or venv:
+For the isolated POC, transfer the artifact using the approved management path. On the target,
+without pip or venv:
 
 ```text
 python3 scripts/verify_edge_vendor.py /staging/reader-vendor paho.mqtt.client pymodbus.client

@@ -71,17 +71,24 @@ class ReadOnlyTransport:
         # A device exception response is not a transport failure. Do not reopen a
         # serial port repeatedly to try to fix an illegal register address.
         self.transport_errors = 0
-        if response.isError():
-            self.consecutive_errors += 1
-            return None
-        words = response.registers
-        if len(words) != count or any(type(word) is not int or not 0 <= word <= 65535 for word in words):
+        try:
+            if response.isError():
+                self.consecutive_errors += 1
+                return None
+            words = response.registers
+            if not isinstance(words, (list, tuple)) or len(words) != count:
+                raise ValueError("unexpected register sequence")
+            if any(type(word) is not int or not 0 <= word <= 65535 for word in words):
+                raise ValueError("invalid register word")
+            words = list(words)
+        except Exception:
+            # Malformed response data is not evidence of a broken serial transport.
             self.consecutive_errors += 1
             return None
         self.last_success = int(self.wall_time())
         self.last_success_monotonic = self.monotonic()
         self.consecutive_errors = 0
-        return list(words)
+        return words
 
     def health(self):
         age = None if self.last_success_monotonic is None else self.monotonic() - self.last_success_monotonic

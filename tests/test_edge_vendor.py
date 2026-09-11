@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 
@@ -59,7 +60,15 @@ class EdgeVendorTests(unittest.TestCase):
             digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
             lock.write_text(f"edge-probe==1.0 --hash=sha256:{digest}\n")
             output = root / "vendor"
-            BUILDER.build(lock, wheels, output)
+            ambient = root / "ambient"
+            ambient.mkdir()
+            marker = root / "ambient-executed"
+            (ambient / "sitecustomize.py").write_text(
+                f"from pathlib import Path\nPath({str(marker)!r}).touch()\n"
+            )
+            with patch.dict(os.environ, {"PYTHONPATH": str(ambient)}):
+                BUILDER.build(lock, wheels, output)
+            self.assertFalse(marker.exists(), "pip executed ambient sitecustomize")
             self.assertEqual(self.run_verify(output, "edge_probe").returncode, 0)
             with self.assertRaises(ValueError):
                 BUILDER.build(lock, wheels, output)
