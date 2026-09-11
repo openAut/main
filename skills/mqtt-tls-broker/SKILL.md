@@ -128,6 +128,11 @@ live against EMQX 5.8.9 Community Edition
 
 ## Step 5 — Verify over TLS
 
+PUBACK proves broker receipt, not database commit. Stable event IDs support replay deduplication
+but do not establish end-to-end losslessness. Multiple publishers under one certificate-bound
+node scope need unique ClientIDs and explicit ownership of node status. See the
+[delivery and health contract](../../docs/EDGE-INTEGRATION-LIFECYCLE.md).
+
 ```bash
 bash skills/mqtt-tls-broker/scripts/verify-tls.sh
 ```

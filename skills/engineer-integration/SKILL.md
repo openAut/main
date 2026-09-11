@@ -34,6 +34,10 @@ when the product manual has not yet been converted, identified, and cataloged in
 
 ## Workflow
 
+Apply the [physical integration lifecycle](../../docs/EDGE-INTEGRATION-LIFECYCLE.md) for identity
+selection, clock verification, point-map evidence, independent runtime ownership and layered health.
+It complements the approval workflow here; lab observations are not public pre-merge approvals.
+
 1. **Confirm authority**
    - Read the case and approval.
    - Verify `status = approved`.
@@ -124,5 +128,6 @@ Stop and mark the case `blocked` if any of these are true:
 | `fat-sat.md` | commissioning and verification checklist |
 | `rollback.md` | commands and files needed to revert deployment |
 
-> **Live behaviour is unverified.** This skill defines the Engineer integration contract. Specific
-> drivers and hardware procedures belong in protocol- or POC-specific skills.
+> Parts of this workflow have been exercised in the isolated
+> [physical POC](../../docs/verification/physical-edge-integrations-2026-09-11.md). This does not
+> validate the complete agent workflow or other drivers; hardware procedures remain profile-specific.

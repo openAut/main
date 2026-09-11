@@ -47,6 +47,12 @@ Registers are 16-bit; real values often span or scale:
 
 ## Workflow
 
+For physical read-only commissioning, follow the
+[integration lifecycle](../../docs/EDGE-INTEGRATION-LIFECYCLE.md). Pin the function-code subset,
+unit ID, manual reference/API offset, width, signedness, scaling and units. Exclude ambiguous values
+until independently verified. Application COV still requires polling; successful transport does
+not prove complete or fresh field data.
+
 1. **Connect** (TCP host:port or serial params).
 2. **Enumerate** unit/slave ids if unknown.
 3. **Read** the registers from the device's map (function 0x01–0x04).
@@ -66,5 +72,6 @@ Registers are 16-bit; real values often span or scale:
 - **Wrong numbers:** off-by-one addressing (1-based map vs 0-based API), or word order on 32-bit.
 - **Gateway devices:** one IP, many unit ids — don't assume unit 1.
 
-> **Live behaviour is unverified until Modbus hardware is connected.** Register maps are per-device;
-> the data model, addressing and decoding rules are the durable part.
+> Two equipment-specific FC04 profiles have been exercised over RTU and TCP in an isolated lab;
+> see the [dated report](../../docs/verification/physical-edge-integrations-2026-09-11.md).
+> Register maps, firmware, transport recovery and other devices require their own verification.

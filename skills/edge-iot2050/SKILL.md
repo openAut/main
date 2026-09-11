@@ -190,6 +190,12 @@ poll rate, expected outage, available media, and write endurance.
 
 ## Step 6 — Verify and close the case
 
+Use the [physical integration lifecycle](../../docs/EDGE-INTEGRATION-LIFECYCLE.md) to distinguish
+process/MQTT health from recent successful field reads. Multiple readers need independent services,
+ClientIDs, spools, dependency roots and rollback; a shared certificate does not justify importing
+another service's Python runtime. If the node lacks pip/venv, build hash-locked vendor artifacts
+off-node and import-test with the target Python without global or user-site fallback.
+
 ```bash
 ssh "$EDGE_SSH_USER@$EDGE_HOST" "systemctl status openaut-edge.service --no-pager"
 bash skills/mqtt-tls-broker/scripts/verify-tls.sh
@@ -212,7 +218,7 @@ case before closure.
 | Key custody | private key 0640, root-owned and service-group-readable, on-device only | ISO 27001 A.8 |
 | Field isolation | node reads field bus, publishes one prefix; no inbound control path | IEC 62443 zones/conduits |
 
-> Read-only inventory has been exercised on IOT2050 hardware, but the reference field reader and a
-> physical end-to-end publish remain unverified. This skill has no inbound MQTT subscription and no
-> field-write path. Any future setpoint path must follow ADR 0004 and remain separate from this
-> telemetry publisher.
+> Two equipment-specific physical Modbus publication paths have been exercised in an isolated POC;
+> see the [dated report](../../docs/verification/physical-edge-integrations-2026-09-11.md).
+> The generic reference field reader remains a stub. This skill has no inbound MQTT subscription
+> or field-write path; any future setpoint path must follow ADR 0004 and remain separate.

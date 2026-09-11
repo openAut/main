@@ -6,9 +6,9 @@
 > applied to building management. It is **not a product** and is **not intended for live or
 > production environments**.
 >
-> - The skills are runbooks and **reference scripts**; their live behaviour is **unverified** (every
->   `SKILL.md` says so). They have not been tested against real building hardware, control systems,
->   or a production NemoClaw deployment.
+> - The skills are runbooks and **reference scripts**. Two equipment-specific read-only Modbus
+>   integrations have been exercised on physical hardware in an isolated POC. This does not validate
+>   the generic drivers, other equipment, field writes or a production NemoClaw deployment.
 > - **Do not** connect these to live HVAC, energy, or safety-critical systems, or to occupied
 >   buildings. A wrong setpoint or control write can damage equipment or affect people.
 > - Anything that writes to field devices must stay a **human-confirmed** action, and should only be
@@ -106,6 +106,8 @@ Supporting:
 - [`CONTEXT.md`](CONTEXT.md) — the canonical glossary: **persona** vs. **agent / trust domain** vs. **runtime skill**.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the full openAut four-layer diagram and where each skill fits.
 - [`docs/LAB.md`](docs/LAB.md) — a local verification path for the MQTT/topic/database contracts.
+- [`docs/EDGE-INTEGRATION-LIFECYCLE.md`](docs/EDGE-INTEGRATION-LIFECYCLE.md) — physical integration,
+  identity migration, field health, offline runtime and evidence lessons from the isolated POC.
 - [`docs/HYPERV-CI-BOUNDARY.md`](docs/HYPERV-CI-BOUNDARY.md) — host-enforced isolation for an
   untrusted Forgejo CI VM on Hyper-V management/NAT networks.
 - [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.

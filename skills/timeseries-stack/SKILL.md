@@ -96,6 +96,12 @@ from `assets/schema.sql` during initialization.
 
 ## Step 5 — Retention & continuous aggregates
 
+Identity migrations must preserve source timestamps and event IDs, then refresh every affected
+aggregate window, including history outside scheduled refresh policies. Raw updates and aggregate
+refresh may fail separately. Follow the
+[cross-system migration procedure](../../docs/EDGE-INTEGRATION-LIFECYCLE.md#identity-is-a-cross-system-contract)
+and reconcile metadata, dashboards and rollback before closing the case.
+
 ```sql
 -- keep raw telemetry 90 days
 SELECT add_retention_policy('telemetry.readings', INTERVAL '90 days');
@@ -133,6 +139,6 @@ read-only role is refused an INSERT.
 | Data minimisation/retention | 90-day raw retention, aggregates for the rest | ISO 27001 A.8, GDPR-adjacent |
 | On-prem only | DB bound to the AI-tier host, no cloud egress | NIS2, openAut air-gap goal |
 
-> **Live behaviour is unverified until a database host is available.** TimescaleDB package names and
-> the continuous-aggregate API vary by version — the data model, roles, and ingest contract are the
-> durable part.
+> Physical telemetry ingestion, storage and dashboard read access have been exercised in the
+> [isolated POC](../../docs/verification/physical-edge-integrations-2026-09-11.md). Version-specific
+> migrations, outage recovery and production sizing still require independent verification.
