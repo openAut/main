@@ -172,6 +172,12 @@ CREATE TABLE system.audit_events (
 
 ## Semantic model guidance
 
+Keep equipment primary keys stable across display-name changes. Record canonical telemetry-system
+bindings and legacy aliases separately from display labels. A telemetry rename must reconcile point
+topics, equipment metadata, history, aggregates and consumers through the
+[identity migration procedure](../../docs/EDGE-INTEGRATION-LIFECYCLE.md#identity-is-a-cross-system-contract).
+Do not replay local completion audit inserts as generic schema migrations.
+
 The database should be compatible with a lightweight Haystack/Brick-style view, even if openAut
 does not adopt either wholesale at the start:
 
