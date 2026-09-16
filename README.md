@@ -53,9 +53,11 @@ openAut-specific defaults:
 ## First milestone: agent-led integration POC
 
 The goal is for a user with limited AI knowledge to start with a documented 64 GB Windows
-workstation, OpenCode, an attached LLM, and a startup prompt, then build an integration lab with
-agent assistance. The journey covers Ubuntu VMs, POC services, a physical read-only integration,
-dashboards, and manuals in Forgejo that Advisor can use for evidence-backed troubleshooting in Teams.
+workstation, opencode, an attached LLM, and a startup prompt using a pinned project revision, then
+build an integration lab with agent assistance. Local opencode performs user-led engineering work;
+the two priority Ubuntu VMs host platform services and Advisor. The journey covers POC services,
+a physical read-only integration, dashboards, and manuals in Forgejo that Advisor can use for
+evidence-backed troubleshooting in Teams.
 
 See [Milestone 1 — Agent-led integration POC](docs/MILESTONE-1.md) for scope, delivery workstreams,
 and acceptance criteria. This is a delivery target; the complete fresh-install journey is not yet

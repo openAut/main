@@ -5,10 +5,14 @@ Status: proposed delivery specification; end-to-end acceptance pending.
 ## Goal
 
 A user with limited AI knowledge can start with a computer with 64 GB RAM within a documented
-hardware and operating-system profile, install OpenCode, connect a supported LLM, and provide a
-startup prompt pointing to `openAut/main`. With assistance from **openaut-master**, the user can
-create and configure Ubuntu Server virtual machines, install the POC services, and complete a first
-read-only integration with physical test equipment.
+hardware and operating-system profile, install opencode, connect a supported LLM, and provide a
+startup prompt selecting an explicit release or commit from the `openAut/main` repository. The
+bootstrap must verify the expected revision and artifact integrity before execution; release
+signatures must be checked when using a signed release. A moving branch is a labeled developer
+workflow, not the M1 acceptance path. With assistance from **openaut-master**, the user can create
+and configure two Ubuntu Server virtual machines for platform services and Advisor, install the
+POC services, and complete a first read-only integration with physical test equipment. User-led
+engineering work runs in the local Windows opencode session; a separate Engineer VM is not required.
 
 The result is verified telemetry, a working dashboard, and manuals and integration documentation in
 Forgejo linked to the correct equipment through the Systemdatabas. Advisor can independently retrieve
@@ -29,7 +33,7 @@ administrator dialogs remain guided user actions.
 The first supported profile must specify and verify:
 
 - Windows 11 Pro, Hyper-V support, 64 GB RAM, and measured minimum free SSD capacity.
-- A tested OpenCode version and tool-capable LLM configuration, including authentication and costs
+- A tested opencode version and tool-capable LLM configuration, including authentication and costs
   or provider prerequisites visible before installation. Workstation-agent and runtime-agent
   inference configurations are documented separately; an attached LLM is not automatically suitable
   for both. No silent fallback to another provider is permitted.
@@ -55,7 +59,7 @@ the startup prompt.
 |---|---|---|
 | 1. Preflight | Explain prerequisites and inspect hardware, virtualization, storage, network, and inference access | Readable readiness report and specific remediation steps |
 | 2. VM bootstrap | Create VMs, install Ubuntu, establish SSH, networking, and synchronized clocks | Verified guest identities, connectivity, isolation, and capacity |
-| 3. Services | Install Forgejo, MQTT, TimescaleDB/Systemdatabas, Grafana, and the scoped agent environments | Version manifest and service-level checks |
+| 3. Services | Install Forgejo, MQTT, TimescaleDB/Systemdatabas, and Grafana in the platform VM, and Advisor in its own VM | Version manifest and service-level checks |
 | 4. Knowledge | Import the manual, verify its applicability, and link the installed equipment to its product and documents | Pinned Forge references, hashes, review status, and equipment metadata |
 | 5. Integration | Guide cabling, interpret the protocol map, run an approved narrow read, and install the read-only collector | Point map, scoped POC case, deployment revision, and test results |
 | 6. Visualization | Show measurements, units, equipment identity, alarms, and data freshness | Dashboard plus equipment-to-database verification |
@@ -64,19 +68,43 @@ the startup prompt.
 
 ## openaut-master and execution boundaries
 
-**openaut-master** names the workstation-side bootstrap and guidance function in OpenCode. It is
-not a fourth trust domain, a new persona, or a permission profile. Its implementation must make
-the executing identity and permissions explicit for each operation.
+**openaut-master** names the bootstrap and guidance workflow executed by the user's local
+opencode session for Engineer tasks. It is not a separate executing actor, a fourth trust domain,
+a new persona, or a permission profile. The workflow must identify the actual OS/SSH/database
+actor, target, and authorized operation, including owner-admin bootstrap steps.
 
-The user authorizes host installation steps through the local management session. Engineer performs
-scoped integration/deployment work; Advisor remains read-only and Teams-facing; Security remains a
-separate read-only observation domain. Advisor, Engineer, and Security must use separate OS hosts
-and identities. Platform may colocate supporting data services. Operational agents cannot author
-or widen their own PAP-owned permission profiles.
+### M1 placement and resource priority
 
-M1 requires Platform, Engineer, and Advisor for the demonstrated journey. Full Security monitoring
-and CI-runner automation are follow-up work; report unprovisioned components explicitly and retain
-the separate-host requirement when Security is provisioned.
+| Placement | Responsibility |
+|---|---|
+| Windows workstation: local opencode | User-led bootstrap, scoped SSH integration/deployment, manual handling, tests, and documentation |
+| Platform VM (infrastructure, not a trust domain) | Forgejo, MQTT, TimescaleDB/Systemdatabas, and Grafana |
+| Advisor VM | Read-only manual/telemetry tools, analysis, and Teams dialogue |
+| IOT2050 | Approved read-only collection and telemetry publishing |
+
+Prioritize memory and implementation effort for platform services and Advisor. M1 requires no
+Engineer VM or second opencode/provider setup. An existing Engineer VM can remain stopped; it is
+not deleted by the bootstrap. Measure host and guest resource usage rather than assuming that
+removing a VM eliminates the local agent's memory cost.
+
+Advisor runs in a separate guest OS and identity from the Windows engineering session and receives
+no SSH/deploy capability. Security, when provisioned, remains on its own separate host and identity.
+Operational agents cannot author or widen their own PAP-owned permission profiles.
+
+### Explicit lab profile, not full Engineer containment
+
+The Windows workstation is also the Hyper-V management plane. Its owner-authorized administration
+can affect the guests; this placement does not prove isolation against a compromised host agent or
+Hyper-V administrator. The user authorizes scoped changes in the local session, and execution is
+recorded with target, actor, verification, and rollback. Session confirmations and local logs are
+not equivalent to sandbox enforcement or an independent append-only audit sink.
+
+M1 explicitly defers the dedicated Engineer VM/runtime sandbox, signed Engineer policy bundle,
+credential proxy, and externally enforced audit described in
+[ADR 0003](adr/0003-engineer-runtime-containment.md). These remain later containment work, not
+properties claimed by this lab profile. Full Security monitoring and CI-runner automation are also
+follow-up work. This scoped POC proposal requires review; it does not revise the production trust
+model or claim compliance with its full Engineer envelope.
 
 Each automated stage needs a precondition check, a repeatable operation, a behavior-level
 postcondition, and a recovery or rollback path. Prefer tested, version-bound scripts to newly
@@ -143,8 +171,12 @@ it excludes setpoint changes, actuator commands, and autonomous repairs.
 For reversible lab network changes and read-only tests, explicit session confirmation plus a local
 record of target, change, verification, and rollback is sufficient. Preserve management access and
 avoid unintended gateways, forwarding, or bridges. Persistent deployments require a scoped local
-POC case, confirmation of the exact action, and rollback. Production-grade Systemdatabas approval
-automation, CI runners, and Security provisioning are not prerequisites for those lab steps.
+POC case, confirmation of the exact action, and rollback. Identify the lab asset owner explicitly
+(the user may be that owner) and record their approval in the local case before persistent edge
+onboarding/deployment. Register the case in the Systemdatabas once available; local evidence must
+retain the actual approval time and actor, without inventing retrospective approval. Production-grade
+Systemdatabas approval automation, CI runners, and Security provisioning are not prerequisites for
+those lab steps.
 Existing protected-branch and independent review rules still apply to Forge changes and verified
 manual publication. This milestone does not change production authorization contracts.
 
@@ -159,9 +191,9 @@ deliverables; this table is the planning breakdown, not a claim that GitHub issu
 | M1-02 | Implement manual conversion/archive publication, equipment links, and verified passage retrieval | M1-01 |
 | M1-03 | Complete one manual-driven read-only integration, test evidence, dashboard, and freshness display | M1-01, M1-02 |
 | M1-04 | Verify isolated Advisor runtime, read tools, Teams dialogue, and alarm-trigger behavior | M1-02, M1-03 |
-| M1-05 | Package host preflight, Ubuntu VM installation, networking, and resumable journal | M1-01 |
-| M1-06 | Package version-bound service/agent installation, credentials setup, checks, and recovery | M1-03, M1-04, M1-05 |
-| M1-07 | Publish tested getting-started instructions and the OpenCode startup prompt | M1-06 |
+| M1-05 | Package local opencode preflight, the two priority Ubuntu VMs, networking, and resumable journal | M1-01 |
+| M1-06 | Package version-bound platform/Advisor installation, local engineering access, credentials setup, checks, and recovery | M1-03, M1-04, M1-05 |
+| M1-07 | Publish tested getting-started instructions and the revision-verifying opencode startup prompt | M1-06 |
 | M1-08 | Run a clean-workstation new-user trial and publish sanitized acceptance evidence | M1-07 |
 
 First prove the complete manual → integration → dashboard → Advisor slice in a reference lab.
@@ -175,8 +207,8 @@ All criteria must pass against an identified project revision and supported star
 
 | ID | Test | Pass condition |
 |---|---|---|
-| AC-01 | New user starts with the preparation list and startup prompt | Reaches a working lab without builder-only files, chat history, or undocumented interventions |
-| AC-02 | Provision and verify the VM/service layout | Required services function, identities are distinct, management remains reachable, and resource/isolation checks pass |
+| AC-01 | New user starts with the preparation list and startup prompt | Expected revision/integrity is verified before execution; reaches a working lab without builder-only files, chat history, or undocumented interventions |
+| AC-02 | Provision and verify the two-VM/service layout | Platform services and Advisor function with separate identities; local opencode completes engineering work without a running Engineer VM; management and measured resource checks pass |
 | AC-03 | Interrupt installation and resume in a fresh session, including after a workstation restart | Actual state is reconciled; continuation preserves working resources and identifies any required reapproval |
 | AC-04 | Import a reference manual and attempt retrieval of an incorrect-model or quarantined manual | Correct verified source is retrievable with revision/hash/page references; unsuitable content is not used as authoritative equipment guidance |
 | AC-05 | Integrate the selected physical equipment using documented reads | Correct identity, values, units, and timestamps arrive through MQTT in storage and Grafana; field-write paths are unused |
@@ -186,6 +218,11 @@ All criteria must pass against an identified project revision and supported star
 | AC-09 | Deny a required read source or supply stale telemetry | Advisor states the evidence gap and requests a useful check rather than asserting a current diagnosis |
 | AC-10 | Verify Advisor's actual permissions | SSH/deployment and field writes are denied; permitted scoped document and telemetry reads succeed |
 | AC-11 | Inspect the delivered integration record | Manual links, point map, code/config revision, tests, dashboard, limitations, and recovery instructions are available through Forgejo/Systemdatabas |
+| AC-12 | Verify the user-led engineering path | Actual actor and target are recorded; a pending persistent deployment is not executed until the exact action and lab-owner approval are recorded; verification and rollback are available, and secrets are absent from shared artifacts |
+
+AC-12 is a workflow test for this supervised lab profile, not proof of deny-by-default Engineer
+containment. The test report must explicitly mark the deferred sandbox/proxy/external-audit
+properties as unverified. AC-10 continues to require actual Advisor access restrictions.
 
 The synthetic alarm test must remain clearly labeled; it proves the event and reasoning path, not
 a physically induced fault. Physical read-only integration is independently required by AC-05.
