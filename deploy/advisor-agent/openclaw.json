@@ -1,0 +1,62 @@
+{
+  // Advisor's actual enforcement layer. The trust-boundary CONTRACT lives in
+  // skills/advisor-engineer-workflow/SKILL.md — this file is what makes it real inside OpenClaw.
+  // Merge into ~/.openclaw/openclaw.json (agents.entries.advisor + the matching binding), or point
+  // OPENCLAW_CONFIG_PATH at a file that includes this one. Engineer is NOT another entry in this
+  // file, or in any future OpenClaw config: per ADR 0001 §4-5 / ADR 0003, Engineer runs opencode
+  // on its own host/sandbox — a different software stack, config format, and process entirely.
+  // A future deploy/engineer-agent/ bundle belongs to that stack, not to openclaw.json.
+  //
+  // Reminder from the OpenShell/NemoClaw review: this tools.deny list is OpenClaw's own,
+  // in-prompt tool-visibility layer. It is NOT the hard security boundary — that is NemoClaw's
+  // OpenShell sandbox policy (see ../../skills/nemoclaw-sandbox-policy/SKILL.md), which is what
+  // actually prevents SSH/exec at the process/kernel level even if a compromised model tries to
+  // route around this config. Treat this as defense-in-depth, not the whole story.
+  "agents": {
+    "entries": {
+      "advisor": {
+        "workspace": "./workspace",
+        "tools": {
+          "allow": ["read", "message"],
+          "deny": ["exec", "write", "edit", "apply_patch", "process", "browser"]
+        },
+        "skills": [
+          "advisor-engineer-workflow",
+          "fdd",
+          "energy-optimization",
+          "anomaly-correlation",
+          "documentation-store",
+          "system-database"
+        ]
+      }
+    }
+  },
+  // This binding matches every account/peer in the configured tenant (tenantId above scopes the
+  // tenant, nothing here scopes which channels/users within it can reach Advisor). That's broad,
+  // not least-privilege, for an agent whose whole job is accepting untrusted Teams-sourced text
+  // (prompt-injection surface — see advisor-engineer-workflow's Verification section). Narrow
+  // "peer" to your deployment's actually-approved channels/users once you've confirmed the exact
+  // match shape your OpenClaw version supports (docs reference peer.kind/peer.id; verified schema
+  // for an allow-list of specific channels is still unconfirmed here) — do not ship the wildcard
+  // below into anything Teams-facing beyond a controlled dev/lab test.
+  "bindings": [
+    {
+      "agentId": "advisor",
+      "match": { "channel": "msteams", "accountId": "*", "peer": { "kind": "*" } }
+    }
+  ],
+  // "enabled": false on purpose — this checked-in template ships cold. The binding above is a
+  // tenant-wide wildcard with no channel/user allow-list and the msteams inbound path is still an
+  // open design question (see nemoclaw-sandbox-policy); flip this to true only after you've
+  // narrowed the binding to your deployment's approved channels/users AND resolved that inbound
+  // path, not as a step before either.
+  "channels": {
+    "msteams": {
+      "enabled": false,
+      "appId": "${MSTEAMS_APP_ID}",
+      "appPassword": "${MSTEAMS_APP_PASSWORD}",
+      "tenantId": "${MSTEAMS_TENANT_ID}",
+      "webhook": { "port": 3978, "path": "/api/messages" }
+    }
+  }
+}

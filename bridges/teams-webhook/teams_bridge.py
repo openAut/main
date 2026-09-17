@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Minimal Microsoft Teams <-> OpenClaw gateway webhook bridge.
+"""RETIRED — Microsoft Teams <-> OpenClaw gateway webhook bridge.
+
+Do not run this. TEAMS_INCOMING_WEBHOOK_URL posts to webhook.office.com, which stopped working
+when Microsoft retired Office 365 Connectors (final disable rollout May 18-22, 2026 — see
+README.md in this directory for the source and this deadline's extension history). Use OpenClaw's
+native msteams channel plugin instead — see ../../skills/nemoclaw-provision/SKILL.md Step 5 and
+README.md in this directory. Kept only as a historical reference of the pre-retirement design.
+
+Original docstring, for historical reference:
+
+Minimal Microsoft Teams <-> OpenClaw gateway webhook bridge.
 
 Reference stub for the openAut NemoClaw channel default. Two directions:
 
@@ -141,6 +151,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    import sys
+
+    sys.exit(
+        "RETIRED: this bridge relies on Teams Incoming Webhooks (Office 365 Connectors), which "
+        "Microsoft discontinued (final disable rollout May 2026). Use OpenClaw's native msteams "
+        "channel plugin instead. See bridges/teams-webhook/README.md (for the retirement source) "
+        "and skills/nemoclaw-provision/SKILL.md Step 5."
+    )
     if not OUTGOING_SECRET:
         print("WARN: TEAMS_OUTGOING_SECRET unset — inbound Teams requests will be rejected.")
     if not INCOMING_WEBHOOK_URL:
