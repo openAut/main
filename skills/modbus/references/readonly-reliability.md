@@ -21,3 +21,7 @@ blocks separately and never derive a false aggregate alarm-clear state from miss
 The generic IOT2050 `read_point()` remains a stub. A case-scoped equipment adapter must explicitly
 adopt this pattern and verify the exact pymodbus version and firmware behavior before deployment.
 The tests do not prove automatic recovery from a physical serial adapter fault.
+
+Use the separate [polling/publication policy](polling-publication.md) to keep faster reads from
+increasing durable enqueue and database frequency. It also throttles last-success timestamps
+without throttling health transitions, and preserves change-only alarm publication.

@@ -39,6 +39,13 @@ Modbus change-of-value publication still requires polling. Record the analog sam
 digital polling interval and publication policy separately. An unchanged digital point may have
 an old event timestamp while polling continues successfully; point age alone is not its health.
 
+Filter periodic analog values and field-success timestamps before durable enqueue so faster
+polling does not imply faster MQTT/database writes. Keep change-driven alarms and health transitions
+independent. See the [opt-in publication policy](../skills/modbus/references/polling-publication.md)
+and its [dated lab evidence](verification/polling-publication-2026-09-17.md). These are instantaneous
+snapshots; interval statistics require an explicit contract. Validate all points over at least
+the longest publication interval, including restart snapshots and failed-read behavior.
+
 ## Identity is a cross-system contract
 
 | Identity | Meaning and lifecycle |
