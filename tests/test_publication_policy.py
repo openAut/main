@@ -120,6 +120,23 @@ class PublicationPolicyTests(unittest.TestCase):
                 self.assertTrue(policy.submit(metric, value, 1000, unit))
                 self.assertFalse(policy.submit(metric, value, 1000, unit))
 
+    def test_false_enqueue_result_does_not_consume_period_or_change(self):
+        for metric, value, unit in (("temperature", 20, "degC"), ("alarm", True, "bool")):
+            with self.subTest(metric=metric):
+                reject = True
+
+                def enqueue(*row):
+                    if reject:
+                        return False
+                    self.rows.append(row)
+
+                policy = self.policy(enqueue=enqueue)
+                with self.assertRaisesRegex(RuntimeError, "rejected"):
+                    policy.submit(metric, value, 1000, unit)
+                reject = False
+                self.assertTrue(policy.submit(metric, value, 1000, unit))
+                self.assertFalse(policy.submit(metric, value, 1000, unit))
+
     def test_slow_enqueue_starts_interval_after_durable_acceptance(self):
         for duration in (10, 90):
             with self.subTest(duration=duration):

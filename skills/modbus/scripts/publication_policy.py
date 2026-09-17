@@ -59,7 +59,9 @@ class PublicationPolicy:
                 return False
 
         # If persistence fails, keep the point due and a changed state unacknowledged.
-        self._enqueue(metric, value, ts, unit)
+        result = self._enqueue(metric, value, ts, unit)
+        if result is False:
+            raise RuntimeError("enqueue rejected the observation")
         # Start the next interval after durable acceptance, including slow enqueue.
         self._last_publication[metric] = self._monotonic()
         if metric in self._on_change:

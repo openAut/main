@@ -56,8 +56,9 @@ for metric, value in transport.health().items():
 
 Here `enqueue_event(metric, value, ts, unit)` creates the normal stable event ID and persists the
 complete event in the integration's own spool. It **returns only after durable acceptance** and
-raises on failure; it must not silently return false or start an asynchronous enqueue. If it
-raises, the policy remains due. A crash after persistence can still produce another startup
+raises on failure; it must not start an asynchronous enqueue. An explicit `False` return is also
+rejected with `RuntimeError`; a normal `None` return is accepted for synchronous callbacks.
+If enqueue raises or returns `False`, the policy remains due. A crash after persistence can still produce another startup
 snapshot: this is not a transactional/exactly-once filter. Replay existing queued events directly,
 with original IDs and payloads, without passing them through this policy again.
 

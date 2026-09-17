@@ -12,6 +12,13 @@ This report summarizes observations of **equipment-specific local code**, not a 
 the extracted public `PublicationPolicy` helper. Local operator authorization is not retrospective
 GitHub review. Machine addresses, identities, credentials and deployment/rollback paths are omitted.
 
+Authorization followed the explicit isolated-lab exception in
+[Proportionate POC scope](../EDGE-INTEGRATION-LIFECYCLE.md#proportionate-poc-scope): a lightweight
+local case, human confirmation of the exact action, hash-checked artifacts, verification and
+rollback. This experiment was outside the production governed runtime/release path. It does not
+claim a Systemdatabas approval or a PAP-issued Engineer permission profile; production delivery
+requirements in ADR 0001/0002 remain applicable and are not replaced by operator confirmation.
+
 ## Change and observed results
 
 | Measurement | RTU integration | TCP integration |
