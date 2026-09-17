@@ -63,6 +63,10 @@ See [Milestone 1 — Agent-led integration POC](docs/MILESTONE-1.md) for scope, 
 and acceptance criteria. This is a delivery target; the complete fresh-install journey is not yet
 verified.
 
+This proposed lab profile defers dedicated Engineer containment; its acceptance tests do not prove
+the full production trust model. The [M1 implementation profile](docs/M1-IMPLEMENTATION-PROFILE.md)
+sets out the candidate two-VM budget and staged delivery plan.
+
 ## Skills
 
 **Agent tier — create the NemoClaw agents:**

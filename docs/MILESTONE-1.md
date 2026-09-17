@@ -2,6 +2,14 @@
 
 Status: proposed delivery specification; end-to-end acceptance pending.
 
+> **Supervised lab profile under review.** M1 prioritizes platform services and Advisor in two VMs,
+> with user-led engineering from local opencode. Dedicated Engineer containment is deferred.
+> Passing M1 demonstrates this limited user journey, not the full trust model in ADRs 0001–0003.
+> The lab deviation remains a review decision; documenting it does not establish its approval.
+
+See [M1 implementation profile](M1-IMPLEMENTATION-PROFILE.md) for the candidate resource budget,
+preflight contract, installation order, and unresolved release prerequisites.
+
 ## Goal
 
 A user with limited AI knowledge can start with a computer with 64 GB RAM within a documented
@@ -49,6 +57,11 @@ The first supported profile must specify and verify:
   acceptance requires one fully documented physical integration, not arbitrary equipment support.
 - Teams account/tenant access and bridge prerequisites, checked before the Advisor installation.
 
+Local opencode LLM authentication, Advisor inference authentication, and SSH/deployment credentials
+are separate configurations. LLM authentication does not supply an Engineer credential proxy.
+The proxy remains deferred in this profile; secrets stay in their documented local stores and
+must not enter chat, shared configuration artifacts, or the installation journal.
+
 Exact disk requirements, model compatibility, image choices, and reference equipment must be settled
 and published before the new-user trial. They are release prerequisites, not assumptions hidden in
 the startup prompt.
@@ -72,6 +85,10 @@ the startup prompt.
 opencode session for Engineer tasks. It is not a separate executing actor, a fourth trust domain,
 a new persona, or a permission profile. The workflow must identify the actual OS/SSH/database
 actor, target, and authorized operation, including owner-admin bootstrap steps.
+
+The name labels the user's entry workflow, not an additional identity or an already provisioned
+production Engineer instance. This lab placement is an explicit deviation from the complete
+Engineer envelope, not a claim that renaming an unrestricted session provides containment.
 
 ### M1 placement and resource priority
 
