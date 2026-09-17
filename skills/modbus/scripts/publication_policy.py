@@ -60,7 +60,8 @@ class PublicationPolicy:
 
         # If persistence fails, keep the point due and a changed state unacknowledged.
         self._enqueue(metric, value, ts, unit)
-        self._last_publication[metric] = now
+        # Start the next interval after durable acceptance, including slow enqueue.
+        self._last_publication[metric] = self._monotonic()
         if metric in self._on_change:
             self._last_value[metric] = value
         return True

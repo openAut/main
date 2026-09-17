@@ -31,6 +31,8 @@ bursts; bounded retries and backoff remain the transport/scheduler's responsibil
 Construct one policy per integration in its single polling thread:
 
 ```python
+import time
+
 policy = PublicationPolicy(
     periodic={"supply_temp": 600, "field_protocol_last_success_unixtime": 30},
     on_change={"alarm_active", "field_protocol_healthy", "field_protocol_consecutive_errors"},
@@ -44,6 +46,7 @@ if words is not None:
     policy.submit("supply_temp", value, transport.last_success, "degC")
 
 # Evaluate health even when process reads fail. Missing last-success stays omitted.
+observation_epoch = int(time.time())  # synchronized UTC, once for this health snapshot
 for metric, value in transport.health().items():
     unit = {"field_protocol_healthy": "bool",
             "field_protocol_consecutive_errors": "count",
@@ -64,7 +67,8 @@ failed read. Health's last-success value is intentionally allowed to age: republ
 not advance that value. Consumers age the **embedded last-success epoch**, not just its enclosing
 event timestamp. A healthy block does not establish freshness of all other blocks.
 
-Periodic gates are independent per metric and use monotonic elapsed time. Source timestamps remain
+Periodic gates are independent per metric and use monotonic elapsed time measured from successful
+durable acceptance (after the enqueue callback returns), including slow queue writes. Source timestamps remain
 the observation's synchronized epoch. Publication intervals are **minimum spacing**, aligned to
 the next successful poll; jitter/failure can delay publication. Choose polling no slower than the
 desired publication interval. No background publication timer creates synthetic fresh samples.

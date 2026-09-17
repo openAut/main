@@ -120,6 +120,25 @@ class PublicationPolicyTests(unittest.TestCase):
                 self.assertTrue(policy.submit(metric, value, 1000, unit))
                 self.assertFalse(policy.submit(metric, value, 1000, unit))
 
+    def test_slow_enqueue_starts_interval_after_durable_acceptance(self):
+        for duration in (10, 90):
+            with self.subTest(duration=duration):
+                self.now = 0
+                accepted_at = []
+
+                def enqueue(*_row):
+                    self.now += duration
+                    accepted_at.append(self.now)
+
+                policy = self.policy(enqueue=enqueue)
+                self.assertTrue(policy.submit("temperature", 20, 1000, "degC"))
+                self.assertFalse(policy.submit("temperature", 21, 1001, "degC"))
+                self.now = duration + 59
+                self.assertFalse(policy.submit("temperature", 21, 1002, "degC"))
+                self.now = duration + 60
+                self.assertTrue(policy.submit("temperature", 22, 1003, "degC"))
+                self.assertGreaterEqual(accepted_at[1] - accepted_at[0], 60)
+
     def test_clock_adjustments_do_not_change_elapsed_time_gate(self):
         policy = self.policy()
         policy.submit("temperature", 20, 1000, "degC")
