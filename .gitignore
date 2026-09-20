@@ -23,6 +23,7 @@ deploy/platform-poc2/.env
 deploy/platform-poc2/secrets/
 *.key
 *.pem
+# Certificate exports/bundles can be generated outside pki/; keep them local too.
 *.crt
 *.p12
 *.pfx

@@ -18,6 +18,8 @@ INSERT INTO advisor_policy.allowed_sites VALUES('site-a','fixture-owner','fixtur
 INSERT INTO advisor_policy.forge_repositories VALUES('site-a','manuals','fixture-approval');
 CREATE ROLE fixture_engineer NOLOGIN;
 GRANT engineer_app TO fixture_engineer;
+CREATE ROLE fixture_registrar NOLOGIN;
+GRANT advisor_delivery_registrar TO fixture_registrar;
 INSERT INTO system.cases(case_id,site,equipment_id,assigned_to,status,title,summary) VALUES
  ('delivery','site-a','ahu-03','fixture_engineer','approved','Fixture delivery','Synthetic case'),
  ('outside','site-b','ahu-99','fixture_engineer','approved','Outside','Synthetic case');
@@ -28,9 +30,12 @@ INSERT INTO system.approvals(approval_id,case_id,requested_by,approved_by,status
  'integration',jsonb_build_object('equipment_id','ahu-99','node','edge-b','telemetry_system','ahu-99','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64))));
 
 SET SESSION AUTHORIZATION fixture_engineer;
-SELECT system.register_advisor_integration('delivery',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
- 'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
 DO $$ DECLARE denied boolean; BEGIN
+ denied=false;
+ BEGIN PERFORM system.register_advisor_integration('delivery','fixture_engineer',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
+ 'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
+ EXCEPTION WHEN insufficient_privilege THEN denied=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'Engineer can register directly'; END IF;
  denied=false;
  BEGIN INSERT INTO advisor_policy.allowed_sites VALUES('site-b','self','self',now());
  EXCEPTION WHEN insufficient_privilege THEN denied=true; END;
@@ -43,22 +48,41 @@ DO $$ DECLARE denied boolean; BEGIN
  BEGIN UPDATE system.approvals SET approved_by=session_user WHERE case_id='delivery';
  EXCEPTION WHEN insufficient_privilege THEN denied=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'Engineer can edit approvals'; END IF;
+END $$;
+RESET SESSION AUTHORIZATION;
+SET SESSION AUTHORIZATION fixture_registrar;
+SELECT system.register_advisor_integration('delivery','fixture_engineer',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
+ 'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
+DO $$ DECLARE denied boolean; BEGIN
  denied=false;
- BEGIN PERFORM system.register_advisor_integration('outside',jsonb_build_object('equipment_id','ahu-99','node','edge-b',
+ BEGIN INSERT INTO advisor_policy.allowed_sites VALUES('site-b','self','self',now());
+ EXCEPTION WHEN insufficient_privilege THEN denied=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'Registrar can expand policy'; END IF;
+ denied=false;
+ BEGIN UPDATE system.approvals SET approved_by=session_user WHERE case_id='delivery';
+ EXCEPTION WHEN insufficient_privilege THEN denied=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'Registrar can approve its own work'; END IF;
+ denied=false;
+ BEGIN PERFORM system.register_advisor_integration('delivery','different-engineer',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
+ 'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
+ EXCEPTION WHEN raise_exception THEN denied=true; END;
+ IF NOT denied THEN RAISE EXCEPTION 'Actor binding bypass'; END IF;
+ denied=false;
+ BEGIN PERFORM system.register_advisor_integration('outside','fixture_engineer',jsonb_build_object('equipment_id','ahu-99','node','edge-b',
  'telemetry_system','ahu-99','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
  EXCEPTION WHEN raise_exception THEN denied=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'outside registration succeeded'; END IF;
  denied=false;
- BEGIN PERFORM system.register_advisor_integration('delivery',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
+ BEGIN PERFORM system.register_advisor_integration('delivery','fixture_engineer',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
  'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('b',64)));
  EXCEPTION WHEN raise_exception THEN denied=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'artifact approval bypass'; END IF;
 END $$;
 RESET SESSION AUTHORIZATION;
 UPDATE system.approvals SET expires_at=now()-interval '1 second' WHERE approval_id='approved';
-SET SESSION AUTHORIZATION fixture_engineer;
+SET SESSION AUTHORIZATION fixture_registrar;
 DO $$ DECLARE denied boolean=false; BEGIN
- BEGIN PERFORM system.register_advisor_integration('delivery',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
+ BEGIN PERFORM system.register_advisor_integration('delivery','fixture_engineer',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
  'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
  EXCEPTION WHEN raise_exception THEN denied=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'expired approval accepted'; END IF;
@@ -67,14 +91,21 @@ RESET SESSION AUTHORIZATION;
 
 -- Self approvals are independently rejected even when an owner fixture creates one.
 UPDATE system.approvals SET expires_at=NULL,approved_by='fixture_engineer' WHERE approval_id='approved';
-SET SESSION AUTHORIZATION fixture_engineer;
+SET SESSION AUTHORIZATION fixture_registrar;
 DO $$ DECLARE denied boolean=false; BEGIN
- BEGIN PERFORM system.register_advisor_integration('delivery',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
+ BEGIN PERFORM system.register_advisor_integration('delivery','fixture_engineer',jsonb_build_object('equipment_id','ahu-03','node','edge-a',
  'telemetry_system','ahu-03','alarm_metrics','{"fault_flags":"uint16"}'::jsonb,'alarm_watch',true,'artifact_sha256',repeat('a',64)));
  EXCEPTION WHEN raise_exception THEN denied=true; END;
  IF NOT denied THEN RAISE EXCEPTION 'self approval accepted'; END IF;
 END $$;
 RESET SESSION AUTHORIZATION;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT FROM system.advisor_integrations WHERE equipment_id='ahu-03'
+   AND engineer_actor='fixture_engineer' AND registered_by='fixture_registrar') THEN
+  RAISE EXCEPTION 'producer/executor provenance missing'; END IF;
+ IF NOT EXISTS(SELECT FROM system.audit_events WHERE actor='fixture_registrar'
+   AND details->>'engineer_actor'='fixture_engineer') THEN RAISE EXCEPTION 'mediated audit missing'; END IF;
+END $$;
 SET SESSION AUTHORIZATION advisor_reader;
 DO $$ DECLARE denied boolean=false; BEGIN
  IF (SELECT array_agg(equipment_id) FROM advisor_read.equipment)<>ARRAY['ahu-03']::text[] THEN RAISE EXCEPTION 'wrong equipment scope'; END IF;

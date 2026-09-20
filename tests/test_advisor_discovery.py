@@ -24,6 +24,8 @@ def load(name):
 
 
 reader, engine, integration = load('reader'), load('engine'), load('integration')
+with patch.dict(sys.modules, {'integration': integration}):
+    control_plane = load('control_plane')
 with patch.dict(sys.modules, {'engine': engine}):
     worker = load('worker')
 
@@ -174,7 +176,8 @@ def test_malformed_data_is_atomic_and_late_data_does_not_reverse_state(store):
     assert store.summary()['unbatched_events'] == 1
 
 
-def test_incomplete_history_and_scope_do_not_advance(store):
+def test_incomplete_history_and_scope_do_not_advance(store, monkeypatch):
+    monkeypatch.setattr(engine,'MAX_HISTORY_REQUESTS',2)
     def read(operation,args):
         if operation=='alarms':
             return {'equipment_id':'ahu-03','queried_at':engine.iso(1100),'health':{'state':'healthy'},'readings':[row(999,0)]}
@@ -241,6 +244,37 @@ def test_engineer_artifact_and_contract_validation():
         with pytest.raises(ValueError): integration.validate_contract({**contract,**patch},artifact)
 
 
+def test_engineer_only_prepares_an_offline_proposal(tmp_path, monkeypatch, capsys):
+    artifact=b'{"synthetic_fixture":true}\n'
+    contract={'equipment_id':'ahu-03','node':'edge-a','telemetry_system':'ahu-03','alarm_watch':True,
+              'alarm_metrics':{'fault_flags':'uint16'},'artifact_sha256':hashlib.sha256(artifact).hexdigest()}
+    source=tmp_path/'artifact.json'; source.write_bytes(artifact)
+    spec=tmp_path/'contract.json'; spec.write_text(json.dumps(contract))
+    output=tmp_path/'proposal.json'
+    import psycopg
+    monkeypatch.setattr(psycopg,'connect',lambda *a,**k: pytest.fail('Engineer attempted SQL access'))
+    monkeypatch.setattr(sys,'argv',['integration.py','prepare','--contract',str(spec),'--artifact',str(source),
+                                 '--case','fixture-case','--output',str(output)])
+    integration.main()
+    assert json.loads(output.read_text())=={'case_id':'fixture-case','integration':contract}
+    assert 'registered' not in capsys.readouterr().out
+    with pytest.raises(FileExistsError): integration.main()
+    monkeypatch.setattr(sys,'argv',['integration.py','register','--contract',str(spec),'--artifact',str(source)])
+    with pytest.raises(SystemExit) as exc: integration.main()
+    assert exc.value.code==2
+
+
+def test_owner_handoff_does_not_trust_embedded_actor_or_connection():
+    artifact=b'approved bytes'
+    contract={'equipment_id':'ahu-03','node':'edge-a','telemetry_system':'ahu-03','alarm_watch':True,
+              'alarm_metrics':{'fault_flags':'uint16'},'artifact_sha256':hashlib.sha256(artifact).hexdigest()}
+    request={'case_id':'fixture-case','integration':contract}
+    assert control_plane.validate_request(request,artifact)==('fixture-case',contract)
+    for extra in ({'engineer':'claimed-actor'},{'service':'owner-login'},{'approved':True}):
+        with pytest.raises(ValueError): control_plane.validate_request({**request,**extra},artifact)
+    with pytest.raises(ValueError): control_plane.validate_request(request,b'different bytes')
+
+
 @pytest.mark.parametrize('kind,unit,value,boolean,accepted', [
     ('boolean','bool',None,False,True), ('boolean','bool',None,1,False),
     ('integer','code',-32768,None,True), ('integer','count',65535,None,True),
@@ -273,3 +307,111 @@ def test_normalized_communication_alarm_is_not_a_transport_outage(tmp_path):
         value=json.loads(json.loads(store.next_batch(1004)['payload'])['event_json'])
         assert value['changes'][0]['kind']=='equipment_communication_alarm'
     finally: store.close()
+
+
+def dense_history_fixture(tmp_path, metric_count=1):
+    names=['signal_'+str(i) for i in range(metric_count)]
+    args={'equipment_id':'ahu-03','alarm_metrics':{m:'uint16' for m in names},'binding':'fixture'}
+    path=tmp_path/'dense.sqlite'
+    store=engine.Store(path,**args)
+    store.seed([row(0,0,m) for m in names],0.5)
+    # More than a page lies entirely BEFORE the saved cursor, inside its overlap.
+    old=[row(181+i/10,0,names[i % metric_count]) for i in range(600)]
+    store.apply(old,300,301)
+    store.health('healthy',301)
+    new=[row(301+i,i+1,m) for i,m in enumerate(names)]
+    class Source:
+        now=330
+        calls=[]
+        fail_at=None
+        def read(self,operation,params):
+            if operation=='alarms':
+                return {'equipment_id':'ahu-03','queried_at':engine.iso(self.now),
+                        'health':{'state':'healthy'},'readings':new}
+            start,end=engine.timestamp(params['start']),engine.timestamp(params['end'])
+            metrics=params['metrics'].split(',')
+            self.calls.append((start,end,metrics))
+            if self.fail_at==len(self.calls): raise OSError('fixture connection lost')
+            values=[r for r in old+new if r['metric'] in metrics and start<=engine.timestamp(r['ts'])<end]
+            values.sort(key=lambda r:(r['ts'],r['metric']))
+            return {'equipment_id':'ahu-03','readings':values[:500],'truncated':len(values)>500}
+    return path,args,store,Source()
+
+
+@pytest.mark.parametrize('metric_count',[1,8])
+def test_dense_overlap_does_not_hide_forward_alarms(tmp_path,metric_count):
+    _,_,store,source=dense_history_fixture(tmp_path,metric_count)
+    try:
+        engine.poll(source.read,store,source.now)
+        assert store.get('cursor')==328
+        assert store.get('health')=='healthy'
+        assert store.summary()['history_pending_ranges']==0
+        changes=store.db.execute("SELECT metric,new FROM events WHERE kind='process_alarm_change' ORDER BY metric").fetchall()
+        assert [(m,json.loads(v)) for m,v in changes]==[('signal_'+str(i),i+1) for i in range(metric_count)]
+        assert any(end<300 or len(metrics)<metric_count for start,end,metrics in source.calls)
+    finally: store.close()
+
+
+def test_bounded_history_checkpoint_resumes_after_each_restart(tmp_path,monkeypatch):
+    path,args,store,source=dense_history_fixture(tmp_path)
+    monkeypatch.setattr(engine,'MAX_HISTORY_REQUESTS',1)
+    try:
+        for _ in range(12):
+            before=len(source.calls)
+            engine.poll(source.read,store,source.now)
+            assert len(source.calls)-before<=1
+            if store.get('cursor')>300: break
+            assert store.get('health')=='history_backpressure'
+            store.close()
+            store=engine.Store(path,**args)
+            source.now+=30
+        assert store.get('cursor')==328  # Fixed scan target, not the later clock after restarts.
+        assert store.db.execute("SELECT count(*) FROM events WHERE kind='process_alarm_change'").fetchone()[0]==1
+        assert store.get('history_scan')=={}
+    finally: store.close()
+
+
+def test_history_failure_keeps_unread_partition_and_cursor(tmp_path):
+    path,args,store,source=dense_history_fixture(tmp_path)
+    try:
+        source.fail_at=4  # Fail after one complete overlap page has committed.
+        engine.poll(source.read,store,source.now)
+        assert store.get('cursor')==300
+        assert store.get('health')=='source_unavailable'
+        pending=store.get('history_scan')['pending'][0]
+        assert pending['start']>180
+        store.close(); store=engine.Store(path,**args)
+        source.fail_at=None
+        source.now+=30
+        prior=len(source.calls)
+        engine.poll(source.read,store,source.now)
+        assert source.calls[prior][0]==pending['start']
+        assert store.get('cursor')==328
+        assert store.db.execute("SELECT count(*) FROM events WHERE kind='process_alarm_change'").fetchone()[0]==1
+    finally: store.close()
+
+
+def test_nontruncated_response_cannot_escape_requested_partition(store):
+    def read(operation,params):
+        if operation=='alarms':
+            return {'equipment_id':'ahu-03','queried_at':engine.iso(1100),'health':{'state':'healthy'},'readings':[row(999,0)]}
+        return {'equipment_id':'ahu-03','readings':[row(1200,1)],'truncated':False}
+    engine.poll(read,store,1100)
+    assert store.get('cursor')==1000
+    assert store.get('health')=='data_quality'
+    assert store.db.execute("SELECT count(*) FROM events WHERE kind='process_alarm_change'").fetchone()[0]==0
+
+
+def test_unpageable_single_instant_is_explicit_quality_failure_not_skipped(store):
+    def read(operation,params):
+        if operation=='alarms':
+            return {'equipment_id':'ahu-03','queried_at':engine.iso(1100),'health':{'state':'healthy'},'readings':[row(1050,0)]}
+        start,end=engine.timestamp(params['start']),engine.timestamp(params['end'])
+        dense=start<=1050<end
+        return {'equipment_id':'ahu-03','readings':[row(1050,0)]*500 if dense else [],'truncated':dense}
+    for _ in range(5):
+        engine.poll(read,store,1100)
+        if store.get('health')=='data_quality': break
+    assert store.get('health')=='data_quality'
+    assert store.get('cursor')==1000
+    assert store.get('history_scan')['pending']

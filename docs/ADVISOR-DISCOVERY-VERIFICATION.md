@@ -15,7 +15,8 @@ model. Those changes require a deployment-specific acceptance test before replac
 
 ## Reproducible checks for this package
 
-Reference checks completed **2026-09-20**: 32 Python tests passed on Python 3.12; the
+Reference checks updated **2026-09-20** after review: 40 discovery Python tests passed on Python 3.12
+(127 passed / 4 skipped for the complete repository suite on Windows); the
 disposable PostgreSQL 16-compatible schema/authorization suite passed; Node adapter tests and the
 OpenClaw 2026.9.4 hook/discovery/tool-policy tests passed on Node 24. Documentation links and skill
 permission schemas were checked. Publication review found no matches for the configured lab-ID,
@@ -25,9 +26,15 @@ private-network/workstation-path, runtime-ID or common credential-material patte
   authentication/write rejection, document identity/hash checks and source-code-as-data handling.
 - Detector/worker tests cover short transitions, overlaps, late observations, malformed input,
   restart ambiguity, binding/profile changes, revocation, discovery failure and persistent global budget.
-- Engineer tests bind the contract to exact artifact bytes.
+- Dense-history regressions put more than 500 samples entirely before the cursor and prove that
+  later alarms remain discoverable. Bounded scans resume across restarts and failed requests;
+  unpartitionable same-instant density preserves the cursor and reports a quality failure.
+- Engineer tests bind the offline proposal to exact artifact bytes, reject the removed direct
+  registration command and forbid identity/connection claims in the proposal envelope.
 - Disposable PostgreSQL tests cover fresh implicit-deny, owner area/repository boundaries, constrained
   registration, expiry, artifact approval, denied policy/site edits, automatic discovery and revocation.
+  Engineer has no registration EXECUTE privilege; the external owner registrar is separately bound
+  to trusted Engineer context, cannot edit policy/approvals, and audits both producer and executor.
   Product-manual tests distinguish shared verified manuals from other products/private site material.
 - Node tests cover bounded read requests, equipment-response binding, timezone conversion, synthetic
   routing, current authorization and rejection of caller-controlled agent/session/model fields.

@@ -3,6 +3,9 @@
 BEGIN;
 SET LOCAL lock_timeout='5s';
 CREATE ROLE advisor_reader NOLOGIN;
+CREATE ROLE advisor_delivery_registrar NOLOGIN;
+-- Names describe the interface, not ownership: both schemas belong to the installing
+-- owner/administrative identity. advisor_read is a consumer view layer, not the PAP.
 CREATE SCHEMA advisor_policy;
 CREATE SCHEMA advisor_read;
 REVOKE ALL ON SCHEMA advisor_policy,advisor_read FROM PUBLIC;
@@ -17,19 +20,19 @@ CREATE TABLE advisor_policy.forge_repositories (
  repository text CHECK (repository ~ '^[a-z0-9][a-z0-9._-]{0,99}$'),
  approval_reference text NOT NULL, PRIMARY KEY(site,repository)
 );
-REVOKE ALL ON ALL TABLES IN SCHEMA advisor_policy FROM PUBLIC,advisor_reader,advisor_app,engineer_app;
-REVOKE ALL ON SCHEMA advisor_policy FROM advisor_reader,advisor_app,engineer_app;
+REVOKE ALL ON ALL TABLES IN SCHEMA advisor_policy FROM PUBLIC,advisor_reader,advisor_app,engineer_app,advisor_delivery_registrar;
+REVOKE ALL ON SCHEMA advisor_policy FROM advisor_reader,advisor_app,engineer_app,advisor_delivery_registrar;
 CREATE TABLE system.advisor_integrations (
  equipment_id text PRIMARY KEY REFERENCES system.equipment(equipment_id),
  site text NOT NULL REFERENCES system.sites(site), node text NOT NULL, telemetry_system text NOT NULL,
  alarm_metrics jsonb NOT NULL, alarm_watch boolean NOT NULL,
  case_id text NOT NULL REFERENCES system.cases(case_id),
  artifact_sha256 text NOT NULL CHECK(artifact_sha256 ~ '^[a-f0-9]{64}$'),
- registered_by text NOT NULL, registered_at timestamptz NOT NULL DEFAULT now()
+ engineer_actor text NOT NULL, registered_by text NOT NULL, registered_at timestamptz NOT NULL DEFAULT now()
 );
-REVOKE ALL ON system.advisor_integrations FROM PUBLIC,advisor_reader,advisor_app,engineer_app;
+REVOKE ALL ON system.advisor_integrations FROM PUBLIC,advisor_reader,advisor_app,engineer_app,advisor_delivery_registrar;
 
-CREATE FUNCTION system.register_advisor_integration(p_case text,p_contract jsonb)
+CREATE FUNCTION system.register_advisor_integration(p_case text,p_engineer text,p_contract jsonb)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 DECLARE e system.equipment%ROWTYPE; c system.cases%ROWTYPE; item record;
 BEGIN
@@ -53,12 +56,13 @@ BEGIN
  SELECT * INTO e FROM system.equipment WHERE equipment_id=p_contract->>'equipment_id' FOR SHARE;
  SELECT * INTO c FROM system.cases WHERE case_id=p_case FOR UPDATE;
  IF e.equipment_id IS NULL OR c.case_id IS NULL OR c.status NOT IN ('approved','in_progress')
- OR c.assigned_to IS DISTINCT FROM session_user::text
+ OR nullif(btrim(p_engineer),'') IS NULL OR p_engineer=session_user::text
+ OR c.assigned_to IS DISTINCT FROM p_engineer
  OR c.equipment_id IS DISTINCT FROM e.equipment_id OR c.site IS DISTINCT FROM e.site
  OR e.metadata->>'node' IS DISTINCT FROM p_contract->>'node'
  OR e.metadata->>'telemetry_system' IS DISTINCT FROM p_contract->>'telemetry_system'
  OR NOT EXISTS (SELECT FROM system.approvals a WHERE a.case_id=p_case AND a.status='approved'
-  AND a.approved_by IS NOT NULL AND a.approved_by<>session_user::text
+  AND a.approved_by IS NOT NULL AND a.approved_by<>p_engineer AND a.approved_by<>session_user::text
   AND (a.expires_at IS NULL OR a.expires_at>now())
   AND a.scope=jsonb_build_object('action','advisor-integration','field_write',false,'integration',p_contract))
  THEN RAISE EXCEPTION 'case, actor, binding or approved contract mismatch'; END IF;
@@ -66,17 +70,18 @@ BEGIN
  IF NOT FOUND THEN RAISE EXCEPTION 'site outside owner-authorized area'; END IF;
  INSERT INTO system.advisor_integrations VALUES (e.equipment_id,e.site,p_contract->>'node',
   p_contract->>'telemetry_system',p_contract->'alarm_metrics',(p_contract->>'alarm_watch')::boolean,
-  p_case,p_contract->>'artifact_sha256',session_user,now())
+  p_case,p_contract->>'artifact_sha256',p_engineer,session_user,now())
  ON CONFLICT(equipment_id) DO UPDATE SET site=excluded.site,node=excluded.node,
   telemetry_system=excluded.telemetry_system,alarm_metrics=excluded.alarm_metrics,
   alarm_watch=excluded.alarm_watch,case_id=excluded.case_id,artifact_sha256=excluded.artifact_sha256,
-  registered_by=excluded.registered_by,registered_at=excluded.registered_at;
+  engineer_actor=excluded.engineer_actor,registered_by=excluded.registered_by,registered_at=excluded.registered_at;
  INSERT INTO system.audit_events(actor,source,action,target_type,target_id,outcome,details)
  VALUES(session_user,'system.register_advisor_integration','register-advisor-delivery','equipment',
-  e.equipment_id,'registered',jsonb_build_object('case_id',p_case,'contract',p_contract));
+  e.equipment_id,'registered',jsonb_build_object('case_id',p_case,'engineer_actor',p_engineer,'contract',p_contract));
 END $$;
-REVOKE ALL ON FUNCTION system.register_advisor_integration(text,jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION system.register_advisor_integration(text,jsonb) TO engineer_app;
+REVOKE ALL ON FUNCTION system.register_advisor_integration(text,text,jsonb) FROM PUBLIC,engineer_app,advisor_app,advisor_reader;
+GRANT USAGE ON SCHEMA system TO advisor_delivery_registrar;
+GRANT EXECUTE ON FUNCTION system.register_advisor_integration(text,text,jsonb) TO advisor_delivery_registrar;
 
 CREATE VIEW advisor_read.equipment WITH(security_barrier=true) AS
 SELECT e.equipment_id,e.site,e.name,e.manufacturer,e.model,

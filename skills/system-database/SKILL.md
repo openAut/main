@@ -212,8 +212,10 @@ The [Advisor integration workflow](../../docs/ADVISOR-INTEGRATION-WORKFLOW.md) s
 owner-managed area/repository policy from `system.advisor_integrations`, which contains Engineer
 delivery metadata rather than per-equipment permissions. The reference reader discovers systems
 through area-filtered views and supports equipment-linked documents plus product manuals when the
-product-catalog columns are present. Engineer registers exactly approved contracts through a
-constrained function and cannot modify that policy or arbitrarily reassign an equipment's site.
+product-catalog columns are present. Engineer prepares a local proposal; an owner-controlled
+registrar outside its sandbox applies the exactly approved contract through a constrained function,
+using trusted actor context. Engineer receives no direct SQL path or registration EXECUTE grant
+and cannot modify policy or arbitrarily reassign equipment to another site (ADR 0003 §2).
 The reference schema requires explicit owner provisioning; source availability is not deployment.
 
 | Actor | Access |

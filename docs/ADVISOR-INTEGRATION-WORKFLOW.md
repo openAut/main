@@ -15,9 +15,9 @@ Owner-authorized sites/repositories
                   ↓
 Systemdatabas → scoped read service → Advisor (openaut_read)
      ↑                    ↑
-Engineer delivery     telemetry + hash-checked Forge material
-     ↓
-Alarm contract → deterministic watcher → validated hook → equipment conversation
+Engineer artifact     telemetry + hash-checked Forge material
+     ↓ owner-controlled release/job handoff (outside Engineer sandbox)
+Registrar → alarm contract → deterministic watcher → validated hook → equipment conversation
 ```
 
 The [reference package](../deploy/advisor-discovery/README.md) contains the schema, reader, watcher,
@@ -31,7 +31,7 @@ automatic production deployment. Physical integration remains governed by the
 |---|---|
 | Allowed sites and Forge repositories | Asset-owner database administration |
 | Equipment/product identity, point maps and document references | Approved integration and manual-ingest paths |
-| Alarm metrics, types and publication identity | Engineer through an exactly approved delivery contract |
+| Alarm metrics, types and publication identity | Owner registrar applying an exactly approved Engineer delivery contract |
 | Telemetry samples | Existing ingest |
 | Watcher cursor, deduplication and outbox | Deterministic read-only observer |
 
@@ -58,9 +58,10 @@ owner/superuser login or the broader legacy `advisor_app` group for this service
 3. Create the alarm contract from observed, verified normalized metrics. Supported types are
    `boolean` (unit `bool`), `integer` (`code`/`count`) and `uint16` (`bitfield`). A raw alarm word
    does not establish the meaning of each bit. Unsupported representations require a reviewed adapter.
-4. Bind the exact contract and the reviewed artifact's SHA-256 to an owner-approved case. Register
-   it with the scoped Engineer database identity. The function checks case status, assignment,
-   equipment/site/node/system, approval expiry and exact approved contract equality.
+4. Bind the exact contract and the reviewed artifact's SHA-256 to an owner-approved case. Engineer
+   prepares a local proposal; an owner-controlled release/job wrapper mediates registration outside
+   the Engineer sandbox. Its registrar checks the live case, trusted Engineer identity, equipment/
+   site/node/system, approval expiry and exact approved contract. Engineer receives no SQL credential.
 5. Verify discovery, current health, values, history and document references. Missing manuals or
    physical point maps are explicit evidence gaps; they do not justify invented readings.
 6. Run a separate synthetic alarm through the watcher. Verify persistent admission **and a completed
@@ -86,10 +87,19 @@ the rest of that delivery; a separate Advisor-only case is normally unnecessary.
 
 The independent approval's `scope` contains `action="advisor-integration"`, `field_write=false`
 and `integration` equal to the entire contract. The approved/in-progress case is assigned to the
-database connection's `session_user`. Engineer cannot create this approval using the registration
-utility. Existing case/Forge approval functions must be explicitly connected to this contract type;
+Engineer principal authenticated by the owner-controlled job context, not a claimed identity in
+the proposal. The registrar uses its own DB identity, outside the Engineer sandbox, and audits both
+the producer and executor. Engineer cannot call the SQL registration function or create its own
+approval. Existing case/Forge approval functions must be explicitly connected to this contract type;
 the package does not silently broaden their accepted actions. A local POC can record the scoped
 human approval through owner administration, consistent with the lab's approval rules.
+
+The handoff does not broaden [ADR 0003 §2](adr/0003-engineer-runtime-containment.md). Engineer has
+only its existing four infrastructure exceptions and in-case edge access. The owner wrapper obtains
+proposal artifacts through the existing controlled work-directory/release path; the registrar's DB
+connection belongs to the separate management control plane. Production artifacts still follow
+ADR 0001's signed Main release. The reference registrar is neither a new agent nor an Engineer-owned
+network proxy, and does not automatically grant trust to a file exported from a work directory.
 
 ## Runtime behavior
 
@@ -106,6 +116,10 @@ human approval through owner administration, consistent with the lab's approval 
   restarts and equipment removal. A crash around sending becomes `uncertain`, not an automatic retry.
 - Initial healthy baseline does not create an analysis for every unchanged alarm. Synthetic tests
   use independent state. COV timestamps are publication times, not new measurement timestamps.
+- Oversized history is partitioned across both metrics and time, including pre-cursor overlap.
+  Each complete page and remaining scan checkpoint commit together. A bounded poll can pause and
+  resume a scan without advancing the global cursor over unread data; unpartitionable timestamp
+  density becomes an explicit quality failure rather than silently skipping samples.
 - Scope removal pauses dispatch without deleting evidence. Changed binding/profile requires an
   explicit state migration; the worker must not erase a cursor or outbox to hide incompatibility.
 

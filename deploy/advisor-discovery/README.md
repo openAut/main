@@ -10,19 +10,20 @@ directories, host-specific equipment allowlists, embedded credentials or one-off
 
 | File | Purpose |
 |---|---|
-| `schema.sql` | Fresh owner-controlled read boundary and constrained Engineer registration |
+| [`schema.sql`](schema.sql) | Fresh owner-controlled read boundary and mediated registration |
 | `reader.py` | Bounded authenticated metadata/telemetry/Forge API |
 | `engine.py` | Persistent observation, overlap, deduplication and outbox |
 | `worker.py` | Discovery, shared durable budget, dispatch and synthetic fixtures |
-| `integration.py` | Validate an artifact/contract and register using a scoped libpq service |
+| `integration.py` | Engineer-side offline validation and proposal preparation |
+| `control_plane.py` | Owner-operated registrar outside Engineer; retains SQL credentials |
 | `openclaw/` | Standalone plugin and authenticated-hook transform |
 | `*.example.json` | Unprovisioned configuration examples, not operational credentials |
 
 ## Owner installation
 
 1. Apply the existing storage setup and `deploy/platform-poc2/db/001-system.sql`. As the owner,
-   back up applicable schema definitions/ACLs, then apply `schema.sql` in the intended database.
-   It creates a **NOLOGIN** `advisor_reader` group and empty site/repository policy. Name collisions
+   back up applicable schema definitions/ACLs, then apply [`schema.sql`](schema.sql) in the intended database.
+   It creates **NOLOGIN** `advisor_reader` and `advisor_delivery_registrar` groups and empty site/repository policy. Name collisions
    intentionally fail; this is not an in-place installer for an existing lab.
 2. Record owner-authorized sites and repositories in `advisor_policy.allowed_sites` and
    `advisor_policy.forge_repositories`. Operational identities cannot write these tables.
@@ -90,14 +91,38 @@ evidence never becomes an invented physical point map or alarm-bit definition.
 
 ```text
 python integration.py validate --contract delivery.json --artifact reviewed-point-map.json
-python integration.py register --contract delivery.json --artifact reviewed-point-map.json --case approved-case --service scoped_engineer
+python integration.py prepare --contract delivery.json --artifact reviewed-point-map.json --case approved-case --output delivery-request.json
 ```
 
-The owner records the exact contract approval described in the workflow. The assigned identity must
-match the connection's `session_user`, not a model-supplied actor. Expired/self approvals, mismatched
-artifacts/publication identities and out-of-area equipment are rejected. The function does not
-approve cases or broaden the existing Forge approval verbs. Equipment/point/document registration
-continues through its separately approved integration/ingest path.
+These commands read/write only the permitted Engineer work directory and approved artifact inputs.
+The proposal contains case and contract data, never SQL connection settings or an asserted actor.
+It is not an approval. **Engineer receives no SQL route, credentials or registration EXECUTE grant.**
+
+An owner-controlled release/job wrapper collects the proposal through the existing artifact handoff,
+validates release/case evidence and supplies the authenticated Engineer principal from its trusted
+execution context. Production delivery uses the reviewed signed Main release and existing release
+pipeline, per ADR 0001; this utility does not implement or replace release attestation. The owner
+may use a scoped, explicitly approved local handoff in the isolated POC. A bare work-directory file
+must not be watched and auto-approved as though it were a signed release.
+
+On that owner-controlled management host, **outside the Engineer sandbox**, the registrar runs:
+
+```text
+python control_plane.py --request accepted-request.json --artifact approved-release-artifact.json --engineer authenticated-engineer-principal --service registrar_service
+```
+
+The owner provisions this service identity with only `advisor_delivery_registrar`, not Engineer,
+approver or policy-administration privileges. The trusted job context supplies `--engineer`; copying
+an actor string from an untrusted proposal is not authentication. The DB function checks this principal
+against the owner-recorded case assignment, and independently checks the exact unexpired approval,
+artifact and publication binding. Both the Engineer principal and actual registrar `session_user`
+are audited. Neither the producer nor the registrar may approve its own delivery or edit area policy.
+
+This introduces no additional Engineer network exception: the four infrastructure endpoints in
+[ADR 0003 §2](../../docs/adr/0003-engineer-runtime-containment.md) remain the only off-VLAN destinations.
+The registrar has its own owner-managed DB conduit. Engineer does not call a new registration URL or
+connect to Systemdatabasen/Forge directly. Equipment/point/document registration and the existing
+case/Forge approval verbs continue through their separately approved integration/ingest paths.
 
 The watcher discovers active contracts without per-equipment code/config changes. It waits 30 seconds
 between cycles, caps discovery at 1,000 equipment, reads 20 per page, and maintains separate state.
@@ -105,6 +130,13 @@ Limits: 64 alarm metrics per contract, eight metrics/500 samples per history cal
 window, 120-second overlap, bounded pending events. No promise of unbounded late-data recovery or
 distributed exactly-once delivery. Automatic attempts share a durable six/hour and one/minute cap;
 no priority/fairness guarantee is made during sustained alarm floods.
+History scans split metric groups and time intervals, including the overlap before the cursor.
+At most 32 requests are made per equipment/poll. Complete pages and the remaining scan queue are
+checkpointed together; the global cursor advances only once the fixed scan target is fully covered.
+An interrupted scan resumes after restart rather than refetching a permanently oversized prefix.
+`history_backpressure` can mean bounded work remains, not discarded data. More than 500 rows for
+one metric at one indivisible timestamp cannot be time-partitioned: this is an explicit `data_quality`
+failure with the cursor/checkpoint retained, requiring corrected source identity/timestamp resolution.
 The read API also limits latest snapshots to 256 metrics, document lists to 20 sources per equipment,
 Forge blobs to 2 MiB and JSON responses to 256 KiB. Oversized results fail explicitly rather than
 silently presenting incomplete evidence. Point-registry truncation is reported in the response.
@@ -125,7 +157,7 @@ admission is not completion. Missing documentation/point mapping must appear in 
 Pause the worker before schema/policy/code transitions. Back up views including owner/ACLs and
 snapshot SQLite using its backup API under the ledger owner; a lone copy of a live WAL database is
 not sufficient. Restore saved code/configuration and reader views in dependency order. Preserve all
-active ledgers, synthetic receipts and `discovery-budget.sqlite`; never overwrite new events with an
+active ledgers (including in-progress history scan checkpoints), synthetic receipts and `discovery-budget.sqlite`; never overwrite new events with an
 old backup. Scope revocation stops new dispatch but intentionally retains audit evidence. A changed
 binding/profile is `integration_requires_review`, not a reason to delete state and rebaseline silently.
 

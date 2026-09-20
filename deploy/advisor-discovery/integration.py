@@ -1,4 +1,4 @@
-"""Validate and register an Engineer delivery through an existing scoped libpq service."""
+"""Engineer-side, offline delivery proposal. No database/network credentials or connections."""
 import argparse
 import hashlib
 import json
@@ -24,26 +24,27 @@ def validate_contract(value, artifact):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['validate', 'register'])
+    parser.add_argument('action', choices=['validate', 'prepare'])
     parser.add_argument('--contract', type=Path, required=True)
     parser.add_argument('--artifact', type=Path, required=True)
     parser.add_argument('--case')
-    parser.add_argument('--service', help='Provisioned scoped Engineer libpq service name, not a DSN or password')
+    parser.add_argument('--output', type=Path, help='New proposal file in the permitted Engineer work directory')
     args = parser.parse_args()
     contract = validate_contract(json.loads(args.contract.read_text(encoding='utf-8')), args.artifact.read_bytes())
-    if args.action == 'register':
-        if not args.case or not args.service or not re.fullmatch(r'[a-zA-Z0-9_-]{1,63}', args.service):
-            raise ValueError('case_and_service_required')
-        import psycopg
-        from psycopg.types.json import Jsonb
-        with psycopg.connect(service=args.service, connect_timeout=5) as db:
-            db.execute('SELECT system.register_advisor_integration(%s::text,%s::jsonb)', (args.case, Jsonb(contract)))
+    if args.action == 'prepare':
+        if not args.case or not args.output:
+            raise ValueError('case_and_output_required')
+        # The proposal is data, not approval or executable code. Actor identity is
+        # deliberately absent: the owner controller obtains it from its trusted job context.
+        with args.output.open('x', encoding='utf-8') as output:
+            json.dump({'case_id': args.case, 'integration': contract}, output, sort_keys=True, indent=2)
+            output.write('\n')
     print(json.dumps({'equipment_id': contract['equipment_id'], 'action': args.action, 'ok': True,
-                      'acceptance': 'Verify read path, synthetic receipt and completed model reply before closing the case.'}))
+                      'acceptance': 'Owner-mediated registration and end-to-end acceptance are still required.'}))
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception:
-        raise SystemExit('DELIVERY_FAILED: raw database output and credentials withheld.') from None
+        raise SystemExit('PROPOSAL_FAILED: inspect the contract and approved work-directory inputs.') from None

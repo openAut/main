@@ -88,8 +88,10 @@ Complete this handoff in the same approved integration case:
 - Follow [`ADVISOR-INTEGRATION-WORKFLOW`](../../docs/ADVISOR-INTEGRATION-WORKFLOW.md).
 - Verify discovery within the owner's existing Advisor area and link equipment to its product
   and verified manuals; reuse the product catalog rather than copying a manual per installation.
-- Register the exactly approved alarm metric/type contract and artifact hash through the scoped
-  Engineer database identity. Engineer cannot expand Advisor's area or permitted Forge repositories.
+- Prepare the alarm metric/type contract and artifact hash in the permitted work directory. An
+  owner-controlled release/job wrapper mediates registration outside the Engineer sandbox, using
+  independently approved case evidence and trusted actor context. Engineer gets no SQL connection
+  or registration credential and cannot expand Advisor's area, repositories or ADR 0003 egress.
 - Reuse the common deterministic watcher for supported alarm profiles; generate a reviewed
   adapter only for unsupported representations. Do not give edge scripts Advisor credentials.
 - Verify metadata, current values, history, documentation and a separate synthetic alarm through
