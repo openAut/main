@@ -1,12 +1,8 @@
 ---
 name: nemoclaw-provision
-description: Provision a NemoClaw agent on a remote server end-to-end — SSH preflight, run the NemoClaw installer, onboard a sandbox pointed at a remote Nemotron 3 Super inference host over TLS, attach a Microsoft Teams channel via webhook bridge, and verify. Use when standing up an openAut agent host, installing or onboarding NemoClaw/OpenClaw on a DGX Spark or RTX box, or wiring an agent to remote inference and Teams.
-permissions:
-  knowledge_only: false
-  exec: "allowlisted scripts (preflight.sh, verify-inference.sh) over SSH"
-  network: "SSH to sandbox host; TLS to Nemotron inference endpoint"
-  files: "read-only (sources config.env)"
-  credentials: "SSH + NEMOTRON_API_KEY/CA from config.env (node-provisioned, not in repo)"
+description: Provision a NemoClaw agent on a remote server end-to-end — SSH preflight, run the NemoClaw installer, onboard a sandbox pointed at a remote Nemotron 3 Super inference host over TLS, attach a Microsoft Teams channel via OpenClaw's native msteams plugin, and verify. Use when standing up an openAut agent host, installing or onboarding NemoClaw/OpenClaw on a DGX Spark or RTX box, or wiring an agent to remote inference and Teams.
+metadata:
+  openaut-permissions: '{"knowledge_only":false,"exec":"allowlisted scripts (preflight.sh, verify-inference.sh) over SSH","network":"SSH to sandbox host; TLS to Nemotron inference endpoint","files":"read-only (sources config.env)","credentials":"SSH + NEMOTRON_API_KEY/CA from config.env (node-provisioned, not in repo)"}'
 ---
 
 # nemoclaw-provision — install an openAut NemoClaw agent
@@ -28,7 +24,10 @@ after this one.
 - The **Nemotron host already serves vLLM behind a TLS reverse proxy** on `$NEMOTRON_TLS_PORT`,
   and `$NEMOTRON_CA_CERT` exists on the sandbox host. If not, set that up first — see
   [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md) §"TLS in front of vLLM".
-- The **Teams webhook bridge** is deployable — see [`bridges/teams-webhook`](../../bridges/teams-webhook/README.md).
+- **Microsoft Teams** channel access: ability to create an Azure Bot / Entra ID app registration
+  (via `teams app create` or the Azure portal) in the target tenant — see
+  [`bridges/teams-webhook`](../../bridges/teams-webhook/README.md) for why the old webhook approach
+  is retired and what replaced it.
 
 > All SSH from this skill runs as: `ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" '<remote command>'`.
 > On Windows hosts run the SSH from PowerShell so the ssh-agent key is available.
@@ -47,39 +46,49 @@ check fails — a half-met prerequisite makes the installer fail deep into the w
 ## Step 2 — Run the NemoClaw installer
 
 The installer adds Node, the OpenShell runtime, the pinned NemoClaw CLI, then launches onboarding.
-Run it **non-express** so we can point inference at the remote host instead of accepting local vLLM:
 
 ```bash
 ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" \
   "curl -fsSL https://www.nvidia.com/nemoclaw.sh | NEMOCLAW_INSTALL_TAG=$NEMOCLAW_INSTALL_TAG bash"
 ```
 
-Accept the license (`yes`). When asked **Express vs Custom**, choose **Custom** — express install
-hard-codes local vLLM and we want remote Nemotron.
+Accept the license (`yes`). This launches the `nemoclaw onboard` wizard.
 
 ## Step 3 — Onboard the sandbox against remote Nemotron 3 Super
 
-In the wizard:
+The wizard presents a numbered list of inference providers. Select **Other OpenAI-compatible
+endpoint** — not "NVIDIA Endpoints" (that routes to NVIDIA's cloud) and not any "Local" option (that
+means a model running on the sandbox host itself, not our remote GPU box):
 
-1. **Inference Backend** → choose **Custom / OpenAI-compatible endpoint** (not "Local vLLM").
-2. **Base URL** → `$NEMOTRON_BASE_URL` (e.g. `https://192.168.1.43:8443/v1`).
+1. **Provider** → **Other OpenAI-compatible endpoint**.
+2. **Endpoint URL** → `$NEMOTRON_BASE_URL` (e.g. `https://192.168.1.43:8443/v1`).
 3. **Model** → `$NEMOTRON_MODEL` (`nemotron-3-super`).
-4. **API key** → `$NEMOTRON_API_KEY` (blank if the proxy needs none).
+4. **API key** → `$NEMOTRON_API_KEY` (a non-empty placeholder if the proxy needs none — the wizard
+   requires a value even for unauthenticated endpoints).
 5. **Sandbox name** → `$SANDBOX_NAME`.
-6. **Policy tier** → **Balanced** (we tighten egress in the next skill).
-7. Skip the Telegram/Discord/Slack channel prompt — Teams is attached separately in Step 5.
+6. Skip the Telegram/Discord/Slack channel prompt — Teams is attached separately in Step 5.
 
-If you prefer non-interactive onboarding for a second sandbox:
+The network policy applied at this point is NemoClaw's default baseline (`nvidia`/`clawhub`/
+`openclaw_api`/`openclaw_docs` presets) — leave it as-is here; [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md)
+removes the unwanted defaults and adds the openAut-specific presets afterward. Do not try to lock
+egress from inside this wizard.
+
+For a second sandbox, or scripted deployment, use the documented non-interactive form:
 
 ```bash
 ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" \
-  "nemoclaw onboard --gpu --name $SANDBOX_NAME"
-# then set the inference backend explicitly (see your NemoClaw version's `inference` subcommand)
+  "NEMOCLAW_PROVIDER=custom \
+   NEMOCLAW_ENDPOINT_URL='$NEMOTRON_BASE_URL' \
+   NEMOCLAW_MODEL='$NEMOTRON_MODEL' \
+   COMPATIBLE_API_KEY='$NEMOTRON_API_KEY' \
+   nemoclaw onboard --non-interactive --name $SANDBOX_NAME"
 ```
 
-> **Why custom and not local:** NemoClaw's inference layer is hot-reloadable and routes calls to
-> whatever backend you configure. Pointing it at the remote OpenAI-compatible endpoint keeps the
-> 120B MoE model off the agent host and on the dedicated GPU box.
+> **Why "Other OpenAI-compatible endpoint" and not a local option:** the agent inside the sandbox
+> always talks to `inference.local`; OpenShell intercepts that traffic on the host and forwards it to
+> whichever provider you configured. Selecting the compatible-endpoint provider with our remote
+> `$NEMOTRON_BASE_URL` keeps the 120B MoE model off the agent host and on the dedicated GPU box,
+> without the model ever being reachable directly by the sandboxed agent.
 
 ## Step 4 — Make the sandbox trust the Nemotron TLS endpoint
 
@@ -94,19 +103,43 @@ ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" \
 Never disable TLS verification to "make it work". If verification fails, fix the cert chain — a
 disabled check defeats the whole point of the egress-lock + TLS default.
 
-## Step 5 — Attach the Microsoft Teams channel (webhook bridge)
+## Step 5 — Attach the Microsoft Teams channel (native msteams plugin)
 
-Teams is not a native NemoClaw channel. Deploy the bridge, then point the gateway's generic
-webhook/webchat surface at it. Full steps: [`bridges/teams-webhook`](../../bridges/teams-webhook/README.md).
+Teams is a **native, bundled OpenClaw channel plugin** (`msteams`, Bot Framework / Azure Bot based)
+— it does not need a custom bridge. The earlier `bridges/teams-webhook` approach is retired: it
+relied on Teams Incoming Webhooks (Office 365 Connectors), which Microsoft discontinued in a
+rollout completed 2026-05-22.
 
-Summary:
+1. Provision the bot — simplest path, no manual Azure portal steps:
+   ```bash
+   ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" \
+     "teams app create --name 'openAut Advisor' --endpoint 'https://<endpoint>/api/messages'"
+   ```
+   This registers an Entra ID app + bot and prints `CLIENT_ID`/`CLIENT_SECRET`/`TENANT_ID` — save
+   them into `MSTEAMS_APP_ID`/`MSTEAMS_APP_PASSWORD`/`MSTEAMS_TENANT_ID` in `config.env`.
+2. Configure OpenClaw:
+   ```json5
+   {
+     channels: {
+       msteams: {
+         enabled: true,
+         appId: "$MSTEAMS_APP_ID",
+         appPassword: "$MSTEAMS_APP_PASSWORD",
+         tenantId: "$MSTEAMS_TENANT_ID",
+         webhook: { port: 3978, path: "/api/messages" },
+       },
+     },
+   }
+   ```
+3. Install the resulting Teams app package into the target team (or personal scope for DMs).
 
-1. Create a **Teams Incoming Webhook** in the target channel → put its URL in
-   `TEAMS_INCOMING_WEBHOOK_URL` (gateway → Teams).
-2. Create a **Teams Outgoing Webhook** pointing at `http://$TEAMS_BRIDGE_HOST:$TEAMS_BRIDGE_PORT/teams`
-   with a shared secret → put it in `TEAMS_OUTGOING_SECRET` (Teams → gateway).
-3. Run the bridge near the gateway (co-located on the sandbox host is simplest).
-4. The egress policy in the next skill must allow the bridge host and the Teams webhook domain.
+> **Open design question — not resolved here:** `msteams` requires Teams' cloud to reach your
+> `/api/messages` endpoint, i.e. an **inbound** path, unlike everything else this skill sets up
+> (which is outbound-only). For a dev/lab setup, a tunnel (`devtunnel`/`tailscale funnel`) is enough
+> — see the Microsoft Teams plugin docs. Whether production exposes an endpoint directly or routes
+> through a DMZ relay that re-terminates into the sandbox is **explicitly deferred** — see
+> [`nemoclaw-sandbox-policy`](../nemoclaw-sandbox-policy/SKILL.md). Do not expose `$SANDBOX_HOST`
+> directly to the internet as a shortcut.
 
 ## Step 6 — Verify end-to-end
 
@@ -117,7 +150,7 @@ ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" "nemoclaw $SANDBOX_NAME status"
 
 `verify-inference.sh` curls `$NEMOTRON_BASE_URL/models` **over TLS with the CA cert** and confirms
 `$NEMOTRON_MODEL` is listed. The `status` output should show inference healthy and the sandbox
-running. Then post a test message from the gateway through the bridge and confirm it lands in Teams.
+running. Then send a test message to the Teams app and confirm the agent replies in Teams.
 
 ## Lifecycle reference
 
@@ -128,9 +161,13 @@ ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" "nemoclaw $SANDBOX_NAME logs --follow"
 ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" "nemoclaw $SANDBOX_NAME recover"      # restart if stale
 ```
 
-> **Live behaviour is unverified until a DGX Spark / RTX host is available.** Wizard prompt wording
-> and the exact inference subcommand may differ across NemoClaw releases — adapt the labels, the
-> flow (preflight → install → remote inference → TLS trust → Teams → verify) holds.
+> **Live behaviour is unverified until a DGX Spark / RTX host is available.** The onboarding shape
+> (provider list including "Other OpenAI-compatible endpoint", `NEMOCLAW_PROVIDER`/`NEMOCLAW_ENDPOINT_URL`/
+> `NEMOCLAW_MODEL`/`COMPATIBLE_API_KEY` for non-interactive setup, `nemoclaw status`) is confirmed
+> against NVIDIA's NemoClaw documentation as of this writing. What's still unverified end-to-end: the
+> exact `nemoclaw onboard --non-interactive --name` flag combination, and whether `$SANDBOX_NAME` is
+> required or optional per sandbox-lifecycle command on your installed version — check
+> `nemoclaw onboard --help` against a live host before scripting this unattended.
 
 ## Troubleshooting
 
@@ -138,5 +175,6 @@ ssh "$SANDBOX_SSH_USER@$SANDBOX_HOST" "nemoclaw $SANDBOX_NAME recover"      # re
   vLLM "Application startup complete"; check the sandbox can reach `$NEMOTRON_HOST:$NEMOTRON_TLS_PORT`
   (it must be on the egress allow-list — see `nemoclaw-sandbox-policy`).
 - **TLS verification fails** — the CA cert is wrong or not trusted; fix the chain, do not skip verify.
-- **Teams silent** — check the bridge logs, the outgoing-webhook secret, and that the Teams webhook
-  domain is on the egress allow-list.
+- **Teams silent** — check the msteams plugin logs, that `appId`/`appPassword`/`tenantId` are
+  correct, that the inbound endpoint (tunnel or relay) is actually reachable from Teams' cloud, and
+  that the app package is installed in the target team.
