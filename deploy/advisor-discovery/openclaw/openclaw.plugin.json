@@ -1,0 +1,10 @@
+{
+  "id": "openaut-read",
+  "name": "openAut scoped reader",
+  "description": "Area-scoped read-only data and verified reference retrieval.",
+  "categories": ["other"],
+  "contracts": {"tools": ["openaut_read"]},
+  "activation": {"onStartup": true},
+  "toolMetadata": {"openaut_read": {"optional": true}},
+  "configSchema": {"type": "object", "additionalProperties": false, "properties": {}}
+}

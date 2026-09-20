@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import plugin from './openclaw/index.mjs';
+import { createReadTool, requestFor, withLocalTimes } from './openclaw/read-tool.mjs';
+import { createTransform, sessionFor } from './openclaw/alarm-transform.mjs';
+
+const registered=[];
+plugin.register({registerTool:tool=>registered.push(tool.name)});
+assert.deepEqual(registered,['openaut_read']);
+assert.equal(requestFor({operation:'list_equipment',equipment_id:null}).query,'');
+assert.throws(()=>requestFor({operation:'health'}));
+assert.throws(()=>requestFor({operation:'health',equipment_id:'../other'}));
+assert.throws(()=>requestFor({operation:'list_equipment',limit:101}));
+assert.throws(()=>requestFor({operation:'latest',equipment_id:'ahu-03',sql:null}));
+assert.equal(requestFor({operation:'history',equipment_id:'ahu-03',metrics:['temperature'],hours:2},new Date('2030-01-01T12:00:00Z')).query.includes('10%3A00%3A00'),true);
+assert.match(withLocalTimes({queried_at:'2030-01-01T12:00:00Z'},'Europe/Stockholm').queried_at_local,/13:00:00.*UTC\+01:00/);
+assert.match(withLocalTimes({queried_at:'2030-07-01T12:00:00Z'},'Europe/Stockholm').queried_at_local,/14:00:00.*UTC\+02:00/);
+const tool=createReadTool({read:async()=> 'synthetic-token',fetchImpl:async(url,opts)=>{
+  assert.equal(opts.method,'GET'); assert.equal(opts.redirect,'error');
+  return new Response(JSON.stringify({equipment_id:'ahu-03',health:{state:'healthy'}}));
+}});
+assert.equal((await tool.execute('fixture',{operation:'health',equipment_id:'ahu-03'})).details.health.state,'healthy');
+assert.equal((await tool.execute('fixture',{operation:'health',equipment_id:'different'})).isError,true);
+const denied=createReadTool({read:async()=> 'synthetic-token',fetchImpl:async()=>new Response('PRIVATE_SENTINEL',{status:403})});
+assert(!JSON.stringify(await denied.execute('fixture',{operation:'health',equipment_id:'ahu-03'})).includes('PRIVATE_SENTINEL'));
+
+let allowed=true;
+const record={equipment_id:'ahu-03',alarm_watch:true,alarm_metrics:{fault_flags:'uint16'}};
+const transform=createTransform(async id=>allowed?{equipment_id:id,equipment:[record]}:{});
+const event={equipment_id:'ahu-03',synthetic:false,event_id:'fixture-1',changes:[{kind:'process_alarm_change',metric:'fault_flags',source_ts:'2030-01-01T12:00:00Z',previous:0,current:1}]};
+const ctx=value=>({path:'equipment',payload:{event_json:JSON.stringify(value)}});
+const action=await transform(ctx(event));
+assert.equal(action.sessionKey,sessionFor('ahu-03',false));
+assert.notEqual(action.sessionKey,sessionFor('ahu-03',true));
+assert.notEqual(action.sessionKey,sessionFor('ahu-04',false));
+assert.equal(action.sessionKeySource,'static');
+assert.equal(action.agentId,'main'); assert.equal(action.deliver,false);
+assert.equal(action.allowUnsafeExternalContent,false);
+assert.equal(action.model,undefined);
+assert.equal((await transform(ctx({...event,agentId:'engineer',model:'unapproved',sessionKey:'agent:main:main'}))).sessionKey,action.sessionKey);
+await assert.rejects(()=>transform({...ctx(event),payload:{...ctx(event).payload,sessionKey:'agent:main:main'}}));
+for(const patch of [{equipment_id:'../bad'},{synthetic:true},{changes:[{...event.changes[0],current:65536}]},{changes:[{...event.changes[0],metric:'other'}]}]) await assert.rejects(()=>transform(ctx({...event,...patch})));
+allowed=false; await assert.rejects(()=>transform(ctx(event)));
+allowed=true; record.alarm_watch=false; await assert.rejects(()=>transform(ctx(event)));
+console.log('PORTABLE_OPENCLAW_TOOL_AND_HOOK_TESTS_PASS');

@@ -208,6 +208,14 @@ Use [`documentation-store`](../documentation-store/SKILL.md) as the source contr
 
 ## Agent access
 
+The [Advisor integration workflow](../../docs/ADVISOR-INTEGRATION-WORKFLOW.md) separates
+owner-managed area/repository policy from `system.advisor_integrations`, which contains Engineer
+delivery metadata rather than per-equipment permissions. The reference reader discovers systems
+through area-filtered views and supports equipment-linked documents plus product manuals when the
+product-catalog columns are present. Engineer registers exactly approved contracts through a
+constrained function and cannot modify that policy or arbitrarily reassign an equipment's site.
+The reference schema requires explicit owner provisioning; source availability is not deployment.
+
 | Actor | Access |
 |---|---|
 | Ingest | write telemetry only; no case/document writes. |

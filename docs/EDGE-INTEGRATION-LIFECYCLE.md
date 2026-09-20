@@ -86,7 +86,9 @@ reads. Verify these separately:
 - per-point validity, including partially failed register blocks;
 - MQTT authorization, connectivity and PUBACK-aware spool drainage;
 - ingest persistence and recent source timestamps;
-- dashboard queries, datasource permissions and intended listener binding.
+- dashboard queries, datasource permissions and intended listener binding;
+- Advisor discovery inside the owner-authorized area, scoped metadata/history/Forge reads,
+  and an approved alarm contract with a completed synthetic response in the right conversation.
 
 Local freshness uses monotonic time so clock corrections do not alter elapsed-time decisions.
 Published last-success timestamps use synchronized UTC time. A stored `healthy=true` must always
@@ -134,6 +136,12 @@ Do not describe a node-local override as a reproducible release until it is repr
 reviewed artifacts. Verify sibling services after each independent upgrade or rollback.
 
 ## Evidence and closure
+
+When Advisor/alarm connectivity is part of the approved scope, use the
+[combined Advisor delivery workflow](ADVISOR-INTEGRATION-WORKFLOW.md). Engineer registers and verifies
+that handoff in the same integration case. A supported equipment inside an already authorized area
+should not require per-equipment Advisor code or permission changes. Keep missing manuals, physical
+point maps and unverified alarm meanings explicit in the acceptance evidence.
 
 Record case, exact artifact hashes/revisions, methods, observed results, exclusions, rollback state
 and unresolved faults. Keep dated reports separate from living capability guidance. A local

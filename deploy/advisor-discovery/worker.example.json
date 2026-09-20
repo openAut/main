@@ -1,0 +1,7 @@
+{
+  "read_api": "http://127.0.0.1:18790/v1/",
+  "hook_url": "http://127.0.0.1:18789/openaut-alarm-hooks/equipment",
+  "reader_token_file": "/run/credentials/reader-token",
+  "hook_token_file": "/run/credentials/hook-token",
+  "state_dir": "/var/lib/openaut-alarm-watch"
+}

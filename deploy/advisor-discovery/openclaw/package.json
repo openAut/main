@@ -1,0 +1,10 @@
+{
+  "name": "@openaut/scoped-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "openclaw": {
+    "extensions": ["./index.mjs"],
+    "compat": {"minGatewayVersion": "2026.9.4", "pluginApi": ">=2026.9.4 <2026.9.5"}
+  }
+}

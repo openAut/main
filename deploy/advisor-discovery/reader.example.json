@@ -1,0 +1,9 @@
+{
+  "db_service": "advisor_read_service",
+  "forge_origin": "https://forge.example.invalid",
+  "forge_token_file": "/run/credentials/forge-reader-token",
+  "api_token_sha256": "REPLACE_WITH_SHA256_OF_PROVISIONED_READ_TOKEN",
+  "extraction_dir": "/var/lib/openaut-reader/extractions",
+  "listen_host": "127.0.0.1",
+  "listen_port": 18790
+}

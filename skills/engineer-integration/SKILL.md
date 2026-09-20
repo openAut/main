@@ -81,6 +81,21 @@ It complements the approval workflow here; lab observations are not public pre-m
    - edge service and rollback notes
    - generated artifacts linked to the case and equipment
 
+## Advisor and alarm delivery
+
+Complete this handoff in the same approved integration case:
+
+- Follow [`ADVISOR-INTEGRATION-WORKFLOW`](../../docs/ADVISOR-INTEGRATION-WORKFLOW.md).
+- Verify discovery within the owner's existing Advisor area and link equipment to its product
+  and verified manuals; reuse the product catalog rather than copying a manual per installation.
+- Register the exactly approved alarm metric/type contract and artifact hash through the scoped
+  Engineer database identity. Engineer cannot expand Advisor's area or permitted Forge repositories.
+- Reuse the common deterministic watcher for supported alarm profiles; generate a reviewed
+  adapter only for unsupported representations. Do not give edge scripts Advisor credentials.
+- Verify metadata, current values, history, documentation and a separate synthetic alarm through
+  to a completed response in the correct Advisor thread. Include evidence gaps and rollback.
+  HTTP admission alone does not complete the delivery.
+
 ## Output format
 
 Engineer should write a structured execution summary:

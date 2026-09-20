@@ -1,0 +1,159 @@
+# Area-scoped Advisor reference
+
+Portable POC implementation of the [integrated delivery workflow](../../docs/ADVISOR-INTEGRATION-WORKFLOW.md).
+Python 3.12 on Linux for services; use the Node version supported by the selected OpenClaw runtime
+(this adapter was tested with Node 24 and OpenClaw 2026.9.4). Dependencies are provided by
+the repository's `requirements.txt` / `requirements-dev.txt`. There are no imports from dated lab
+directories, host-specific equipment allowlists, embedded credentials or one-off deployment scripts.
+
+## Components
+
+| File | Purpose |
+|---|---|
+| `schema.sql` | Fresh owner-controlled read boundary and constrained Engineer registration |
+| `reader.py` | Bounded authenticated metadata/telemetry/Forge API |
+| `engine.py` | Persistent observation, overlap, deduplication and outbox |
+| `worker.py` | Discovery, shared durable budget, dispatch and synthetic fixtures |
+| `integration.py` | Validate an artifact/contract and register using a scoped libpq service |
+| `openclaw/` | Standalone plugin and authenticated-hook transform |
+| `*.example.json` | Unprovisioned configuration examples, not operational credentials |
+
+## Owner installation
+
+1. Apply the existing storage setup and `deploy/platform-poc2/db/001-system.sql`. As the owner,
+   back up applicable schema definitions/ACLs, then apply `schema.sql` in the intended database.
+   It creates a **NOLOGIN** `advisor_reader` group and empty site/repository policy. Name collisions
+   intentionally fail; this is not an in-place installer for an existing lab.
+2. Record owner-authorized sites and repositories in `advisor_policy.allowed_sites` and
+   `advisor_policy.forge_repositories`. Operational identities cannot write these tables.
+   Provision a dedicated least-privilege login inheriting only `advisor_reader`, with CONNECT and
+   an owner-managed libpq service definition (for example, selected through `PGSERVICEFILE` and
+   a protected password file). Do not reuse a superuser or broader `advisor_app` login.
+3. Provision a high-entropy read token, its SHA-256 in the reader configuration, and a Forge read
+   identity limited to approved repositories. Keep tokens/passwords in protected credential files,
+   never in source control, model arguments or diagnostic output. Example placeholders must be replaced.
+4. Start `python reader.py --config /owner/provisioned/reader.json` under a non-login read identity.
+   The default listener is loopback. For remote databases/Forge, use owner-approved conduits/TLS;
+   the Forge origin is configured by the owner, never by a model request. Refuse redirects.
+5. Install the complete `openclaw/` directory as a root-owned plugin under the gateway's
+   `hooks/transforms/openaut-read/`. Add that directory to the plugin load paths, enable plugin
+   `openaut-read`, and keep the effective model tool allowlist exactly `openaut_read`. Merge
+   `hooks.example.json` into the owner-controlled gateway configuration. Select the model in the
+   agent's own configuration; alarm payloads cannot override it.
+6. Configure the adapter with owner-managed environment variables:
+   `OPENAUT_READ_API`, `OPENAUT_READER_TOKEN_FILE`, optional `OPENAUT_GUIDANCE_DIR` (containing the
+   granted `fdd/SKILL.md` and `anomaly-correlation/SKILL.md`) and `OPENAUT_TIMEZONE` (default UTC).
+   Configure `OPENAUT_ALARM_HOOK_TOKEN` on the gateway to match the worker's separate protected
+   hook-token file. These variables are not model-controlled configuration operations.
+7. Provision a separate non-login watcher identity, its protected state directory and a hardened
+   service running `python worker.py --config /owner/provisioned/worker.json`. Limit egress to
+   loopback; use `NoNewPrivileges`, no capabilities, read-only system/home, and only the state
+   directory writable. The reader has its own narrow DB/Forge conduit, not field-network access.
+8. Validate actual identity/file permissions, TLS/loopback binding, denied operations, effective
+   tool policy and synthetic model completion before recording acceptance. Keep Advisor, Engineer
+   and Security on separate hosts as required by the trust model.
+
+This package supplies components, not an automatic credential/proxy/service provisioning system.
+Existing installation state requires a reviewed migration. This public variant uses hashed file/
+session names for all equipment and strict stored profile/binding checks; it does not contain lab
+identity aliases, and the worker refuses unrecognized SQLite namespaces. Do not point it at legacy ledgers without a migration preserving cursors,
+observations, outboxes, budget and conversation continuity.
+
+## Data contracts
+
+Metadata comes from `system.equipment`, `system.points`, `system.documents` and
+`system.advisor_integrations`; samples come from `telemetry.readings`. Field health uses normalized
+`field_protocol_healthy`, `field_protocol_last_success_unixtime` and
+`field_protocol_consecutive_errors`. Heartbeat freshness is 120 seconds; COV sample age is separate.
+
+Alarm profiles accept booleans, `integer` codes/counts in **-32768..65535**, and unsigned
+16-bit `uint16` bitfields in **0..65535**. Wider counters, floating-point alarm representations or
+different units need an explicitly reviewed normalization adapter/profile extension.
+
+Document views support equipment/site-specific sources and optional product-level manuals through
+`equipment.product_id` / `documents.product_id` when a product catalog is installed. Product columns
+and catalog lifecycle are owned by the existing manual-ingest workflow, not created by this schema.
+Global product manuals must have no equipment/site restriction and be in an authorized repository;
+private material from another site is excluded even when the product matches.
+
+Generated artifacts must also be cataloged as verified documents with a blob SHA-256 to be served
+by this API; a `generated_artifacts` pointer alone does not establish that retrieval trust state.
+
+Forge URIs use the canonical `forge://openaut/<repo>/<path>?commit=<40-hex>` form. Each returned
+source must be verified, commit-pinned and match its independent SHA-256. UTF-8 text, Markdown,
+JSON/YAML/CSV/Python/SQL are reference data. XLSX requires an owner-produced, read-only extraction
+cache named `<source-sha256>.json`, containing `source_sha256`, `text`, and `text_sha256`. Its text is
+marked not independently reviewed. PDF/images require a separate ingest/conversion step. Missing
+evidence never becomes an invented physical point map or alarm-bit definition.
+
+## Engineer delivery
+
+```text
+python integration.py validate --contract delivery.json --artifact reviewed-point-map.json
+python integration.py register --contract delivery.json --artifact reviewed-point-map.json --case approved-case --service scoped_engineer
+```
+
+The owner records the exact contract approval described in the workflow. The assigned identity must
+match the connection's `session_user`, not a model-supplied actor. Expired/self approvals, mismatched
+artifacts/publication identities and out-of-area equipment are rejected. The function does not
+approve cases or broaden the existing Forge approval verbs. Equipment/point/document registration
+continues through its separately approved integration/ingest path.
+
+The watcher discovers active contracts without per-equipment code/config changes. It waits 30 seconds
+between cycles, caps discovery at 1,000 equipment, reads 20 per page, and maintains separate state.
+Limits: 64 alarm metrics per contract, eight metrics/500 samples per history call, seven-day history
+window, 120-second overlap, bounded pending events. No promise of unbounded late-data recovery or
+distributed exactly-once delivery. Automatic attempts share a durable six/hour and one/minute cap;
+no priority/fairness guarantee is made during sustained alarm floods.
+The read API also limits latest snapshots to 256 metrics, document lists to 20 sources per equipment,
+Forge blobs to 2 MiB and JSON responses to 256 KiB. Oversized results fail explicitly rather than
+silently presenting incomplete evidence. Point-registry truncation is reported in the response.
+
+For an approved synthetic acceptance test, run under the watcher's identity/configuration:
+
+```text
+python worker.py --config /owner/provisioned/worker.json --synthetic ahu-03
+```
+
+This uses separate state and never writes field equipment or telemetry. Re-running does not blindly
+resend admitted/uncertain batches. Explicit synthetic tests are outside the automatic delivery budget.
+Inspect the persistent receipt and completed model reply in the derived synthetic conversation;
+admission is not completion. Missing documentation/point mapping must appear in the delivery evidence.
+
+## Rollback and operation
+
+Pause the worker before schema/policy/code transitions. Back up views including owner/ACLs and
+snapshot SQLite using its backup API under the ledger owner; a lone copy of a live WAL database is
+not sufficient. Restore saved code/configuration and reader views in dependency order. Preserve all
+active ledgers, synthetic receipts and `discovery-budget.sqlite`; never overwrite new events with an
+old backup. Scope revocation stops new dispatch but intentionally retains audit evidence. A changed
+binding/profile is `integration_requires_review`, not a reason to delete state and rebaseline silently.
+
+`discovery-status.json` contains current discovery and per-equipment status. Check timestamp, health,
+queued/failed/uncertain delivery counts separately from service liveness. Existing `uncertain` events
+require operator reconciliation against the conversation/logs before any approved retry.
+
+## Tests
+
+From the repository root, with Python 3.12 and `requirements-dev.txt`:
+
+```text
+python -m pytest tests/test_advisor_discovery.py -q
+node deploy/advisor-discovery/test-openclaw.mjs
+```
+
+For a disposable PostgreSQL 16-compatible database test, supply an already-local image:
+
+```text
+python deploy/advisor-discovery/verify_database.py --image <local-postgresql-image>
+```
+
+Optional `--ssh-host <test-host-alias>` runs Docker remotely while the Python 3.12 driver stays local.
+The container has no network/host ports, a memory limit and tmpfs data, uses only synthetic fixtures,
+never connects to the application database and is removed afterward. Image pulling is disabled.
+
+The optional `test-openclaw-sdk.mjs` requires `OPENCLAW_HOOKS_MODULE` pointing to the installed hook
+module from **OpenClaw 2026.9.4**. It checks real plugin discovery, effective tool policy and
+hook/session processing without model/network calls. Compiled export bindings are version-specific;
+revalidate against the selected runtime before deployment. See the
+[verification note](../../docs/ADVISOR-DISCOVERY-VERIFICATION.md) for the evidence boundary.
