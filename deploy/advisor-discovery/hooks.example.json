@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "path": "/openaut-alarm-hooks",
+  "token": "${OPENAUT_ALARM_HOOK_TOKEN}",
+  "defaultSessionKey": "agent:main:hook:openaut-equipment-unrouted",
+  "allowedAgentIds": ["main"],
+  "allowRequestSessionKey": false,
+  "allowedSessionKeyPrefixes": ["agent:main:hook:openaut-equipment-"],
+  "mappings": [
+    {
+      "id": "equipment-live", "match": {"path": "equipment"}, "action": "agent",
+      "agentId": "main", "sessionMode": "persistent", "wakeMode": "next-heartbeat",
+      "deliver": false, "allowUnsafeExternalContent": false,
+      "timeoutSeconds": 120, "messageTemplate": "Validated equipment event",
+      "transform": {"module": "openaut-read/alarm-transform.mjs"}
+    },
+    {
+      "id": "equipment-synthetic", "match": {"path": "equipment-test"}, "action": "agent",
+      "agentId": "main", "sessionMode": "persistent", "wakeMode": "next-heartbeat",
+      "deliver": false, "allowUnsafeExternalContent": false,
+      "timeoutSeconds": 120, "messageTemplate": "Validated synthetic equipment event",
+      "transform": {"module": "openaut-read/alarm-transform.mjs"}
+    }
+  ]
+}
