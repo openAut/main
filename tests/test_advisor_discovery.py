@@ -9,6 +9,7 @@ import threading
 import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 import pytest
@@ -48,14 +49,16 @@ def store(tmp_path):
     value.close()
 
 
-@pytest.mark.parametrize('operation', ['equipment','points','latest','health','alarms','documents','document_passage'])
-def test_scope_denied_before_data_or_document_queries(operation):
+@pytest.mark.parametrize('operation', ['equipment','points','latest','health','alarms','documents','document_passage','history'])
+def test_scope_denied_before_data_or_document_queries(operation,monkeypatch):
+    monkeypatch.setattr(reader,'utcnow',lambda:dt.datetime(2030,1,8,tzinfo=dt.timezone.utc))
     class Backend(reader.Reader):
         def query(self, sql, params=()):
             assert 'advisor_read.equipment' in sql
             return []
     args = {'equipment_id':'outside-area'}
     if operation == 'document_passage': args['document_id'] = 'known-doc'
+    if operation == 'history': args.update(metrics='supply_temp',start='2030-01-07T00:00:00Z',end='2030-01-08T00:00:00Z')
     with pytest.raises(reader.ReadError) as exc:
         Backend({}).execute(operation, args)
     assert exc.value.status == 403
@@ -280,7 +283,7 @@ def test_owner_handoff_does_not_trust_embedded_actor_or_connection():
     ('integer','code',-32768,None,True), ('integer','count',65535,None,True),
     ('integer','count',65536,None,False), ('integer','code',1.5,None,False),
     ('integer','bitfield',1,None,False), ('uint16','bitfield',65535,None,True),
-    ('uint16','bitfield',-1,None,False),
+    ('uint16','bitfield',-1,None,False), ('uint16','code',1,None,False),
 ])
 def test_declared_alarm_type_and_range(kind,unit,value,boolean,accepted):
     reading={'metric':'signal','ts':engine.iso(99),'unit':unit,'value':value,'bool_val':boolean}
@@ -415,3 +418,198 @@ def test_unpageable_single_instant_is_explicit_quality_failure_not_skipped(store
     assert store.get('health')=='data_quality'
     assert store.get('cursor')==1000
     assert store.get('history_scan')['pending']
+
+
+@pytest.mark.parametrize('separate_polls',[False,True])
+def test_conflicting_historical_values_are_atomic(store,separate_polls):
+    store.apply([row(1010,0)],1020,1021)
+    if separate_polls:
+        store.apply([row(1005,1)],1030,1031)
+    before=store.summary()
+    before_observations=store.db.execute('SELECT count(*) FROM observations').fetchone()[0]
+    conflicting=[row(1005,2)] if separate_polls else [row(1005,1),row(1005,2)]
+    with pytest.raises(engine.DataError,match='conflicting_timestamp'):
+        store.apply(conflicting,1040,1041)
+    assert store.summary()==before
+    assert store.db.execute('SELECT count(*) FROM observations').fetchone()[0]==before_observations
+    assert json.loads(store.db.execute('SELECT value FROM points').fetchone()[0])==0
+
+
+def test_uncertain_outbox_capacity_survives_restarts(tmp_path,monkeypatch):
+    monkeypatch.setattr(engine,'MAX_UNRESOLVED_EVENTS',3)
+    args={'equipment_id':'ahu-03','alarm_metrics':{'fault_flags':'uint16'},'binding':'fixture'}
+    path=tmp_path/'outbox.sqlite'
+    current=engine.Store(path,**args)
+    current.seed([row(999,0)],1000)
+    current.health('healthy',1000)
+    try:
+        for index in range(3):
+            ts=1001+index*100
+            current.apply([row(ts,index+1)],ts+1,ts+2)
+            batch=current.next_batch(ts+3)
+            current.sending(batch['id'],ts+3)
+            current.finish(batch['id'],'uncertain')
+            current.close(); current=engine.Store(path,**args)
+        assert current.summary()['unresolved_events']==3
+        def read(operation,params):
+            if operation=='alarms': return {'equipment_id':'ahu-03','queried_at':engine.iso(1400),'health':{'state':'healthy'},'readings':[row(1301,4)]}
+            return {'equipment_id':'ahu-03','readings':[row(1301,4)],'truncated':False}
+        old_cursor=current.get('cursor')
+        engine.poll(read,current,1400)
+        assert current.get('health')=='outbox_backpressure'
+        assert current.get('cursor')==old_cursor
+        assert current.summary()['batches']=={'uncertain':3}
+        assert current.summary()['unresolved_events']==3
+        assert current.next_batch(5000) is None
+    finally: current.close()
+
+
+@pytest.mark.parametrize('state',['queued','sending','failed','uncertain','admitted'])
+def test_capacity_counts_delivery_state_separately_from_audit(store,state):
+    store.apply([row(1001,1)],1002,1003)
+    batch=store.next_batch(1004)
+    if state!='queued':
+        store.sending(batch['id'],1004)
+        if state!='sending': store.finish(batch['id'],state,'fixture-receipt' if state=='admitted' else None)
+    assert store.unresolved_events()==(0 if state=='admitted' else 1)
+    assert store.db.execute('SELECT count(*) FROM events').fetchone()[0]==1  # Audit not purged.
+
+
+@pytest.mark.parametrize('ambiguous_delivery',[False,True])
+def test_round_robin_is_persistent_across_restarts(tmp_path,monkeypatch,ambiguous_delivery):
+    clock=[time.time()]
+    monkeypatch.setattr(worker.time,'time',lambda:clock[0])
+    sent=[]
+    class Client:
+        def __init__(self,key): self.key=key
+        def discover(self): return [equipment(k) for k in ('ahu-a','ahu-b','ahu-c')]
+        def ready(self): return True
+        def send(self,batch,synthetic):
+            sent.append(self.key)
+            if ambiguous_delivery: raise OSError('fixture receipt lost')
+            return 'fixture-receipt'
+        def read(self,operation,params): raise AssertionError('poll is replaced by a deterministic fixture')
+    def collect(read,store,now):
+        if store.get('cursor') is None:
+            store.seed([row(now-1,0)],now)
+            store.health('healthy',now)
+        with store.db:
+            store.event('process_alarm_change','fault_flags',now,0,1,now)
+    monkeypatch.setattr(worker,'poll',collect)
+    for index in range(6):
+        instance=worker.Worker(tmp_path,Client)
+        try: instance.cycle()
+        finally: instance.close()
+        clock[0]+=61
+    assert sent==['ahu-a','ahu-b','ahu-c','ahu-a','ahu-b','ahu-c']
+    instance=worker.Worker(tmp_path,Client)
+    try: instance.cycle()
+    finally: instance.close()
+    assert len(sent)==6  # Fairness does not weaken the shared hourly cap.
+
+
+@pytest.mark.parametrize('origin,valid',[
+    ('http://127.0.0.1:3000',True),('http://[::1]:3000',True),('https://forge.example.invalid',True),
+    ('http://forge.example.invalid',False),('https://user:password@forge.example.invalid',False),
+])
+def test_reader_forge_transport(origin,valid):
+    if valid: assert reader.forge_origin(origin)==origin
+    else:
+        with pytest.raises(ValueError): reader.forge_origin(origin)
+
+
+@pytest.mark.parametrize('host',['0.0.0.0','::','example.invalid'])
+def test_reader_rejects_non_loopback_listener(host):
+    with pytest.raises(ValueError): reader.listen_host({'listen_host':host})
+
+
+def test_document_search_shared_deadline_over_real_http(tmp_path,monkeypatch):
+    monkeypatch.setattr(reader,'READ_BUDGET_SECONDS',0.7)
+    blob=b'needle: verified fixture\n'
+    seen=[]
+    class Forge(BaseHTTPRequestHandler):
+        def log_message(self,*args): pass
+        def do_GET(self):
+            seen.append(self.path)
+            time.sleep(0.25)
+            try:
+                self.send_response(200); self.send_header('Content-Length',str(len(blob))); self.end_headers()
+                self.wfile.write(blob)
+            except OSError: pass
+    forge=ThreadingHTTPServer(('127.0.0.1',0),Forge)
+    forge.daemon_threads=True
+    ft=threading.Thread(target=forge.serve_forever,daemon=True); ft.start()
+    token=tmp_path/'fixture-token'; token.write_text('synthetic-token')
+    docs=[{'document_id':'doc-'+str(i),'equipment_id':'ahu-03','title':'Fixture','kind':'manual',
+           'trust_level':'verified','authorized_repository':'manuals','forge_commit':'a'*40,
+           'sha256':hashlib.sha256(blob).hexdigest(),'uri':'forge://openaut/manuals/doc-'+str(i)+'.md?commit='+'a'*40} for i in range(12)]
+    class Backend(reader.Reader):
+        def query(self,sql,params=()):
+            return docs if 'advisor_read.documents' in sql else [equipment()]
+    server=reader.Server(('127.0.0.1',0),reader.Handler)
+    server.reader=Backend({'forge_origin':f'http://127.0.0.1:{forge.server_port}',
+                           'forge_token_file':str(token),'api_token_sha256':hashlib.sha256(b'synthetic').hexdigest()})
+    st=threading.Thread(target=server.serve_forever,daemon=True); st.start()
+    try:
+        began=time.monotonic()
+        request=Request(f'http://127.0.0.1:{server.server_port}/v1/document_search?equipment_id=ahu-03&query=needle',headers={'Authorization':'Bearer synthetic'})
+        with urlopen(request,timeout=2) as response: result=json.load(response)
+        assert time.monotonic()-began<1.8
+        assert result['incomplete'] and result['budget_exhausted']
+        assert result['passages'] and result['unavailable']
+        assert len(seen)<12
+        count=len(seen); time.sleep(0.3); assert len(seen)==count  # No orphaned continuation.
+    finally:
+        server.shutdown(); server.server_close(); st.join(timeout=3)
+        forge.shutdown(); forge.server_close(); ft.join(timeout=3)
+
+
+def test_trickling_document_cannot_extend_request_budget(tmp_path,monkeypatch):
+    monkeypatch.setattr(reader,'READ_BUDGET_SECONDS',0.3)
+    blob=b'0123456789'
+    class Forge(BaseHTTPRequestHandler):
+        def log_message(self,*args): pass
+        def do_GET(self):
+            self.send_response(200); self.send_header('Content-Length',str(len(blob))); self.end_headers()
+            try:
+                for value in blob:
+                    self.wfile.write(bytes([value])); self.wfile.flush(); time.sleep(0.1)
+            except OSError: pass
+    server=ThreadingHTTPServer(('127.0.0.1',0),Forge); server.daemon_threads=True
+    thread=threading.Thread(target=server.serve_forever,daemon=True); thread.start()
+    token=tmp_path/'token'; token.write_text('synthetic-token')
+    backend=reader.Reader({'forge_origin':f'http://127.0.0.1:{server.server_port}','forge_token_file':str(token)})
+    doc={'equipment_id':'ahu-03','trust_level':'verified','authorized_repository':'manuals','forge_commit':'a'*40,
+         'sha256':hashlib.sha256(blob).hexdigest(),'uri':'forge://openaut/manuals/slow.txt?commit='+'a'*40}
+    try:
+        start=time.monotonic()
+        with pytest.raises(reader.ReadError) as exc: backend.text(doc,'ahu-03')
+        assert exc.value.code=='request_budget_exhausted'
+        assert time.monotonic()-start<0.9
+    finally: server.shutdown(); server.server_close(); thread.join(timeout=3)
+
+
+def test_history_scope_denial_is_http_403_without_telemetry_query(monkeypatch):
+    monkeypatch.setattr(reader,'utcnow',lambda:dt.datetime(2030,1,8,tzinfo=dt.timezone.utc))
+    queries=[]
+    class Backend(reader.Reader):
+        def query(self,sql,params=()):
+            queries.append(sql)
+            assert 'advisor_read.equipment' in sql
+            return []
+    server=reader.Server(('127.0.0.1',0),reader.Handler)
+    server.reader=Backend({'api_token_sha256':hashlib.sha256(b'synthetic').hexdigest()})
+    thread=threading.Thread(target=server.serve_forever,daemon=True); thread.start()
+    try:
+        request=Request(f'http://127.0.0.1:{server.server_port}/v1/history?equipment_id=outside-area&metrics=supply_temp&start=2030-01-07T00:00:00Z&end=2030-01-08T00:00:00Z',headers={'Authorization':'Bearer synthetic'})
+        with pytest.raises(HTTPError) as exc: urlopen(request,timeout=3)
+        assert exc.value.code==403
+        assert len(queries)==1
+    finally: server.shutdown(); server.server_close(); thread.join(timeout=3)
+
+
+def test_reader_explicitly_disables_environment_proxies(monkeypatch):
+    monkeypatch.setenv('http_proxy','http://proxy.example.invalid:9999')
+    monkeypatch.setenv('https_proxy','http://proxy.example.invalid:9999')
+    backend=reader.Reader({})
+    assert all(not isinstance(h,reader.ProxyHandler) or h.proxies=={} for h in backend.http.handlers)

@@ -109,6 +109,7 @@ class Budget:
         self.db = sqlite3.connect(directory / 'discovery-budget.sqlite')
         self.db.execute('PRAGMA synchronous=FULL')
         self.db.execute('CREATE TABLE IF NOT EXISTS attempts(equipment TEXT,batch TEXT,ts REAL,PRIMARY KEY(equipment,batch))')
+        self.db.execute('CREATE INDEX IF NOT EXISTS attempts_time ON attempts(ts)')
         for path in directory.glob('eq-*-live.sqlite'):
             with contextlib.closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as old:
                 row = old.execute("SELECT value FROM meta WHERE key='equipment_id'").fetchone()
@@ -142,6 +143,14 @@ class Budget:
             self.db.rollback()
             raise
 
+    def last_equipment(self):
+        row = self.db.execute('SELECT equipment FROM attempts ORDER BY ts DESC,equipment,batch LIMIT 1').fetchone()
+        return row[0] if row else None
+
+    def available(self, now):
+        count, last = self.db.execute('SELECT count(*),max(ts) FROM attempts WHERE ts>?', (now - 3600,)).fetchone()
+        return count < 6 and (last is None or now - last >= 60)
+
     def close(self):
         self.db.close()
 
@@ -149,19 +158,20 @@ class Budget:
 def dispatch(store, client, now, budget=None):
     batch = store.next_batch(now)
     if not batch or not client.ready():
-        return
+        return False
     if budget is not None and not budget.reserve(store.equipment_id, batch['id'], now):
-        return
+        return False
     store.sending(batch['id'], now)
     try:
         receipt = client.send(batch, store.synthetic)
     except HTTPError as exc:
         store.finish(batch['id'], 'failed' if exc.code in (400, 401, 403, 404, 405, 413, 429) else 'uncertain')
-        return
+        return True
     except Exception:
         store.finish(batch['id'], 'uncertain')
-        return
+        return True
     store.finish(batch['id'], 'admitted', receipt)
+    return True
 
 
 def descriptor(row):
@@ -188,6 +198,7 @@ class Worker:
     def cycle(self):
         rows = self.catalog.discover()  # Fail closed: no cached dispatch after a discovery error.
         active = set()
+        dispatchable = set()
         status = {'checked_at': time.time(), 'discovery': 'ok', 'equipment': {}}
         for row in rows:
             if row.get('alarm_watch') is not True:
@@ -206,12 +217,30 @@ class Worker:
                 _, store, client = current
                 self.budget.reconcile(store)
                 poll(client.read, store, time.time())
-                dispatch(store, client, time.time(), self.budget)
+                dispatchable.add(equipment)
                 status['equipment'][equipment] = store.summary()
             except Exception:
                 status['equipment'][equipment] = {'health': 'integration_requires_review'}
         for equipment in set(self.stores) - active:
             self.stores.pop(equipment)[1].close()
+        if not self.budget.available(time.time()):
+            return status
+        # Collect first, then rotate after the last DURABLE attempt (including failed
+        # or ambiguous attempts). Removing equipment or restarting cannot reset fairness.
+        order = sorted(dispatchable)
+        last = self.budget.last_equipment()
+        if last is not None:
+            split = next((i for i, key in enumerate(order) if key > last), len(order))
+            order = order[split:] + order[:split]
+        for equipment in order:
+            _, store, client = self.stores[equipment]
+            try:
+                attempted = dispatch(store, client, time.time(), self.budget)
+                status['equipment'][equipment] = store.summary()
+                if attempted:
+                    break  # The shared budget allows only one attempt/minute.
+            except Exception:
+                status['equipment'][equipment] = {'health': 'integration_requires_review'}
         return status
 
     def close(self):

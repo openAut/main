@@ -15,8 +15,8 @@ model. Those changes require a deployment-specific acceptance test before replac
 
 ## Reproducible checks for this package
 
-Reference checks updated **2026-09-20** after review: 40 discovery Python tests passed on Python 3.12
-(127 passed / 4 skipped for the complete repository suite on Windows); the
+Reference checks are rerun after review fixes. The latest results are recorded in the PR's
+verification comment; the
 disposable PostgreSQL 16-compatible schema/authorization suite passed; Node adapter tests and the
 OpenClaw 2026.9.4 hook/discovery/tool-policy tests passed on Node 24. Documentation links and skill
 permission schemas were checked. Publication review found no matches for the configured lab-ID,
@@ -29,6 +29,10 @@ private-network/workstation-path, runtime-ID or common credential-material patte
 - Dense-history regressions put more than 500 samples entirely before the cursor and prove that
   later alarms remain discoverable. Bounded scans resume across restarts and failed requests;
   unpartitionable same-instant density preserves the cursor and reports a quality failure.
+- Further full-review regressions cover conflicting old observations within/across polls, complete
+  unresolved-outbox capacity, persistent fair dispatch including ambiguous delivery, and denied
+  history reads through the HTTP boundary. Real loopback HTTP tests exercise shared document-search
+  deadlines and a trickling response; transport tests reject non-loopback cleartext access.
 - Engineer tests bind the offline proposal to exact artifact bytes, reject the removed direct
   registration command and forbid identity/connection claims in the proposal envelope.
 - Disposable PostgreSQL tests cover fresh implicit-deny, owner area/repository boundaries, constrained

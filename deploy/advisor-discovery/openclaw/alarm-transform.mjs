@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadTool, validId } from './read-tool.mjs';
 
-const HEALTH=new Set(['healthy','stale','clock_skew','communication_fault','unknown','source_unavailable','history_backpressure','history_gap','data_quality']);
+const HEALTH=new Set(['healthy','stale','clock_skew','communication_fault','unknown','source_unavailable','history_backpressure','outbox_backpressure','history_gap','data_quality']);
 const KINDS=new Set(['process_alarm_change','equipment_communication_alarm','late_published_alarm_observation','data_health','field_communication']);
 
 export function sessionFor(equipment,synthetic) {

@@ -4,6 +4,10 @@ Advisor has standing **read access within an owner-authorized area**. It discove
 Systemdatabasen and resolves verified reference material in Forgejo. Engineer delivers collection,
 metadata, documentation and alarm connectivity as parts of the **same approved integration case**.
 
+This workflow applies only when the owner has enabled the optional extension and included the
+Advisor/alarm handoff in that case's approved scope. Otherwise mark the handoff **not applicable**;
+ordinary edge integration acceptance does not require installing this extension or invoking Advisor.
+
 This preserves the vocabulary in [CONTEXT](../CONTEXT.md): Advisor, Engineer and Security are trust
 domains on separate hosts; personas describe human needs. The asset owner or appointed policy
 authority owns permission profiles. Engineer cannot expand its own or Advisor's authority.

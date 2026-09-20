@@ -1,4 +1,8 @@
-"""Durable, deterministic detector. Equipment authorization belongs to the read service."""
+"""Internal store for the Advisor-facing watcher, not an Engineer runtime or PAP.
+
+Authorization is enforced by discovered owner-filtered read views and rechecked by the hook.
+Writing this service's observation/outbox state never grants or changes permissions.
+"""
 import datetime as dt
 import hashlib
 import json
@@ -7,9 +11,14 @@ import re
 import sqlite3
 
 MAX_HISTORY_REQUESTS = 32
+MAX_UNRESOLVED_EVENTS = 10000
 
 
 class DataError(Exception):
+    pass
+
+
+class CapacityError(DataError):
     pass
 
 
@@ -48,7 +57,8 @@ def alarm_row(row, now, profile):
         if type(value) not in (int, float) or not math.isfinite(value) or int(value) != value:
             raise DataError('invalid_integer')
         allowed_units = ('bitfield',) if kind == 'uint16' else ('code', 'count')
-        if row.get('unit') not in allowed_units or not (0 if kind == 'uint16' else -32768) <= value <= 65535:
+        minimum = 0 if kind == 'uint16' else -32768
+        if row.get('unit') not in allowed_units or not (minimum <= value <= 65535):
             raise DataError('invalid_unit_or_range')
         value = int(value)
     return metric, ts, value
@@ -76,6 +86,8 @@ CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,observed REAL NOT NULL,kin
  metric TEXT NOT NULL,ts REAL NOT NULL,old TEXT NOT NULL,new TEXT NOT NULL,batch TEXT);
 CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY,created REAL NOT NULL,payload TEXT NOT NULL,
  state TEXT NOT NULL,attempt REAL,run_id TEXT);
+CREATE INDEX IF NOT EXISTS events_batch ON events(batch);
+CREATE INDEX IF NOT EXISTS batches_state ON batches(state);
 ''')
         expected = {'equipment_id': equipment_id, 'synthetic': synthetic, 'alarm_metrics': alarm_metrics, 'binding': binding}
         existing = {r[0]: json.loads(r[1]) for r in self.db.execute('SELECT key,value FROM meta')}
@@ -98,6 +110,9 @@ CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY,created REAL NOT NULL,pay
         self.db.execute('INSERT INTO meta VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, canonical(value)))
 
     def remember(self, metric, ts, value):
+        if self.db.execute('SELECT 1 FROM observations WHERE metric=? AND ts=? AND value<>? LIMIT 1',
+                           (metric, ts, canonical(value))).fetchone():
+            raise DataError('conflicting_timestamp')
         key = hashlib.sha256(canonical([metric, ts, value]).encode()).hexdigest()
         return self.db.execute('INSERT OR IGNORE INTO observations VALUES (?,?,?,?)', (key, metric, ts, canonical(value))).rowcount == 1
 
@@ -117,14 +132,24 @@ CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY,created REAL NOT NULL,pay
 
     def event(self, kind, metric, ts, before, after, now):
         key = hashlib.sha256(canonical([self.equipment_id, self.synthetic, kind, metric, ts, before, after]).encode()).hexdigest()
+        if self.db.execute('SELECT 1 FROM events WHERE id=?', (key,)).fetchone():
+            return
+        if self.unresolved_events() >= MAX_UNRESOLVED_EVENTS:
+            raise CapacityError('unresolved_outbox_capacity')
         self.db.execute('INSERT OR IGNORE INTO events VALUES (?,?,?,?,?,?,?,NULL)', (key, now, kind, metric, ts, canonical(before), canonical(after)))
 
-    def health(self, state, now):
-        if state not in {'healthy', 'stale', 'clock_skew', 'communication_fault', 'unknown', 'source_unavailable', 'history_backpressure', 'history_gap', 'data_quality'}:
+    def unresolved_events(self):
+        return self.db.execute('''SELECT
+          (SELECT count(*) FROM events WHERE batch IS NULL) +
+          (SELECT count(*) FROM batches b JOIN events e ON e.batch=b.id
+           WHERE b.state IN ('queued','sending','uncertain','failed'))''').fetchone()[0]
+
+    def health(self, state, now, *, emit=True):
+        if state not in {'healthy', 'stale', 'clock_skew', 'communication_fault', 'unknown', 'source_unavailable', 'history_backpressure', 'outbox_backpressure', 'history_gap', 'data_quality'}:
             raise DataError('invalid_health_state')
         with self.db:
             old = self.get('health')
-            if old != state and not (old is None and state == 'healthy'):
+            if emit and old != state and not (old is None and state == 'healthy'):
                 self.event('field_communication' if state == 'communication_fault' else 'data_health', 'read_health', now, old, state, now)
             self.set('health', state)
             self.set('checked_at', now)
@@ -137,8 +162,6 @@ CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY,created REAL NOT NULL,pay
         if any(ts >= end for _, ts, _ in parsed):
             raise DataError('history_end_mismatch')
         with self.db:
-            if self.db.execute('SELECT count(*) FROM events WHERE batch IS NULL').fetchone()[0] + len(parsed) > 10000:
-                raise DataError('pending_capacity')
             for metric, ts, value in parsed:
                 point = self.db.execute('SELECT ts,value FROM points WHERE metric=?', (metric,)).fetchone()
                 if not self.remember(metric, ts, value):
@@ -198,6 +221,7 @@ CREATE TABLE IF NOT EXISTS batches(id TEXT PRIMARY KEY,created REAL NOT NULL,pay
                 'health': self.get('health'), 'cursor': self.get('cursor'), 'checked_at': self.get('checked_at'),
                 'history_pending_ranges': len(self.get('history_scan', {}).get('pending', [])),
                 'unbatched_events': self.db.execute('SELECT count(*) FROM events WHERE batch IS NULL').fetchone()[0],
+                'unresolved_events': self.unresolved_events(), 'outbox_event_limit': MAX_UNRESOLVED_EVENTS,
                 'batches': dict(self.db.execute('SELECT state,count(*) FROM batches GROUP BY state')),
                 'delivery_note': 'admitted is not model completion; uncertain is never automatically resent'}
 
@@ -242,7 +266,7 @@ def scan_history(reader, store, now, end_now):
                 children = [{**part, 'metrics': metrics[:half]}, {**part, 'metrics': metrics[half:]}]
             else:
                 middle = timestamp(iso((start + end) / 2))
-                if not start < middle < end:
+                if not (start < middle < end):
                     # No time partition can recover >500 rows for one metric/instant.
                     # Keep the cursor/checkpoint and report an explicit data-quality gap.
                     raise DataError('unpageable_timestamp_density')
@@ -291,7 +315,16 @@ def poll(reader, store, now):
             store.health('data_quality', now)
             return
         scan_history(reader, store, now, end_now)
+    except CapacityError:
+        # Do not consume another event slot just to announce a full outbox.
+        store.health('outbox_backpressure', now, emit=False)
     except DataError:
-        store.health('data_quality', now)
+        try:
+            store.health('data_quality', now)
+        except CapacityError:
+            store.health('outbox_backpressure', now, emit=False)
     except Exception:
-        store.health('source_unavailable', now)
+        try:
+            store.health('source_unavailable', now)
+        except CapacityError:
+            store.health('outbox_backpressure', now, emit=False)

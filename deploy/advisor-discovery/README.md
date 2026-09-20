@@ -6,6 +6,9 @@ Python 3.12 on Linux for services; use the Node version supported by the selecte
 the repository's `requirements.txt` / `requirements-dev.txt`. There are no imports from dated lab
 directories, host-specific equipment allowlists, embedded credentials or one-off deployment scripts.
 
+Use this handoff only when the owner enables the extension and includes it in the approved case.
+Otherwise record **not applicable** in the ordinary edge-integration acceptance record.
+
 ## Components
 
 | File | Purpose |
@@ -34,7 +37,9 @@ directories, host-specific equipment allowlists, embedded credentials or one-off
    identity limited to approved repositories. Keep tokens/passwords in protected credential files,
    never in source control, model arguments or diagnostic output. Example placeholders must be replaced.
 4. Start `python reader.py --config /owner/provisioned/reader.json` under a non-login read identity.
-   The default listener is loopback. For remote databases/Forge, use owner-approved conduits/TLS;
+   The reader enforces a loopback listener; remote Forge origins must use HTTPS. Remote clients
+   require an explicitly owner-provisioned TLS-terminating proxy or authenticated tunnel to that
+   loopback listener. For remote databases/Forge, use owner-approved conduits/TLS;
    the Forge origin is configured by the owner, never by a model request. Refuse redirects.
 5. Install the complete `openclaw/` directory as a root-owned plugin under the gateway's
    `hooks/transforms/openaut-read/`. Add that directory to the plugin load paths, enable plugin
@@ -129,7 +134,9 @@ between cycles, caps discovery at 1,000 equipment, reads 20 per page, and mainta
 Limits: 64 alarm metrics per contract, eight metrics/500 samples per history call, seven-day history
 window, 120-second overlap, bounded pending events. No promise of unbounded late-data recovery or
 distributed exactly-once delivery. Automatic attempts share a durable six/hour and one/minute cap;
-no priority/fairness guarantee is made during sustained alarm floods.
+eligible equipment rotate after the last durable attempt, including failures, across restarts.
+Collection runs for all active scopes before dispatch selection; one persistently busy early ID
+cannot consume every available budget slot. This is round-robin fairness, not severity prioritization.
 History scans split metric groups and time intervals, including the overlap before the cursor.
 At most 32 requests are made per equipment/poll. Complete pages and the remaining scan queue are
 checkpointed together; the global cursor advances only once the fixed scan target is fully covered.
@@ -137,9 +144,19 @@ An interrupted scan resumes after restart rather than refetching a permanently o
 `history_backpressure` can mean bounded work remains, not discarded data. More than 500 rows for
 one metric at one indivisible timestamp cannot be time-partitioned: this is an explicit `data_quality`
 failure with the cursor/checkpoint retained, requiring corrected source identity/timestamp resolution.
+All unresolved events count toward the 10,000-event outbox cap, including queued, sending, failed
+and uncertain batches. At capacity, ingestion pauses with `outbox_backpressure` in status without
+discarding evidence or resending uncertain batches. Already admitted audit history has separate
+retention semantics and does not occupy this unresolved-event allowance.
 The read API also limits latest snapshots to 256 metrics, document lists to 20 sources per equipment,
 Forge blobs to 2 MiB and JSON responses to 256 KiB. Oversized results fail explicitly rather than
 silently presenting incomplete evidence. Point-registry truncation is reported in the response.
+Read requests share a seven-second monotonic work budget inside the tool's ten-second timeout.
+Database statement timeouts and document fetches use the remaining budget; a socket watchdog also
+limits slow/trickling Forge responses. Document search returns `incomplete`, `budget_exhausted`
+and explicit `unavailable` entries instead of continuing through 20 individual fetch timeouts.
+Only fully fetched/hash-verified passages are returned. TLS/DNS and database conduits still require
+owner-provisioned infrastructure and deployment-specific acceptance.
 
 For an approved synthetic acceptance test, run under the watcher's identity/configuration:
 

@@ -36,6 +36,8 @@ assert.equal(action.sessionKeySource,'static');
 assert.equal(action.agentId,'main'); assert.equal(action.deliver,false);
 assert.equal(action.allowUnsafeExternalContent,false);
 assert.equal(action.model,undefined);
+const recovered=await transform(ctx({...event,changes:[{kind:'data_health',metric:'read_health',source_ts:'2030-01-01T12:00:00Z',previous:'outbox_backpressure',current:'healthy'}]}));
+assert.equal(recovered.sessionKey,action.sessionKey);
 assert.equal((await transform(ctx({...event,agentId:'engineer',model:'unapproved',sessionKey:'agent:main:main'}))).sessionKey,action.sessionKey);
 await assert.rejects(()=>transform({...ctx(event),payload:{...ctx(event).payload,sessionKey:'agent:main:main'}}));
 for(const patch of [{equipment_id:'../bad'},{synthetic:true},{changes:[{...event.changes[0],current:65536}]},{changes:[{...event.changes[0],metric:'other'}]}]) await assert.rejects(()=>transform(ctx({...event,...patch})));

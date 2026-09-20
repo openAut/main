@@ -83,7 +83,9 @@ It complements the approval workflow here; lab observations are not public pre-m
 
 ## Advisor and alarm delivery
 
-Complete this handoff in the same approved integration case:
+When the owner has enabled this optional extension **and** included Advisor/alarm delivery in the
+approved integration scope, complete this handoff in the same case. Otherwise record it as
+**not applicable**; it is not a prerequisite for an ordinary edge integration.
 
 - Follow [`ADVISOR-INTEGRATION-WORKFLOW`](../../docs/ADVISOR-INTEGRATION-WORKFLOW.md).
 - Verify discovery within the owner's existing Advisor area and link equipment to its product

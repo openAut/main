@@ -87,8 +87,9 @@ reads. Verify these separately:
 - MQTT authorization, connectivity and PUBACK-aware spool drainage;
 - ingest persistence and recent source timestamps;
 - dashboard queries, datasource permissions and intended listener binding;
-- Advisor discovery inside the owner-authorized area, scoped metadata/history/Forge reads,
-  and an approved alarm contract with a completed synthetic response in the right conversation.
+- when the owner has enabled the optional Advisor extension and included the handoff in this
+  case's approved scope: Advisor discovery, scoped metadata/history/Forge reads and an approved
+  alarm contract with a completed synthetic response. Otherwise record this layer as not applicable.
 
 Local freshness uses monotonic time so clock corrections do not alter elapsed-time decisions.
 Published last-success timestamps use synchronized UTC time. A stored `healthy=true` must always
