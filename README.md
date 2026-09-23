@@ -39,16 +39,34 @@ create the rest of the project safely.
 
 These skills do **not** reimplement NemoClaw. NemoClaw already ships the bootstrap
 (`curl … nemoclaw.sh | bash`), the Landlock + seccomp + netns sandbox, inference routing,
-and lifecycle CLI. The skills here **orchestrate that documented CLI over SSH** and bake in two
-openAut-specific defaults:
+and lifecycle CLI. The skills here **orchestrate that documented CLI over SSH**. The openAut
+architecture has two intended defaults; communication migration status is described below:
 
 | Default | Choice | Why |
 |---|---|---|
-| **Communication channel** | **Microsoft Teams** (via webhook bridge) | openAut targets the Microsoft stack (Teams + Power BI). NemoClaw has no native Teams channel, so a small bridge maps Teams ↔ the OpenClaw gateway. |
+| **Communication protocol** | **Matrix — an open communication protocol** | Users choose a Matrix-compatible chat client, such as Element. A self-hosted Matrix server (homeserver) can handle messages and rooms within the organisation's own infrastructure. |
 | **Inference** | **Remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** on a separate machine, **egress-locked + TLS** | Keeps inference on a dedicated GPU system (e.g. ASUS Ascent GX10), reachable only from the sandbox over an encrypted, allow-listed link. |
 
-> These defaults are configurable. Set `TEAMS_*` and `NEMOTRON_*` in `config.env` to point at
-> your own bridge and inference host; every skill sources that file.
+### Communication via Matrix
+
+**Matrix is the protocol**, the **chat client** is the user's application, and the **homeserver**
+handles messages and rooms. Advisor is reached through Matrix rooms; Security observes authorised
+operations rooms and sends alerts to a separate, access-restricted security room. Engineer is
+accessed through OpenCode, not through Matrix. Clients and bots connect to the selected homeserver
+over HTTPS using the Matrix Client-Server API. Federation and room access settings determine
+whether messages can reach other homeservers.
+
+**Migration status:** Matrix is the intended communication standard. The existing
+[`config.env.example`](config.env.example), [`webhook bridge`](bridges/teams-webhook/README.md),
+and linked skills and architecture documents still contain the earlier Teams integration and
+`TEAMS_*` settings. These are legacy migration material, not a working Matrix integration.
+The configuration, provisioning, sandbox policies, and runbooks still need to be migrated and
+verified before the Matrix path can be treated as implemented. The skill summaries below describe
+the intended Matrix architecture.
+
+For inference, configure `NEMOTRON_*` in `config.env` using the existing configuration example.
+Matrix connection settings must be documented with the integration; the current example does not
+yet define them.
 
 ## First milestone: agent-led integration POC
 
@@ -57,7 +75,7 @@ workstation, opencode, an attached LLM, and a startup prompt using a pinned proj
 build an integration lab with agent assistance. Local opencode performs user-led engineering work;
 the two priority Ubuntu VMs host platform services and Advisor. The journey covers POC services,
 a physical read-only integration, dashboards, and manuals in Forgejo that Advisor can use for
-evidence-backed troubleshooting in Teams.
+evidence-backed troubleshooting in a Matrix-compatible chat client.
 
 See [Milestone 1 — Agent-led integration POC](docs/MILESTONE-1.md) for scope, delivery workstreams,
 and acceptance criteria. This is a delivery target; the complete fresh-install journey is not yet
@@ -73,10 +91,10 @@ sets out the candidate two-VM budget and staged delivery plan.
 
 | Skill | What it does |
 |---|---|
-| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** endpoint → attach the **Teams** bridge → verify. The end-to-end install runbook. |
-| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress** allow-listed to the Teams bridge + Nemotron host + local Forge only, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. |
-| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the openAut trust domains: **Advisor** is read-only and Teams-facing; **Engineer** has SSH/deploy capability but is not exposed to Teams; **Security** is a separate read-only watch instance ([`security-instance`](skills/security-instance/SKILL.md)). Per ADR 0001 §5 and [ADR 0003](docs/adr/0003-engineer-runtime-containment.md), Advisor and Engineer run on **different software stacks** — Advisor on **NemoClaw**, Engineer on **OpenCode** — in separate runtime sandboxes on separate hosts. Actions move through approved cases in the Systemdatabas. |
-| [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut **operator personas** (jobs-to-be-done) — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, each defaulting to Teams, each granted only the runtime skills it needs. Personas are served chiefly by **Advisor** (read-only); writes/deploys go through **Engineer** via an approved case, while **Security** watches across both. A persona is not itself a trust domain. |
+| [`nemoclaw-provision`](skills/nemoclaw-provision/SKILL.md) | SSH preflight → run the NemoClaw installer → onboard a sandbox pointed at the **remote NVIDIA Nemotron 3.5 Lightning 30B-A3B-NVFP4** endpoint → connect Advisor via **Matrix** → verify. The Matrix connection step remains a migration target for this install runbook. |
+| [`nemoclaw-sandbox-policy`](skills/nemoclaw-sandbox-policy/SKILL.md) | Manage the four sandbox layers after creation: **deny-by-default egress**, TLS verification, and a hardening review mapped to IEC 62443 / NIS2 / CRA. The Matrix migration target is an explicit allow-list for the selected homeserver + Nemotron host + local Forge, with room and action permissions enforced separately. |
+| [`advisor-engineer-workflow`](skills/advisor-engineer-workflow/SKILL.md) | Define the openAut trust domains: **Advisor** is read-only and accessible via Matrix; **Engineer** has SSH/deploy capability through OpenCode and is not exposed to Matrix; **Security** is a separate read-only watch instance ([`security-instance`](skills/security-instance/SKILL.md)). Per ADR 0001 §5 and [ADR 0003](docs/adr/0003-engineer-runtime-containment.md), Advisor and Engineer run on **different software stacks** — Advisor on **NemoClaw**, Engineer on **OpenCode** — in separate runtime sandboxes on separate hosts. Actions move through approved cases in the Systemdatabas. |
+| [`nemoclaw-agent-workflow`](skills/nemoclaw-agent-workflow/SKILL.md) | Define the three openAut **operator personas** (jobs-to-be-done) — **Driftstekniker**, **Energisamordnare**, **Förvaltare** — as NemoClaw agent workflows, communicating via Matrix using a compatible chat client, each granted only the runtime skills it needs. Personas are served chiefly by **Advisor** (read-only); writes/deploys go through **Engineer** via an approved case, while **Security** watches across both. A persona is not itself a trust domain. |
 
 **Data backbone & edge — what the agents read from:**
 
@@ -101,7 +119,7 @@ sets out the candidate two-VM budget and staged delivery plan.
 
 | Skill | What it does |
 |---|---|
-| [`security-instance`](skills/security-instance/SKILL.md) | Define the separate **openAut Security** instance: read-only SSH, listen-only Teams observation, passive MQTT/log monitoring, prompt/social-engineering detection, OT anomaly detection, isolated alerts, and compliance reporting. |
+| [`security-instance`](skills/security-instance/SKILL.md) | Define the separate **openAut Security** instance: read-only SSH, listen-only observation of authorised Matrix operations rooms, passive MQTT/log monitoring, prompt/social-engineering detection, OT anomaly detection, alerts to a separate access-restricted Matrix room, and compliance reporting. Reading rooms requires membership, read permissions and, for encrypted rooms, the necessary decryption keys. |
 
 **Runtime capabilities — what each agent persona carries:**
 
@@ -127,8 +145,8 @@ Supporting:
   identity migration, field health, offline runtime and evidence lessons from the isolated POC.
 - [`docs/HYPERV-CI-BOUNDARY.md`](docs/HYPERV-CI-BOUNDARY.md) — host-enforced isolation for an
   untrusted Forgejo CI VM on Hyper-V management/NAT networks.
-- [`bridges/teams-webhook/`](bridges/teams-webhook/README.md) — the minimal Teams ↔ gateway bridge the channel default depends on.
-- [`config.env.example`](config.env.example) — copy to `config.env` and fill in.
+- [Matrix documentation](https://matrix.org/docs/) — the open communication protocol, clients, homeservers, and rooms.
+- [`config.env.example`](config.env.example) — current configuration template; Matrix settings are pending migration as described above.
 
 ## Using these skills
 
