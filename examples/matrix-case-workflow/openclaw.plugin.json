@@ -1,0 +1,16 @@
+{
+  "id": "openaut-cases",
+  "name": "openAut Matrix troubleshooting",
+  "categories": ["other"],
+  "contracts": {"tools": ["openaut_case"]},
+  "activation": {"onStartup": true},
+  "toolMetadata": {"openaut_case": {"optional": true}},
+  "configSchema": {
+    "type": "object", "additionalProperties": false,
+    "required": ["policyFile", "stateDirectory"],
+    "properties": {
+      "policyFile": {"type": "string", "minLength": 1},
+      "stateDirectory": {"type": "string", "minLength": 1}
+    }
+  }
+}

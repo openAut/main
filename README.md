@@ -56,17 +56,25 @@ accessed through OpenCode, not through Matrix. Clients and bots connect to the s
 over HTTPS using the Matrix Client-Server API. Federation and room access settings determine
 whether messages can reach other homeservers.
 
+**POC status (2026-09-29):** one synthetic Matrix/Element case has been verified through shared-room
+alarm publication, technician assignment, private dialogue, a human-confirmed report/lesson and
+group-thread closure. All 17 final checks passed. The run required documented recovery steps;
+a fresh automatic callback remains to be tested, and live Matrix alarm routing remains disabled.
+See the [workflow](docs/MATRIX-OPERATIONS-WORKFLOW.md),
+[verification record](docs/MATRIX-CASE-POC-VERIFICATION.md) and
+[opt-in reference implementation](examples/matrix-case-workflow/README.md).
+
 **Migration status:** Matrix is the intended communication standard. The existing
 [`config.env.example`](config.env.example), [`webhook bridge`](bridges/teams-webhook/README.md),
 and linked skills and architecture documents still contain the earlier Teams integration and
 `TEAMS_*` settings. These are legacy migration material, not a working Matrix integration.
-The configuration, provisioning, sandbox policies, and runbooks still need to be migrated and
-verified before the Matrix path can be treated as implemented. The skill summaries below describe
-the intended Matrix architecture.
+The general provisioning, sandbox policies and legacy runbooks still need migration and
+fresh-install verification. The reference's local case bank does not replace Forge/Systemdatabas
+publication or engineering approvals. The skill summaries below describe the intended architecture.
 
 For inference, configure `NEMOTRON_*` in `config.env` using the existing configuration example.
-Matrix connection settings must be documented with the integration; the current example does not
-yet define them.
+The Matrix case reference documents its separate operator-owned policy and connection contract;
+the top-level environment template does not yet provision that integration.
 
 ## First milestone: agent-led integration POC
 

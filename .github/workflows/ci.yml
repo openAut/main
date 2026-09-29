@@ -6,6 +6,15 @@ on:
     branches: [main]
 
 jobs:
+  matrix-case-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.21.0"
+      - run: npm test --prefix examples/matrix-case-workflow
+
   tests:
     runs-on: ubuntu-latest
     steps:

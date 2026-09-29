@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "homeserver": "https://matrix.example.test/",
+  "botUserId": "@advisor:example.test",
+  "accountId": "default",
+  "roomId": "!operations:example.test",
+  "technicians": ["@technician:example.test"],
+  "equipment": ["ahu-demo"]
+}
