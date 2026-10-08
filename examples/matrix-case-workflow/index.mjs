@@ -7,6 +7,52 @@ import { MatrixTransport } from './transport.mjs';
 
 export function registerWorkflow(api, store, transport) {
   const workflow = new Workflow(store, transport);
+  // Join run-scoped output and completion facts; their callback order may differ.
+  // Never select an answer by searching the full agent_end conversation history.
+  const runs = new Map();
+  const runKey = (event, ctx) => {
+    const id = event.runId ?? ctx.runId;
+    if (typeof id !== 'string' || !id || !ctx.sessionKey ||
+        (event.runId && ctx.runId && event.runId !== ctx.runId)) return null;
+    return JSON.stringify([id, ctx.sessionKey]);
+  };
+  const finish = key => {
+    const run = runs.get(key);
+    if (!run?.ended || !run.outputSeen) return;
+    runs.delete(key);
+    if (!run.body) return;
+    const { ctx, body, runId } = run;
+    const match = ctx.sessionKey.match(/^agent:main:hook:openaut-case-([a-f0-9]{64})$/);
+    if (match) {
+      const row = store.get('F-' + match[1].slice(0, 20));
+      if (alarmSession(row) !== ctx.sessionKey) throw Error('alarm_session_mismatch');
+      store.completeAnalysis(row.id, body);
+    } else if (ctx.channel === 'matrix' && ctx.accountId === store.policy.accountId) {
+      store.recordReply(ctx.sessionKey, runId, body);
+    }
+  };
+  api.on('llm_input', (event, ctx) => {
+    const key = runKey(event, ctx);
+    if (!key) return;
+    runs.delete(key);
+    runs.set(key, { outputSeen: false, ended: false });
+    while (runs.size > 128) runs.delete(runs.keys().next().value); // Missing facts fail closed.
+  });
+  api.on('llm_output', (event, ctx) => {
+    const key = runKey(event, ctx);
+    const run = runs.get(key);
+    if (!run) return;
+    run.outputSeen = true;
+    run.body = undefined;
+    const last = event.lastAssistant;
+    const body = typeof last?.content === 'string' ? last.content : Array.isArray(last?.content)
+      ? last.content.filter(block => block.type === 'text' && typeof block.text === 'string').map(block => block.text).join('\n') : '';
+    const texts = Array.isArray(event.assistantTexts) ? event.assistantTexts.filter(text => typeof text === 'string') : [];
+    if (last?.role === 'assistant' && last.stopReason === 'stop' && !last.errorMessage && body.trim() &&
+        body.length <= 12000 && !['NO_REPLY','HEARTBEAT_OK'].includes(body.trim()) &&
+        (texts.some(text => text.trim() === body.trim()) || texts.join('\n').trim() === body.trim())) run.body = body;
+    finish(key);
+  });
   api.on('before_dispatch', (event, ctx) => workflow.beforeDispatch(event, ctx));
   api.registerTool(ctx => workflow.tool(ctx), { optional: true, names: ['openaut_case'] });
   api.on('before_prompt_build', (_event, ctx) => {
@@ -21,20 +67,14 @@ export function registerWorkflow(api, store, transport) {
       'Tilldelningen i driftrummet hanteras deterministiskt före modellen.' };
   });
   api.on('agent_end', (event, ctx) => {
-    if (!event.success || !ctx.sessionKey) return;
-    const assistant = [...event.messages].reverse().find(message => message.role === 'assistant' &&
-      (typeof message.content === 'string' || message.content?.some?.(block => block.type === 'text')));
-    const body = typeof assistant?.content === 'string' ? assistant.content
-      : assistant?.content?.filter(block => block.type === 'text').map(block => block.text).join('\n');
-    if (!body?.trim()) return;
-    const match = ctx.sessionKey.match(/^agent:main:hook:openaut-case-([a-f0-9]{64})$/);
-    if (match) {
-      const row = store.get('F-' + match[1].slice(0, 20));
-      if (alarmSession(row) !== ctx.sessionKey) throw Error('alarm_session_mismatch');
-      store.completeAnalysis(row.id, body);
-    } else if (ctx.channel === 'matrix' && ctx.accountId === store.policy.accountId) {
-      store.recordReply(ctx.sessionKey, event.runId || ctx.runId, body);
-    }
+    const key = runKey(event, ctx);
+    const run = runs.get(key);
+    if (!run) return;
+    if (!event.success) { runs.delete(key); return; }
+    run.ended = true;
+    run.runId = event.runId ?? ctx.runId;
+    run.ctx = { sessionKey: ctx.sessionKey, channel: ctx.channel, accountId: ctx.accountId };
+    finish(key);
   });
   api.on('message_sending', async (event, ctx) => {
     if (ctx.channelId !== 'matrix' || ctx.accountId !== store.policy.accountId) return;
@@ -55,7 +95,7 @@ export function registerWorkflow(api, store, transport) {
       }, 3000);
       timer.unref();
     },
-    async stop() { clearInterval(timer); await pending; store.close(); },
+    async stop() { clearInterval(timer); await pending; runs.clear(); store.close(); },
   });
   return workflow;
 }

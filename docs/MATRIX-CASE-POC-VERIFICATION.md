@@ -81,6 +81,24 @@ observer was validated by this run.
 
 ## Relationship to the public reference
 
+### POC-scoped review follow-up
+
+Review of the initial public reference found four additional library scenarios, reproduced
+against that revision. The focused correction adds regression coverage for:
+
+- sharing reviewed lesson/report projections rather than another technician's raw evidence,
+  including searches that guess hidden raw text;
+- correlating current-run output with successful completion without selecting historical text;
+- keeping draft validation and commit in one writer transaction, so a second connection cannot
+  reopen a case confirmed between the status read and update;
+- parking a revoked-equipment delivery while allowing authorized queued jobs to continue.
+
+The second-writer race is conditional for the documented single-worker deployment, but its local
+transactional correction is small enough to include. These are reference-code fixes, not evidence
+that the running lab has been upgraded or that the fresh automatic callback has been exercised.
+The POC merge bar is passing focused regressions, ordinary CI and preserved trust boundaries;
+it does not require production hardening, a new infrastructure rollout or unanimous bot approval.
+
 [`examples/matrix-case-workflow`](../examples/matrix-case-workflow/README.md) contains the extracted
 case/store/transport logic and offline tests. The entry uses operator-supplied paths, portable
 imports and explicit lifecycle cleanup; fixtures use example identities. Local installers,

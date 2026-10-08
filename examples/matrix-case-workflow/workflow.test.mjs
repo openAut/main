@@ -229,3 +229,81 @@ test('before_dispatch preserves sender authority and never exposes the private c
   assert.equal(f.flow.tool({ messageChannel: 'matrix', agentAccountId: 'default',
     nativeChannelId: policy.roomId, requesterSenderId: anna }), null);
 });
+
+test('closed experience sharing exposes reviewed fields, never another technician raw evidence or hidden search matches', async t => {
+  const f = fixture(t); const a = await assigned(f, 'private-source');
+  const marker = 'PRIVATE_UNREVIEWED_OBSERVATION';
+  f.store.note(a.id, anna, a.dm, '$private', marker, 'private-source-session');
+  const draft = f.store.draft(a.id, anna, a.dm, report(f.store, a));
+  const preview = f.store.db.prepare("SELECT body FROM outbox WHERE case_id=? AND kind='dm_review'").get(a.id).body;
+  assert.equal(preview.includes(marker), false);
+  f.store.confirm(a.id, anna, a.dm, '$confirmed', draft.hash);
+  const b = await assigned(f, 'other-owner', bo);
+  const shared = f.store.context(b.id, bo, b.dm).lessons;
+  assert.equal(shared.length, 1);
+  assert.equal(shared[0].sha256, draft.hash);
+  assert.equal(shared[0].trust_level, 'technician_confirmed_case');
+  assert.equal(Object.hasOwn(shared[0], 'evidence_records'), false);
+  assert.equal(JSON.stringify(shared).includes(marker), false);
+  assert.equal(f.store.search('ta04', marker).length, 0);
+  assert.ok(f.store.context(a.id, anna, a.dm).events.some(item => item.body === marker));
+  assert.ok(f.store.document(f.store.get(a.id)).evidence_records.some(item => item.body === marker));
+});
+
+test('a confirmation on another connection before draft transaction cannot be overwritten', async t => {
+  const f = fixture(t); const row = await assigned(f, 'confirmation-race');
+  f.store.note(row.id, anna, row.dm, '$first-note', 'Observed', 'race-session');
+  const first = f.store.draft(row.id, anna, row.dm, report(f.store, row));
+  const other = new Store(f.directory, policy);
+  const transaction = f.store.transaction.bind(f.store);
+  f.store.transaction = fn => {
+    other.confirm(row.id, anna, row.dm, '$race-confirmation', first.hash);
+    return transaction(fn);
+  };
+  try {
+    assert.throws(() => f.store.draft(row.id, anna, row.dm, report(f.store, row)), /case_not_investigating/);
+    const after = other.get(row.id);
+    assert.equal(after.status, 'closed');
+    assert.equal(after.document_hash, first.hash);
+    assert.equal(after.revision, 1);
+    assert.equal(after.confirmed_by, anna);
+  } finally { other.close(); }
+});
+
+test('draft holds its writer lock during evidence validation; a later observation invalidates the draft', async t => {
+  const f = fixture(t); const row = await assigned(f, 'observation-race');
+  f.store.note(row.id, anna, row.dm, '$initial-observation', 'Observed', 'race-session');
+  const proposal = report(f.store, row);
+  const other = new Store(f.directory, policy);
+  other.db.exec('PRAGMA busy_timeout=0');
+  const history = f.store.history.bind(f.store);
+  f.store.history = target => {
+    assert.throws(() => other.note(row.id, anna, row.dm, '$concurrent', 'New information', 'race-session'), /locked/);
+    return history(target);
+  };
+  try {
+    const draft = f.store.draft(row.id, anna, row.dm, proposal);
+    other.note(row.id, anna, row.dm, '$after-commit', 'New information', 'race-session');
+    assert.equal(other.get(row.id).status, 'investigating');
+    assert.equal(other.get(row.id).document_hash, null);
+    assert.throws(() => other.confirm(row.id, anna, row.dm, '$stale', draft.hash), /stale_confirmation/);
+  } finally { other.close(); }
+});
+
+test('revoked equipment is parked with audit while later authorized deliveries continue', async t => {
+  const f = fixture(t);
+  const retired = f.store.openAlarm({ ...event('retired'), equipment_id: 'ta04' });
+  f.store.completeAnalysis(retired.id, 'Retired equipment fixture');
+  const allowed = f.store.openAlarm({ ...event('allowed'), equipment_id: 'ta07' });
+  f.store.completeAnalysis(allowed.id, 'Allowed equipment fixture');
+  f.store.db.prepare("UPDATE outbox SET created='2000-01-01T00:00:00Z' WHERE case_id=?").run(retired.id);
+  f.store.policy.equipment = ['ta07'];
+  await f.flow.flush();
+  assert.equal(f.store.db.prepare('SELECT state FROM outbox WHERE case_id=?').get(retired.id).state, 'blocked');
+  assert.equal(f.store.db.prepare('SELECT state FROM outbox WHERE case_id=?').get(allowed.id).state, 'sent');
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.store.db.prepare("SELECT body FROM events WHERE case_id=? AND kind='delivery_blocked'").get(retired.id).body, 'equipment_scope_revoked');
+  f.store.policy.equipment = ['ta04', 'ta07'];
+  await f.flow.flush();
+  assert.equal(f.sent.length, 1); // Reauthorization is not permission to replay a parked job.
+});

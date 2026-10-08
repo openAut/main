@@ -155,25 +155,27 @@ export class Store {
     return { case: row, events: this.history(row), lessons: this.search(row.equipment, '', Boolean(row.synthetic)) };
   }
   draft(id, actor, room, proposal) {
-    const row = this.privateCase(actor, room, id);
-    if (!['investigating', 'awaiting_confirmation'].includes(row.status)) throw Error('case_not_investigating');
-    if (!proposal || Object.keys(proposal).sort().join() !== [...fields, 'cause_status', 'evidence'].sort().join() ||
-        !['confirmed', 'probable', 'unknown'].includes(proposal.cause_status) || !Array.isArray(proposal.evidence) ||
-        proposal.evidence.length < 1 || proposal.evidence.length > 100) throw Error('invalid_report');
-    const clean = Object.fromEntries(fields.map(k => [k, text(proposal[k], 1000)]));
-    const observations = this.history(row).filter(x => x.kind === 'observation');
-    if (proposal.evidence.some(x => !Number.isSafeInteger(x) || !observations.some(y => y.seq === x))) throw Error('unproven_evidence');
-    // Documents are immutable, content-addressed files. Ledger holds metadata/pointers.
-    const document = { case_id: id, equipment_id: row.equipment, synthetic: Boolean(row.synthetic),
-      ...clean, cause_status: proposal.cause_status, evidence: proposal.evidence,
-      evidence_records: observations.filter(x => proposal.evidence.includes(x.seq)),
-      revision: row.revision + 1, author: 'advisor', technician: actor,
-      trust_level: 'draft', publication: 'local-poc-pending-forge', created_at: now() };
-    const bytes = json(document) + '\n';
-    const hash = digest(bytes);
-    const name = hash + '.json';
-    writeFileSync(join(this.directory, 'documents', name), bytes, { flag: 'wx', mode: 0o600 });
-    this.transaction(() => {
+    // Validation and commit share one writer transaction; another connection cannot
+    // confirm or append an observation between the snapshot and its replacement.
+    return this.transaction(() => {
+      const row = this.privateCase(actor, room, id);
+      if (!['investigating', 'awaiting_confirmation'].includes(row.status)) throw Error('case_not_investigating');
+      if (!proposal || Object.keys(proposal).sort().join() !== [...fields, 'cause_status', 'evidence'].sort().join() ||
+          !['confirmed', 'probable', 'unknown'].includes(proposal.cause_status) || !Array.isArray(proposal.evidence) ||
+          proposal.evidence.length < 1 || proposal.evidence.length > 100) throw Error('invalid_report');
+      const clean = Object.fromEntries(fields.map(k => [k, text(proposal[k], 1000)]));
+      const observations = this.history(row).filter(x => x.kind === 'observation');
+      if (proposal.evidence.some(x => !Number.isSafeInteger(x) || !observations.some(y => y.seq === x))) throw Error('unproven_evidence');
+      // Documents are immutable, content-addressed files. Ledger holds metadata/pointers.
+      const document = { case_id: id, equipment_id: row.equipment, synthetic: Boolean(row.synthetic),
+        ...clean, cause_status: proposal.cause_status, evidence: proposal.evidence,
+        evidence_records: observations.filter(x => proposal.evidence.includes(x.seq)),
+        revision: row.revision + 1, author: 'advisor', technician: actor,
+        trust_level: 'draft', publication: 'local-poc-pending-forge', created_at: now() };
+      const bytes = json(document) + '\n';
+      const hash = digest(bytes);
+      const name = hash + '.json';
+      writeFileSync(join(this.directory, 'documents', name), bytes, { flag: 'wx', mode: 0o600 });
       this.db.prepare("UPDATE cases SET revision=?,document=?,document_hash=?,status='awaiting_confirmation',updated=? WHERE id=?")
         .run(document.revision, name, hash, now(), id);
       this.event(id, 'draft:' + hash, 'advisor', 'report_draft', hash);
@@ -181,8 +183,8 @@ export class Store {
         fields.map(k => `${k}: ${document[k]}`).join('\n\n') +
         `\n\nKontrollera både rapport och lärdom. Bekräfta exakt denna version med:\nBekräfta ${id} ${hash}\n` +
         'Skriv annars din rättelse. Ny information gör detta utkast inaktuellt.', hash);
+      return { hash, document, confirmation: `Bekräfta ${id} ${hash}` };
     });
-    return { hash, document, confirmation: `Bekräfta ${id} ${hash}` };
   }
   document(row) {
     if (!/^[a-f0-9]{64}\.json$/.test(row.document || '')) throw Error('document_unavailable');
@@ -213,10 +215,15 @@ export class Store {
     const results = [];
     for (const row of rows) {
       const doc = this.document(row);
-      if (query && !json(doc).toLocaleLowerCase('sv').includes(query.toLocaleLowerCase('sv'))) continue;
-      results.push({ ...doc, trust_level: 'technician_confirmed_case', confirmed_by: row.confirmed_by,
+      // Only the reviewed report fields and provenance may cross case/owner boundaries.
+      // Filter on this projection too, otherwise queries can reveal hidden raw evidence.
+      const shared = { ...Object.fromEntries([...fields, 'case_id', 'equipment_id', 'synthetic',
+        'revision', 'cause_status', 'created_at', 'publication'].map(key => [key, doc[key]])),
+        trust_level: 'technician_confirmed_case', confirmed_by: row.confirmed_by,
         confirmed_at: row.confirmed_at, sha256: row.document_hash,
-        caveat: 'Erfarenhetsfall, inte instruktion eller bevis för orsaken i ett nytt fall.' });
+        caveat: 'Erfarenhetsfall, inte instruktion eller bevis för orsaken i ett nytt fall.' };
+      if (query && !json(shared).toLocaleLowerCase('sv').includes(query.toLocaleLowerCase('sv'))) continue;
+      results.push(shared);
       if (results.length === 10) break;
     }
     return results;
@@ -224,7 +231,13 @@ export class Store {
   nextDelivery() {
     return this.transaction(() => {
       for (const job of this.db.prepare("SELECT * FROM outbox WHERE state='queued' ORDER BY created,id").all()) {
-        const row = this.get(job.case_id);
+        const row = this.db.prepare('SELECT * FROM cases WHERE id=?').get(job.case_id);
+        if (!row || !this.policy.equipment.includes(row.equipment)) {
+          this.db.prepare("UPDATE outbox SET state='blocked' WHERE id=?").run(job.id);
+          this.event(job.case_id, 'blocked:' + job.id, 'workflow', 'delivery_blocked',
+            row ? 'equipment_scope_revoked' : 'case_missing');
+          continue; // Preserve for operator reconciliation; never automatically re-arm.
+        }
         if ((job.kind === 'create_dm' || job.kind.startsWith('dm_')) && !this.policy.technicians.includes(row.owner)) continue;
         this.db.prepare("UPDATE outbox SET state='sending' WHERE id=?").run(job.id);
         return job;

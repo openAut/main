@@ -16,7 +16,7 @@ for the exact evidence and limits. It is not a production service or an installe
 | `store.mjs` | SQLite cases/audit/outbox, assignment transactions, immutable hashed drafts, human confirmation and scoped retrieval. |
 | `workflow.mjs` | Host-bound identity checks, command handling, case-only tools and delivery worker. |
 | `transport.mjs` | Restricted room creation/membership checks and native Matrix outbound adapter. |
-| `index.mjs` | Configurable OpenClaw entry, `before_dispatch`, `agent_end`, prompt guidance and worker lifecycle. |
+| `index.mjs` | Configurable entry, `before_dispatch`, run-scoped LLM/completion hooks, prompt guidance and worker lifecycle. |
 | `alarm-transform.mjs` | Factory wrapping an already-authorized alarm transform; synthetic-only by default. |
 | `policy.example.json` | Disabled placeholder policy, not provisioned infrastructure. |
 | `*.test.mjs` | Offline state/identity/transport/registration tests with provider I/O mocked. |
@@ -102,7 +102,12 @@ The full channel/handoff contract and acceptance sequence are in
   confirmation as `technician_confirmed_case`; this is an experience case, not a verified generic
   manufacturer instruction. The application compares the stored bytes with the document hash.
 - `search(equipment, query, synthetic)` only returns confirmed cases in the allowed equipment
-  scope. Synthetic cases are excluded from ordinary live retrieval.
+  scope. It shares only reviewed report/lesson fields and confirmation provenance. Raw evidence
+  records remain accessible through the original owner's case context, never through another
+  case's experience search. Queries use the same public projection so hidden notes cannot be
+  discovered by guessing search terms. Synthetic cases are excluded from ordinary live retrieval.
+- Draft validation, revision/evidence reads and metadata commit share one writer transaction.
+  A concurrent confirmation cannot be overwritten using a stale pre-transaction status.
 - `exportConfirmed` produces report/lesson Markdown and a hash manifest, without the raw DM
   conversation. The export is `pending-forge-review` / `quarantine`. It is not automatic Forge
   publishing or a migration into `system.cases`.
@@ -114,6 +119,17 @@ Outbox transitions are `queued → sending → sent`; an interrupted or ambiguou
 in-flight receipt; reconcile the exact target, message and receipt before any operator recovery.
 Do not reset an old alarm ledger to repeat an acceptance test. DM creation can similarly leave an
 orphan room after an ambiguous response; do not create another room blindly.
+
+A queued job whose equipment is no longer authorized becomes `blocked`, with an audit reason.
+Other allowed jobs continue. Restoring the equipment scope does not automatically re-arm that
+job: it remains an operator reconciliation decision.
+
+Completion correlation requires `llm_input`, `llm_output` and successful `agent_end` facts with
+the same host run ID/session. Only a clean final assistant text present in that run's output
+collection is accepted; full conversation history is not a fallback. Callback arrival order may
+differ. Missing, failed, tool-only or uncorrelated results leave the case pending rather than
+publishing old text. The bounded in-memory correlation cache is cleared on restart; it does not
+authorize a replay after a missed callback. Validate the pinned harness before live routing.
 
 The case plugin uses `api.runtime.channel.outbound.loadAdapter('matrix').sendText`, not the
 Gateway RPC helper restricted to bundled/trusted-official plugins. Its own outbox owns attempt
