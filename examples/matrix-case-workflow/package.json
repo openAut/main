@@ -1,0 +1,9 @@
+{
+  "name": "openaut-matrix-case-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=24.21.0"},
+  "scripts": {"test": "node --test workflow.test.mjs outbound.test.mjs integration.test.mjs"},
+  "openclaw": {"extensions": ["./index.mjs"], "compat": {"pluginApi": "2026.9.4"}}
+}
