@@ -11,7 +11,7 @@ permissions:
 
 # framsyn
 
-Guide för strukturerat framtidstänkande (foresight / futures studies). Hjälper David att utforska möjliga framtider, kvalificera beslut under osäkerhet och ta fram robusta strategier — inte att förutsäga exakt.
+Guide för strukturerat framtidstänkande (foresight / futures studies). Hjälper användaren att utforska möjliga framtider, kvalificera beslut under osäkerhet och ta fram robusta strategier — inte att förutsäga exakt.
 
 ## När använda
 - Utforska möjliga framtider, analysera trender och omvärld
